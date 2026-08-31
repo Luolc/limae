@@ -6,7 +6,7 @@
 
 ## 隐私边界
 
-本仓是 public 仓库，工具代码、无业务数据：仓内绝不能出现任何凭证或个人身份信息 (PII) —— 全局守则「安全红线」在这里没有「仓库访问控制」兜底，历史里一旦出现就按红线处理 (先轮换、再清历史)。
+本仓是 public 仓库，工具代码、无业务数据：仓内绝不能出现任何凭证或个人身份信息 (PII) —— 全局守则「安全红线」在这里没有「仓库访问控制」兜底，历史里一旦出现就按红线处理 (先轮换、再清历史)。公开发表作品的作者署名与公开链接属引用 (attribution)，不在 PII 之列 (PR #8 审查分歧的裁决)。
 
 **测试 fixture 只用合成数据** (如 `ACME` / `$1,000` / `Foo`)：不得出现用户真实理财、账户或身份信息，即使只是当作待检查的字符串。
 
@@ -41,5 +41,5 @@ LGTM 后从评论取 approved SHA，确认本地 tip 与之相同 (`git rev-pars
 ## 多 agent 协作 (本仓实例)
 
 - orchestra 简称 `mdlint`：常驻 `mdlint-orchestra` / `mdlint-shell`；任务对、research 与将来的仓级 skill (如 `mdlint-pr-review`) 一律用这个前缀。仓名 `lo-md-lint` 与包名 / 命令名不受此影响。
-- 本仓暂无 tracker；依赖锁文件是 `uv.lock` (与仓根 `pyproject.toml`)。
+- tracker 在 `docs/tracker.md`，由 orchestra 在合入后记账；依赖锁文件是 `uv.lock` (与仓根 `pyproject.toml`)。
 - 审查标准 = 用户级 `pr-review` skill (`~/.agents/skills/pr-review`，machine-setup 分发)，触碰 Python 时叠加用户级 `python-review`；本仓暂无仓级 `mdlint-pr-review` / `mdlint-python-review`，需要加严时再建，仓级只写增量。不指向任何其它仓库的文件。
