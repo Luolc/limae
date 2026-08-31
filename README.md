@@ -4,8 +4,8 @@ Markdown linter，从中文技术写作的排版规则起步。
 
 ## 定位与愿景
 
-- **规则先于实现**：每条规则是一段语言无关的规范 (specification)，有一个稳定的 id 与一个可开关的 flag；中文排版规则 (中英文之间空格、数字与中文之间空格、半角括号外空格、全角标点……) 是默认规则集，之后加英文规则。
-- **多实现、一套黄金 fixture (golden fixtures)**：Python 版是参考实现 (reference implementation)，任何后续实现都对着同一套「输入 / 期望输出」跑，通过即合规。
+- **规则先于实现**：每条规则是一段语言无关的规范 (specification)，写在 `spec/rules.md`，有一个稳定的 id (可开关的 flag 待加)；中文排版规则 (中英文之间空格、数字与中文之间空格、半角括号外空格、全角标点……) 是默认规则集，之后加英文规则。
+- **多实现、一套黄金 fixture (golden fixtures)**：黄金集在 `spec/fixtures/`，Python 版是参考实现 (reference implementation)，任何后续实现都对着同一套「输入 / 期望输出」跑，通过即合规。
 - **对标 ruff 之于 Python**：长期大概率以 Rust 为主实现——一个 Rust 写的 Markdown lint，可被 Python / Node 生态经 pre-commit、包管理器等集成，也能直接当命令行工具用。
 - **配置走 toml**：独立配置文件或 `pyproject.toml` 的 `[tool.lo-md-lint]` 表，逐条规则开关。
 
@@ -13,7 +13,7 @@ Markdown linter，从中文技术写作的排版规则起步。
 
 ## 现状
 
-Python 参考实现已就位，规则集只有中文排版一套 (R1 CJK 旁的半角标点、R2 全角括号、R3 半角括号外侧空格)，尚未 flag 化；`spec/` 还没建起来。
+Python 参考实现已就位，规则集只有中文排版一套 (R1 CJK 旁的半角标点、R2 全角括号、R3 半角括号外侧空格)，尚未 flag 化。`spec/` 已建起来：规则规范在 `spec/rules.md`，黄金 fixture 在 `spec/fixtures/`，格式与 runner 的判定见 `spec/README.md`；Python 的薄 runner 是 `tests/test_fixtures.py`。
 
 ## 使用
 

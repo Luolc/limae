@@ -1,6 +1,8 @@
 """Chinese Markdown formatting checker.
 
-The rules are the 语言规范 section of the global ~/.agents/AGENTS.md.
+``spec/rules.md`` is the normative, language-agnostic rule spec and
+``spec/fixtures/`` the golden set every implementation runs against; this
+module is the Python reference implementation of both.
 
 Rules:
   R1: No half-width , ; : ? ! adjacent to a CJK character.
@@ -26,6 +28,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import typing
 
 CJK = "一-鿿"
 WORD = f"A-Za-z0-9{CJK}"
@@ -49,15 +52,37 @@ BLOCK_START = re.compile(
 )
 QUOTE_LINE = re.compile(r"^ {0,3}>")
 
+# (rule id from spec/rules.md, human-readable name, detection pattern).
 CHECKS = [
     (
+        "R1",
         "R1 halfwidth punct next to CJK",
         re.compile(f"[{CJK}][,;:?!]|[,;:?!][{CJK}]"),
     ),
-    ("R2 fullwidth paren", re.compile("[（）]")),
-    ("R3 no space before (", re.compile(f"(?:[{WORD}]|\\*\\*|`)\\(")),
-    ("R3 no space after )", re.compile(f"\\)(?:[{WORD}]|\\*\\*[{WORD}])")),
+    ("R2", "R2 fullwidth paren", re.compile("[（）]")),
+    ("R3", "R3 no space before (", re.compile(f"(?:[{WORD}]|\\*\\*|`)\\(")),
+    (
+        "R3",
+        "R3 no space after )",
+        re.compile(f"\\)(?:[{WORD}]|\\*\\*[{WORD}])"),
+    ),
 ]
+
+
+class Finding(typing.NamedTuple):
+  """One rule violation found in a text.
+
+  Attributes:
+    line: 1-based line number of the violation.
+    rule: Stable rule id from ``spec/rules.md`` (``R1`` / ``R2`` / ``R3``).
+    name: Human-readable check name, shown in the CLI output.
+    snippet: The source text around the match, for the CLI output.
+  """
+
+  line: int
+  rule: str
+  name: str
+  snippet: str
 
 
 def _is_fence(line: str) -> bool:
@@ -225,24 +250,24 @@ def fix_text(text: str) -> str:
   )
 
 
-def check_file(path: pathlib.Path) -> list[str]:
-  """Check one file and return its violation descriptions.
+def check_text(text: str) -> list[Finding]:
+  """Check Markdown text and return its violations in reading order.
 
   Args:
-    path: Markdown file to scan.
+    text: Raw Markdown content.
 
   Returns:
-    Human-readable ``file:line`` violation lines, empty when clean.
+    One ``Finding`` per violation, ordered by line then by rule id.
   """
-  problems: list[str] = []
-  lines = path.read_text(encoding="utf-8").splitlines()
+  findings: list[Finding] = []
+  lines = text.splitlines()
   for lineno, (line, code_spans) in enumerate(
       zip(lines, _protected(lines), strict=True), 1
   ):
     if code_spans is None:
       continue
     term_spans = [t.span() for t in TERM_PAREN.finditer(line)]
-    for name, pattern in CHECKS:
+    for rule, name, pattern in CHECKS:
       for m in pattern.finditer(line):
         if any(m.start() < b and m.end() > a for a, b in code_spans):
           continue  # inside inline code
@@ -253,8 +278,23 @@ def check_file(path: pathlib.Path) -> list[str]:
           if any(a <= paren < b for a, b in term_spans):
             continue  # term-intrinsic paren, e.g. 401(k)
         snippet = line[max(0, m.start() - 12) : m.end() + 12]
-        problems.append(f"{path}:{lineno}: [{name}] …{snippet}…")
-  return problems
+        findings.append(Finding(lineno, rule, name, snippet))
+  return findings
+
+
+def check_file(path: pathlib.Path) -> list[str]:
+  """Check one file and return its violation descriptions.
+
+  Args:
+    path: Markdown file to scan.
+
+  Returns:
+    Human-readable ``file:line`` violation lines, empty when clean.
+  """
+  return [
+      f"{path}:{f.line}: [{f.name}] …{f.snippet}…"
+      for f in check_text(path.read_text(encoding="utf-8"))
+  ]
 
 
 def tracked_markdown() -> list[pathlib.Path]:

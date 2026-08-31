@@ -1,0 +1,5 @@
+| 2.8 | `for x in seq` | 不要 `range(len)`、`adict.keys()` |
+- 库用 `logging.getLogger(__name__)`，**不要** `print`。
+时区：用 `zoneinfo` (`ZoneInfo("America/New_York")`)。
+`datetime.utcnow()` 已弃用，改 `datetime.now(timezone.utc)`。
+ruff：`DTZ001`–`DTZ006` (`datetime()` 无 tz、`.now()` 等)。
