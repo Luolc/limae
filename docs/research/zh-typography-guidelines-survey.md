@@ -23,7 +23,7 @@
 **上游。** 指北正文几乎整段搬自 sparanoid 的《中文文案排版指北》，Wiki 文末参考文献却链到 fork [mzlogin/chinese-copywriting-guidelines](https://github.com/mzlogin/chinese-copywriting-guidelines)，不是正本。相对正本，掘金加了几条翻译场景特有的规则：
 
 - 「以国标 GB/T 15834-2011 为基础」这一句
-- **破折号前后需要增加一个空格** (`你好，我是破折号 —— 一个不苟言笑的符号。`)——sparanoid 正本**没有**这条
+- **破折号前后需要增加一个空格** (`你好，我是破折号 —— 一个不苟言笑的符号。`) —— sparanoid 正本**没有**这条
 - 省略号用「一格三点、连续两格 `……`」，后接正文时再加一个空格；并链到 sparanoid issue [#58](https://github.com/sparanoid/chinese-copywriting-guidelines/issues/58)
 - 斜体改加粗 (中文阅读体验)
 - GitHub 脚注折中方案
@@ -112,7 +112,7 @@
 | pangu.js | 只做这件事 | [README](https://github.com/vinta/pangu.js) |
 | 本仓 R1–R3 | 不提 | — |
 
-**共识：广泛。** 技术文档社区几乎无异议。产品专名按官方写法例外 (「豆瓣FM」)。
+**共识：广泛。** 技术文档社区几乎无异议。产品专名按官方写法例外 (`豆瓣FM`)。
 
 ### 3.2 数字与中文之间空格
 
@@ -183,7 +183,7 @@
 
 **有分歧。** 国标与阮一峰 = “”；港台与一部分大陆技术团队 = 「」。sparanoid 自己把它放进「争议」。不适合做默认强制转换。
 
-### 3.7 破折号 (——) 两侧空格 —— brief 点名的问题
+### 3.7 破折号 (`——`) 两侧空格 —— brief 点名的问题
 
 | 来源 | 立场 | 依据 |
 | --- | --- | --- |
@@ -267,13 +267,13 @@ Rust CLI + 多语言 SDK + LSP + VS Code + GitHub Action。约 1.6k star。最�
 
 1. **每条规则独立 id + 三级开关 (off / error / warning)**，和本仓 ADR-0002「flag 化」同构。
 2. 配置发现：项目根 `.autocorrectrc` (YAML/JSON) + JSON Schema。
-3. `textRules`：对具体字符串覆盖严重级别 (产品名「豆瓣FM」这种)。
+3. `textRules`：对具体字符串覆盖严重级别 (产品名 `豆瓣FM` 这种)。
 4. 行内 `autocorrect-disable` / `autocorrect-disable space-word` / `autocorrect-enable`。
 5. `.autocorrectignore` 跟 `.gitignore` 同语法；默认也尊重 `.gitignore`。
 6. 按文件类型 AST 只扫字符串和注释，不碰代码 token。
 7. `--lint` 出 diff / JSON / rdjson (reviewdog)。
 
-**不要抄：** 把 `space-dash` 默认开——连官方 README 示例都写成 0，社区配置也常关。`spellcheck` 默认关是对的。
+**不要抄：** 把 `space-dash` 默认开 —— 连官方 README 示例都写成 0，社区配置也常关。`spellcheck` 默认关是对的。
 
 ### 4.2 zhlint ([zhlint-project/zhlint](https://github.com/zhlint-project/zhlint))
 
@@ -285,9 +285,9 @@ TypeScript，约 1k star，2026-06 仍有提交。规则提炼自 W3C clreq、HT
 
 **值得抄：**
 
-1. `skipZhUnits: '年月日天号时分秒'`——数字规则的逃生口。
-2. `skipAbbrs: ['Mr.','Dr.','e.g.',...]`——别把缩写的点转成 `。`。
-3. `skipPureWestern: true`——整行英文不处理 (R1 已有「两侧都不是 CJK 则不动」)。
+1. `skipZhUnits: '年月日天号时分秒'` —— 数字规则的逃生口。
+2. `skipAbbrs: ['Mr.','Dr.','e.g.',...]` —— 别把缩写的点转成 `。`。
+3. `skipPureWestern: true` —— 整行英文不处理 (R1 已有「两侧都不是 CJK 则不动」)。
 4. HTML 注释 `<!-- zhlint ignore: ( , ) -->` 与 `<!-- zhlint disabled -->`。
 5. Markdown / Hexo tag 预解析，只格式化可见文本。
 
@@ -297,7 +297,7 @@ Rust 移植 `zhlint-rs` 基本停在 2024-02，不要当活上游。
 
 「盘古之白」。约 4.8k star，2026-06 仍在发版。只做 CJK 与半角字母数字符号之间插空格，**不做标点全半角转换**。Chrome 插件起家。作者明确：**不要用来 spacing Markdown**。
 
-对 linter 的价值是文化源头 (sparanoid 开篇就引用它) 和「空格规则的最小核」。多语言移植一大串。配置面几乎没有——它不是 linter。
+对 linter 的价值是文化源头 (sparanoid 开篇就引用它) 和「空格规则的最小核」。多语言移植一大串。配置面几乎没有 —— 它不是 linter。
 
 ### 4.4 textlint 中文插件
 
@@ -314,7 +314,7 @@ Rust 移植 `zhlint-rs` 基本停在 2024-02，不要当活上游。
 | zh-correctly-ordered-pairs | 引号书名号成对 |
 | terminology | 英文术语词表 |
 
-另有 `textlint-rule-zh-half-and-full-width-bracket` (三种模式：一律全角 / 一律半角 / 有中文则全角否则半角)——正好覆盖 §3.4 的分歧，可当 R2 的配置模型。
+另有 `textlint-rule-zh-half-and-full-width-bracket` (三种模式：一律全角 / 一律半角 / 有中文则全角否则半角) —— 正好覆盖 §3.4 的分歧，可当 R2 的配置模型。
 
 **值得抄：** 一条规则一个包、`--fix` 可标、preset 只是打包。本仓不必做成 textlint 插件，但「括号策略三选一」值得做成 flag，而不是把 R2 写死。
 
@@ -346,7 +346,7 @@ Rust 移植 `zhlint-rs` 基本停在 2024-02，不要当活上游。
 
 | 候选 | 内容 | 为何关 |
 | --- | --- | --- |
-| CJK–数字空格 | `` `12 个月` `` vs `` `12个月` `` vs `` `2011年` `` | 阮一峰明确「两种都行、要统一」；zhlint 对年月日例外。一刀切开会跟大量「2016年」文档打架 |
+| CJK–数字空格 | `` `12 个月` `` vs `` `12个月` `` vs `` `2011年` `` | 阮一峰明确「两种都行、要统一」；zhlint 对年月日例外。一刀切开会跟大量 `2016年` 文档打架 |
 | 链接两侧空格 | `[文字](url)` 渲染文字与中文之间 | sparanoid / 掘金自己标「争议」 |
 | 直角/弯引号统一 | 「」 ↔ “” | 国标 vs 港台 vs 技术团队，三套都有拥趸 |
 | 破折号两侧空格 | `——` 左右 U+0020 | **见下节** |
@@ -361,7 +361,7 @@ Rust 移植 `zhlint-rs` 基本停在 2024-02，不要当活上游。
 - 业界怎么做：**国标、clreq、yikeke、传统印刷 = 不加**；**掘金译文指北 = 加** (这是用户记得的那条)；阮一峰 = 看它占几格；sparanoid = 不提。
 - 工具：没有主流 linter 默认给 `——` 加空格。AutoCorrect 的 `space-dash` 管的是 ASCII 连字符。
 - 建议：做成独立 flag，**默认关**。若用户认掘金家规，再打开。打开时只认 `——` / `⸺`，并且与「全角标点旁去空格」互斥 (开破折号空格就不要去它旁边的空格)。
-- 不要把「两个 hyphen `--`」自动变成破折号——那是输入法/编辑器的事，Markdown 里 `--` 经常是 HTML 注释或 option。
+- 不要把「两个 hyphen `--`」自动变成破折号 —— 那是输入法/编辑器的事，Markdown 里 `--` 经常是 HTML 注释或 option。
 
 **2. 括号策略要不要做成三档，而不是写死 R2。**
 
@@ -369,7 +369,7 @@ textlint-rule-zh-half-and-full-width-bracket 的三档：一律半角 (当前 R2
 
 **3. 数字与中文空格 + 中文单位例外。**
 
-若做，建议抄 zhlint：`skipZhUnits = 年月日天号时分秒`，默认关或 warning。默认开会和「2011年5月15日」这种阮一峰也认的写法冲突。
+若做，建议抄 zhlint：`skipZhUnits = 年月日天号时分秒`，默认关或 warning。默认开会和 `2011年5月15日` 这种阮一峰也认的写法冲突。
 
 **4. 顿号 vs 英文逗号。**
 
@@ -393,10 +393,10 @@ textlint-rule-zh-half-and-full-width-bracket 的三档：一律半角 (当前 R2
 - 每条 `off | error | warning` (或本仓简化成 off/on，warning 以后再加)
 - 项目配置 `[tool.lo-md-lint]` / 独立 toml
 - 行内 disable 注释
-- 字符串级豁免 (豆瓣FM、`401(k)` 已经在 R3)
-- Markdown 感知：围栏块、行内代码——本仓已有，保持
+- 字符串级豁免 (`豆瓣FM`、`401(k)` 已经在 R3)
+- Markdown 感知：围栏块、行内代码 —— 本仓已有，保持
 
-从 zhlint 只抄例外列表 (`skipZhUnits`、`skipAbbrs`)，不抄它那份巨大的 boolean options 对象——和「规则 id 稳定不复用」的本仓模型不合。
+从 zhlint 只抄例外列表 (`skipZhUnits`、`skipAbbrs`)，不抄它那份巨大的 boolean options 对象 —— 和「规则 id 稳定不复用」的本仓模型不合。
 
 修复顺序现状是 R2 → R1 → R3。若加入「CJK 空格」和「全角标点去空格」，建议：
 

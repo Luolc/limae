@@ -5,7 +5,7 @@
 
 ## 背景
 
-中文 Markdown 排版检查器目前是 wealth-management 仓 uv workspace 里的一个子项目 (`lo-linting`，命令 `lo-lint-zh`)，零第三方依赖，规则来自全局守则「语言规范」。它只被 wealth-management 自己经 pre-commit `repo: local` 消费；machine-setup、butler 等其它中文仓也需要同一把 linter。下一步要加英文规则、把规则 flag 化，长期大概率用 Rust 重写——趁代码还小，先把仓、规范与测试资产的形态定下来。
+中文 Markdown 排版检查器目前是 wealth-management 仓 uv workspace 里的一个子项目 (`lo-linting`，命令 `lo-lint-zh`)，零第三方依赖，规则来自全局守则「语言规范」。它只被 wealth-management 自己经 pre-commit `repo: local` 消费；machine-setup、butler 等其它中文仓也需要同一把 linter。下一步要加英文规则、把规则 flag 化，长期大概率用 Rust 重写 —— 趁代码还小，先把仓、规范与测试资产的形态定下来。
 
 ## 决定
 
