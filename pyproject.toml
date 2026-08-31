@@ -1,6 +1,6 @@
 [project]
 name = "lo-md-lint"
-version = "0.2.0"
+version = "0.3.0"
 description = "Markdown linter, starting from Chinese technical-writing typography rules"
 requires-python = ">=3.13,<3.14"
 dependencies = []
