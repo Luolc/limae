@@ -139,10 +139,8 @@ RAW_URL = re.compile(
 TRAILING_PUNCT = ")]}>,.;:!?"
 
 # A quote-bracket pair whose content holds kana is a verbatim Japanese
-# quotation (global exemption 4): rewriting it would break the quote. The
-# negated classes pair each opener with its nearest closer, and finditer
-# resumes past a match, so a nested pair loses to the outermost one.
-QUOTE_SPAN = re.compile("「[^」]*」|『[^』]*』|《[^》]*》")
+# quotation (global exemption 4): rewriting it would break the quote.
+QUOTE_PAIRS = {"「": "」", "『": "』", "《": "》"}
 KANA = re.compile("[\u3040-\u30ff]")
 
 # R10: full-width digits.
@@ -336,6 +334,43 @@ def _protected(lines: list[str]) -> list[list[tuple[int, int]] | None]:
   return result
 
 
+def _quote_spans(line: str) -> list[tuple[int, int]]:
+  """Return the interiors of the kana-holding quote spans on one line.
+
+  Scanning left to right, an opener pairs with the closer that brings its
+  bracket type back to depth zero — the outermost pair, so a nested pair
+  is never identified on its own. An opener without such a closer is not
+  a span and the scan resumes right after it.
+
+  Args:
+    line: One Markdown line outside fenced code blocks.
+
+  Returns:
+    Sorted, disjoint ``(start, end)`` ranges between the brackets of the
+    pairs whose content holds kana.
+  """
+  spans: list[tuple[int, int]] = []
+  i = 0
+  while i < len(line):
+    close = QUOTE_PAIRS.get(line[i])
+    if close is None:
+      i += 1
+      continue
+    depth = 0
+    for j in range(i, len(line)):
+      if line[j] == line[i]:
+        depth += 1
+      elif line[j] == close:
+        depth -= 1
+        if depth == 0:
+          if KANA.search(line[i + 1 : j]):
+            spans.append((i + 1, j))
+          i = j
+          break
+    i += 1
+  return spans
+
+
 def _prose_spans(
     line: str, code_spans: list[tuple[int, int]]
 ) -> list[tuple[int, int]]:
@@ -362,9 +397,8 @@ def _prose_spans(
       spans.append((a, b))
       taken.append((a, b))
 
-  for m in QUOTE_SPAN.finditer(line):
-    if KANA.search(m.group(0)):
-      claim(m.start() + 1, m.end() - 1)
+  for a, b in _quote_spans(line):
+    claim(a, b)
   for m in URL_DESTINATION.finditer(line):
     claim(*m.span(1))
   for m in RAW_URL.finditer(line):
