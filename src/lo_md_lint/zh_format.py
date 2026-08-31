@@ -92,17 +92,28 @@ R7_OPEN_EDGE = re.compile(f"(?<=[{CJK}])(`+)$")
 R7_CLOSE_EDGE = re.compile(f"^(`+)(?=[{CJK}])")
 # R8: exactly two U+2014 (`——`) or one U+2E3A; a neighbouring dash is a
 # malformed dash, not a spacing problem, so it does not trigger. The check
-# patterns consume the dash so that a dash inside an inline code span is
-# excluded by the span-overlap filter; the fix patterns are the zero-width
-# boundaries themselves, which per prose fragment amounts to the same set.
-DASH_LEFT = re.compile("(?<=[^\\s—⸺])(?:——(?!—)|⸺)")
-DASH_RIGHT = re.compile("(?:(?<!—)——|⸺)(?=[^\\s—⸺])")
+# patterns consume the dash and its triggering neighbour so that a dash
+# inside — or right at the edge of — an exempt range is excluded by
+# ``_exempt``; the fix patterns are the zero-width boundaries themselves,
+# which per prose fragment amounts to the same set.
+DASH_LEFT = re.compile("[^\\s—⸺](?:——(?!—)|⸺)")
+DASH_RIGHT = re.compile("(?:(?<!—)——|⸺)[^\\s—⸺]")
 DASH_LEFT_FIX = re.compile("(?<=[^\\s—⸺])(?=——(?!—)|⸺)")
 DASH_RIGHT_FIX = re.compile("(?:(?<=——)(?<!———)|(?<=⸺))(?=[^\\s—⸺])")
 # R9: CJK directly before an inline link, matched with its `[text](` opener
 # so a link whose text holds a code span falls under the span exemption.
 LINK_AFTER_CJK = re.compile(f"(?<=[{CJK}])\\[[^\\]]*\\]\\(")
 LINK_AFTER_CJK_FIX = re.compile(f"(?<=[{CJK}])(?=\\[[^\\]]*\\]\\()")
+
+# Link destinations and raw URLs are addresses, not prose (global
+# exemption 3 in spec/rules.md). The destination is the minimal-form
+# `](...)` interior; a raw URL runs over RFC 3986 characters and then
+# drops trailing punctuation, which stays prose.
+URL_DESTINATION = re.compile(r"\]\(([^)]*)\)")
+RAW_URL = re.compile(
+    r"(?<![A-Za-z0-9])https?://[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]*"
+)
+TRAILING_PUNCT = ")]}>,.;:!?"
 
 # Conservative block boundaries for inline code spans: a span may continue
 # onto the next line only inside one paragraph / list item / blockquote.
@@ -224,7 +235,10 @@ def _protected(lines: list[str]) -> list[list[tuple[int, int]] | None]:
 
   Returns:
     One entry per line: ``None`` for verbatim lines, else ``(start, end)``
-    pairs relative to that line.
+    pairs relative to that line. A span whose interior falls entirely on
+    other lines still leaves a zero-length pair at the line edge, so a
+    delimiter run ending a line (opener) or starting one (closer) stays
+    identifiable for R7.
   """
   result: list[list[tuple[int, int]] | None] = [None] * len(lines)
   paragraph: list[int] = []
@@ -237,7 +251,7 @@ def _protected(lines: list[str]) -> list[list[tuple[int, int]] | None]:
       result[i] = [
           (max(a, offset) - offset, min(b, end) - offset)
           for a, b in spans
-          if a < end and b > offset
+          if a <= end and b >= offset
       ]
       offset = end + 1
     paragraph.clear()
@@ -267,10 +281,63 @@ def _protected(lines: list[str]) -> list[list[tuple[int, int]] | None]:
   return result
 
 
+def _url_spans(
+    line: str, code_spans: list[tuple[int, int]]
+) -> list[tuple[int, int]]:
+  """Return the URL-exempt ranges on one line (global exemption 3).
+
+  Minimal-form inline link destinations and raw ``http(s)://`` URLs with
+  their trailing punctuation stripped; candidates overlapping an inline
+  code interior (or each other) are dropped so the ranges stay disjoint.
+
+  Args:
+    line: One Markdown line outside fenced code blocks.
+    code_spans: Inline code interiors on this line, from ``_protected``.
+
+  Returns:
+    Sorted, disjoint ``(start, end)`` ranges.
+  """
+  spans: list[tuple[int, int]] = []
+  taken = list(code_spans)
+
+  def claim(a: int, b: int) -> None:
+    if a < b and not any(a < d and b > c for c, d in taken):
+      spans.append((a, b))
+      taken.append((a, b))
+
+  for m in URL_DESTINATION.finditer(line):
+    claim(*m.span(1))
+  for m in RAW_URL.finditer(line):
+    a, b = m.span()
+    while b > a and line[b - 1] in TRAILING_PUNCT:
+      b -= 1
+    claim(a, b)
+  return sorted(spans)
+
+
+def _exempt(m: re.Match[str], spans: list[tuple[int, int]]) -> bool:
+  """Return whether a match involves characters of an exempt range.
+
+  A zero-width match sits between two characters, so it is exempt when
+  either neighbour falls inside a range (position within the closed
+  interval); a consuming match is exempt on any overlap.
+
+  Args:
+    m: A match of one of the ``CHECKS`` patterns.
+    spans: Exempt ranges on the line (code interiors and URL ranges).
+
+  Returns:
+    True when the finding must be suppressed.
+  """
+  if m.start() == m.end():
+    return any(a <= m.start() <= b for a, b in spans)
+  return any(m.start() < b and m.end() > a for a, b in spans)
+
+
 def _fix_line(
     line: str, spans: list[tuple[int, int]], rules: Collection[str]
 ) -> str:
-  """Return one line with violations auto-fixed outside inline code.
+  """Return one line with violations auto-fixed outside exempt ranges.
 
   Args:
     line: One Markdown line outside fenced code blocks.
@@ -278,17 +345,21 @@ def _fix_line(
     rules: The enabled rule ids; disabled rules leave the text alone.
 
   Returns:
-    The fixed line; inline code is copied through verbatim.
+    The fixed line; inline code and URL ranges are copied through
+    verbatim.
   """
+  ranges = [(a, b, True) for a, b in spans]
+  ranges += [(a, b, False) for a, b in _url_spans(line, spans)]
+  ranges.sort()
   parts: list[str] = []
   pos = 0
   closes = False
-  for start, end in spans:
-    opens = start > pos and line[start - 1] == "`"
+  for start, end, is_code in ranges:
+    opens = is_code and start > pos and line[start - 1] == "`"
     parts.append(_fix_frag(line[pos:start], rules, closes, opens))
     parts.append(line[start:end])
     pos = end
-    closes = end < len(line) and line[end] == "`"
+    closes = is_code and end < len(line) and line[end] == "`"
   parts.append(_fix_frag(line[pos:], rules, closes, False))
   return "".join(parts)
 
@@ -414,13 +485,20 @@ def fix_text(text: str, rules: Collection[str] = DEFAULT_RULES) -> str:
 
   Returns:
     The content with full-width parens replaced, CJK-adjacent punctuation
-    converted to full-width, and spacing inserted.
+    converted to full-width, and spacing inserted; a fixpoint, since one
+    pass can make new determinations true (e.g. R2 turning a full-width
+    paren into the closer of a link destination shifts the exempt
+    ranges), so the pass repeats until the text is stable.
   """
-  lines = text.split("\n")
-  return "\n".join(
-      line if spans is None else _fix_line(line, spans, rules)
-      for line, spans in zip(lines, _protected(lines), strict=True)
-  )
+  while True:
+    lines = text.split("\n")
+    fixed = "\n".join(
+        line if spans is None else _fix_line(line, spans, rules)
+        for line, spans in zip(lines, _protected(lines), strict=True)
+    )
+    if fixed == text:
+      return text
+    text = fixed
 
 
 def check_text(
@@ -442,13 +520,14 @@ def check_text(
   ):
     if code_spans is None:
       continue
+    exempt_spans = code_spans + _url_spans(line, code_spans)
     token_parens = {t.start() for t in ENGLISH_TOKEN_PAREN.finditer(line)}
     for rule, name, pattern in CHECKS:
       if rule not in rules:
         continue
       for m in pattern.finditer(line):
-        if any(m.start() < b and m.end() > a for a, b in code_spans):
-          continue  # inside inline code
+        if _exempt(m, exempt_spans):
+          continue  # involves inline code or a URL range
         if m.group(0).endswith("(") and m.end() - 1 in token_parens:
           continue  # paren inside an English token, e.g. word(s), 401(k)
         if rule == "R7" and not _is_delimiter_run(m, pattern, code_spans):
