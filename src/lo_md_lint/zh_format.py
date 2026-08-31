@@ -8,8 +8,9 @@ Rules:
   R1: No half-width , ; : ? ! adjacent to a CJK character.
   R2: No full-width parentheses; use half-width ( ) instead.
   R3: Half-width parens need an outside space when adjacent to a word
-    character, a bold marker, or an inline-code backtick. Markdown link
-    syntax ``](...)`` is exempt.
+    character, a closing paren, a bold marker, or an inline-code backtick.
+    Parens inside an English token (``word(s)``, ``401(k)``) and Markdown
+    link syntax ``](...)`` are exempt.
 
 Fenced code blocks and inline code spans (CommonMark backtick runs, which
 may cross line breaks inside a paragraph but not block boundaries) are
@@ -34,9 +35,10 @@ CJK = "一-鿿"
 WORD = f"A-Za-z0-9{CJK}"
 PUNCT_MAP = {",": "，", ";": "；", ":": "：", "?": "？", "!": "！"}
 
-# Terms with intrinsic parens, e.g. 401(k), 403(b), 501(c): the "(" is part of
-# the term, not prose punctuation — exempt from R3 spacing.
-TERM_PAREN = re.compile(r"\d\([a-z0-9]{1,3}\)")
+# A "(" inside an English token, e.g. credential(s), word(s), 401(k), f(x):
+# the paren belongs to the token, not to prose — exempt from R3 spacing on the
+# left. Lookaround so neighbouring tokens can overlap, as in f(g(x)).
+ENGLISH_TOKEN_PAREN = re.compile(r"(?<=[A-Za-z0-9])\((?=[A-Za-z0-9])")
 BACKTICK_RUN = re.compile("`+")
 
 # Conservative block boundaries for inline code spans: a span may continue
@@ -60,11 +62,15 @@ CHECKS = [
         re.compile(f"[{CJK}][,;:?!]|[,;:?!][{CJK}]"),
     ),
     ("R2", "R2 fullwidth paren", re.compile("[（）]")),
-    ("R3", "R3 no space before (", re.compile(f"(?:[{WORD}]|\\*\\*|`)\\(")),
+    (
+        "R3",
+        "R3 no space before (",
+        re.compile(f"(?:[{WORD}]|\\*\\*|`|\\))\\("),
+    ),
     (
         "R3",
         "R3 no space after )",
-        re.compile(f"\\)(?:[{WORD}]|\\*\\*[{WORD}])"),
+        re.compile(f"\\)(?:[{WORD}]|\\*\\*[{WORD}]|`)"),
     ),
 ]
 
@@ -224,9 +230,9 @@ def _fix_prose(line: str) -> str:
         continue
     out.append(ch)
   line = "".join(out)
-  line = TERM_PAREN.sub(lambda m: m.group(0).replace("(", "\x00", 1), line)
-  line = re.sub(f"([{WORD}]|\\*\\*|`)\\(", r"\1 (", line)
-  line = re.sub(f"\\)([{WORD}])", r") \1", line)
+  line = ENGLISH_TOKEN_PAREN.sub("\x00", line)
+  line = re.sub(f"([{WORD}]|\\*\\*|`|\\))\\(", r"\1 (", line)
+  line = re.sub(f"\\)((?:\\*\\*)?[{WORD}]|`)", r") \1", line)
   return line.replace("\x00", "(")
 
 
@@ -266,17 +272,13 @@ def check_text(text: str) -> list[Finding]:
   ):
     if code_spans is None:
       continue
-    term_spans = [t.span() for t in TERM_PAREN.finditer(line)]
+    token_parens = {t.start() for t in ENGLISH_TOKEN_PAREN.finditer(line)}
     for rule, name, pattern in CHECKS:
       for m in pattern.finditer(line):
         if any(m.start() < b and m.end() > a for a, b in code_spans):
           continue  # inside inline code
-        if name.startswith("R3 no space before") and m.group(0).endswith("("):
-          if m.start() > 0 and line[m.start() - 1] == "]":
-            continue  # markdown link ](url)
-          paren = m.end() - 1
-          if any(a <= paren < b for a, b in term_spans):
-            continue  # term-intrinsic paren, e.g. 401(k)
+        if m.group(0).endswith("(") and m.end() - 1 in token_parens:
+          continue  # paren inside an English token, e.g. word(s), 401(k)
         snippet = line[max(0, m.start() - 12) : m.end() + 12]
         findings.append(Finding(lineno, rule, name, snippet))
   return findings
