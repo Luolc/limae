@@ -10,6 +10,8 @@
 
 **测试 fixture 只用合成数据** (如 `ACME` / `$1,000` / `Foo`)：不得出现用户真实理财、账户或身份信息，即使只是当作待检查的字符串。
 
+**敏感值不进任何文本，只按位置指代**：brief、PR 描述、commit message、评论等一切文本里都不写敏感值本身，只指代其位置 (文件、行号、测试 id 等)；脱敏映射只留在裁决人手里，不经任何 agent 间通道传递 (事故记录见 `docs/incidents/2026-08-31-sensitive-values-in-commit-text.md`)。
+
 ## 目录约定
 
 布局与 ruff 仓相同：每种语言的实现都以仓根为项目根，源码进各自的子目录；规范与 fixture 独立于任何实现。
@@ -17,7 +19,7 @@
 - **规则规范与黄金 fixture 语言无关、所有实现共用**，放仓根 `spec/` (规范 `spec/rules.md`，黄金集 `spec/fixtures/`)；不放进任何单一实现的私有目录 (`src/`、`tests/`、`crates/`)。位置与理由见 `docs/adr/0001-standalone-repo-spec-first-shared-fixtures.md`。
 - **Python 参考实现 (reference implementation) 在仓根**：`pyproject.toml`、`src/lo_md_lint/`、`tests/`；包 `lo_md_lint`，命令 `lo-md-lint`；用 uv 管理，锁文件 `uv.lock` 全仓唯一。放仓根而不是 `python/` 子目录，是因为 pre-commit `language: python` 与 `uvx --from git+…` 都把仓根当作可安装的 Python 项目。
 - **将来其它语言实现同样以仓根为项目根**：如 Rust 在仓根放 `Cargo.toml`，crate 源码在 `crates/` 之类的子目录；各用自己语言的原生机制，都对着同一套 `spec/` 跑。
-- **内容类 Markdown 在 `docs/`**：`docs/adr/` (决策)、`docs/knowledge/` (手册)、`docs/research/` (调研)，按全局守则「决策记录」三分。
+- **内容类 Markdown 在 `docs/`**：`docs/adr/` (决策)、`docs/knowledge/` (手册)、`docs/research/` (调研)、`docs/incidents/` (事故记录)，按全局守则「决策记录」三分。
 - 项目级 skill 正本在 `.agents/skills/<name>/`，`.claude/skills/<name>` 逐 skill 软链，见 `.agents/skills/README.md`。
 
 ## 质量门 (quality bar)
