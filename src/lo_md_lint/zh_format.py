@@ -29,7 +29,9 @@ Rules:
 
 Fenced code blocks and inline code spans (CommonMark backtick runs, which
 may cross line breaks inside a paragraph but not block boundaries) are
-exempt from every rule and never rewritten by ``--fix``.
+exempt from every rule and never rewritten by ``--fix``, and so are link
+destinations, raw URLs and quote spans whose content holds kana (a
+verbatim Japanese quotation).
 
 Every rule except R9 is enabled by default; ``--disable`` / ``--enable``
 and the toml config found by :mod:`lo_md_lint.config` turn rules off and
@@ -135,6 +137,11 @@ RAW_URL = re.compile(
     r"(?<![A-Za-z0-9])https?://[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]*"
 )
 TRAILING_PUNCT = ")]}>,.;:!?"
+
+# A quote-bracket pair whose content holds kana is a verbatim Japanese
+# quotation (global exemption 4): rewriting it would break the quote.
+QUOTE_PAIRS = {"「": "」", "『": "』", "《": "》"}
+KANA = re.compile("[\u3040-\u30ff]")
 
 # R10: full-width digits.
 FULLWIDTH_DIGIT = re.compile("[０-９]")
@@ -327,14 +334,55 @@ def _protected(lines: list[str]) -> list[list[tuple[int, int]] | None]:
   return result
 
 
-def _url_spans(
+def _quote_spans(line: str) -> list[tuple[int, int]]:
+  """Return the interiors of the kana-holding quote spans on one line.
+
+  Scanning left to right, an opener pairs with the closer that brings its
+  bracket type back to depth zero — the outermost pair, so a nested pair
+  is never identified on its own. An opener without such a closer is not
+  a span and the scan resumes right after it.
+
+  Args:
+    line: One Markdown line outside fenced code blocks.
+
+  Returns:
+    Sorted, disjoint ``(start, end)`` ranges between the brackets of the
+    pairs whose content holds kana.
+  """
+  spans: list[tuple[int, int]] = []
+  i = 0
+  while i < len(line):
+    close = QUOTE_PAIRS.get(line[i])
+    if close is None:
+      i += 1
+      continue
+    depth = 0
+    for j in range(i, len(line)):
+      if line[j] == line[i]:
+        depth += 1
+      elif line[j] == close:
+        depth -= 1
+        if depth == 0:
+          if KANA.search(line[i + 1 : j]):
+            spans.append((i + 1, j))
+          i = j
+          break
+    i += 1
+  return spans
+
+
+def _prose_spans(
     line: str, code_spans: list[tuple[int, int]]
 ) -> list[tuple[int, int]]:
-  """Return the URL-exempt ranges on one line (global exemption 3).
+  """Return the non-code exempt ranges on one line (exemptions 3 and 4).
 
-  Minimal-form inline link destinations and raw ``http(s)://`` URLs with
-  their trailing punctuation stripped; candidates overlapping an inline
-  code interior (or each other) are dropped so the ranges stay disjoint.
+  Kana quote interiors first, so a verbatim quotation wins over a URL
+  range inside it; an interior is claimed around the inline code spans
+  nested in it, which stay code, so the quotation as a whole is still
+  exempt end to end. Then minimal-form inline link destinations and raw
+  ``http(s)://`` URLs with their trailing punctuation stripped.
+  Candidates overlapping an inline code interior, or a range already
+  claimed, are dropped so the ranges stay disjoint.
 
   Args:
     line: One Markdown line outside fenced code blocks.
@@ -351,6 +399,13 @@ def _url_spans(
       spans.append((a, b))
       taken.append((a, b))
 
+  for a, b in _quote_spans(line):
+    start = a
+    for c, d in sorted(code_spans):
+      if start <= c and d <= b:  # code nested in the quotation
+        claim(start, c)  # up to and including the opening delimiter run
+        start = d  # resume at the closing run
+    claim(start, b)
   for m in URL_DESTINATION.finditer(line):
     claim(*m.span(1))
   for m in RAW_URL.finditer(line):
@@ -391,11 +446,11 @@ def _fix_line(
     rules: The enabled rule ids; disabled rules leave the text alone.
 
   Returns:
-    The fixed line; inline code and URL ranges are copied through
-    verbatim.
+    The fixed line; inline code, URL and kana quote ranges are copied
+    through verbatim.
   """
   ranges = [(a, b, True) for a, b in spans]
-  ranges += [(a, b, False) for a, b in _url_spans(line, spans)]
+  ranges += [(a, b, False) for a, b in _prose_spans(line, spans)]
   ranges.sort()
   parts: list[str] = []
   pos = 0
@@ -620,7 +675,7 @@ def check_text(
   ):
     if code_spans is None:
       continue
-    exempt_spans = code_spans + _url_spans(line, code_spans)
+    exempt_spans = code_spans + _prose_spans(line, code_spans)
     token_parens = {t.start() for t in ENGLISH_TOKEN_PAREN.finditer(line)}
     abbrev_dots = _abbrev_dots(line)
     line_findings: list[tuple[int, int, Finding]] = []
