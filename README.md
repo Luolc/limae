@@ -7,7 +7,7 @@ Markdown linter，从中文技术写作的排版规则起步。
 - **规则先于实现**：每条规则是一段语言无关的规范 (specification)，写在 `spec/rules.md`，有一个稳定的 id、可以逐条关掉；中文排版规则 (中英文之间空格、数字与中文之间空格、半角括号外空格、全角标点……) 是默认规则集，之后加英文规则。
 - **多实现、一套黄金 fixture (golden fixtures)**：黄金集在 `spec/fixtures/`，Python 版是参考实现 (reference implementation)，任何后续实现都对着同一套「输入 / 期望输出」跑，通过即合规。
 - **对标 ruff 之于 Python**：长期大概率以 Rust 为主实现 —— 一个 Rust 写的 Markdown lint，可被 Python / Node 生态经 pre-commit、包管理器等集成，也能直接当命令行工具用。
-- **配置走 toml**：独立配置文件 `lo-md-lint.toml` 或 `pyproject.toml` 的 `[tool.lo-md-lint]` 表，两者同构，用 `disable` / `enable` 两个键逐条开关规则；绝大多数规则默认启用，个别默认关闭的规则在规范条目里标明。
+- **配置走 toml**：独立配置文件 `lo-md-lint.toml` 或 `pyproject.toml` 的 `[tool.lo-md-lint]` 表，两者同构，用 `disable` / `enable` 两个键逐条开关规则；绝大多数规则默认启用，个别默认关闭的规则在规范条目里标明。开关之外还有调整单条规则判定的键，当前是 R5 的 `skip_zh_units` (中文计量单位豁免，默认不豁免)。
 
 决策记录在 `docs/adr/`；agent 守则在 `AGENTS.md`。
 
@@ -53,6 +53,12 @@ enable = ["R9"]
 ```toml
 disable = ["R3"]
 enable = ["R9"]
+```
+
+`skip_zh_units` 列出的中文计量单位字，紧跟其前的那段数字不加空格 (`2011年5月15日` 保持原样)，默认 `""` 即不豁免：
+
+```toml
+skip_zh_units = "年月日天号时分秒"
 ```
 
 临时在命令行上开关，整体覆盖配置文件：
