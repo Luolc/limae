@@ -16,20 +16,27 @@ Fenced code blocks and inline code spans (CommonMark backtick runs, which
 may cross line breaks inside a paragraph but not block boundaries) are
 exempt from every rule and never rewritten by ``--fix``.
 
+Every rule is enabled by default; ``--disable`` and the toml config found
+by :mod:`lo_md_lint.config` turn rules off, and a disabled rule is neither
+reported nor fixed.
+
 Usage (from the repo root)::
 
-  uv run lo-md-lint [--fix] FILE...
+  uv run lo-md-lint [--fix] [--disable R1,R3] FILE...
   uv run lo-md-lint --all [--fix]
 
-Exit code 0 = clean, 1 = violations found (in check mode).
+Exit code 0 = clean, 1 = violations found (in check mode), 2 = bad config.
 """
 
 import argparse
+from collections.abc import Collection
 import pathlib
 import re
 import subprocess
 import sys
 import typing
+
+from lo_md_lint import config
 
 CJK = "一-鿿"
 WORD = f"A-Za-z0-9{CJK}"
@@ -73,6 +80,10 @@ CHECKS = [
         re.compile(f"\\)(?:[{WORD}]|\\*\\*[{WORD}]|`)"),
     ),
 ]
+
+# The rule ids of spec/rules.md, and the default enabled set: config can
+# only subtract from this, so no configuration means today's behaviour.
+ALL_RULES: frozenset[str] = frozenset(rule for rule, _, _ in CHECKS)
 
 
 class Finding(typing.NamedTuple):
@@ -189,12 +200,15 @@ def _protected(lines: list[str]) -> list[list[tuple[int, int]] | None]:
   return result
 
 
-def _fix_line(line: str, spans: list[tuple[int, int]]) -> str:
+def _fix_line(
+    line: str, spans: list[tuple[int, int]], rules: Collection[str]
+) -> str:
   """Return one line with violations auto-fixed outside inline code.
 
   Args:
     line: One Markdown line outside fenced code blocks.
     spans: Inline code interiors on this line, from ``_protected``.
+    rules: The enabled rule ids; disabled rules leave the text alone.
 
   Returns:
     The fixed line; inline code is copied through verbatim.
@@ -202,41 +216,46 @@ def _fix_line(line: str, spans: list[tuple[int, int]]) -> str:
   parts: list[str] = []
   pos = 0
   for start, end in spans:
-    parts.append(_fix_prose(line[pos:start]))
+    parts.append(_fix_prose(line[pos:start], rules))
     parts.append(line[start:end])
     pos = end
-  parts.append(_fix_prose(line[pos:]))
+  parts.append(_fix_prose(line[pos:], rules))
   return "".join(parts)
 
 
-def _fix_prose(line: str) -> str:
+def _fix_prose(line: str, rules: Collection[str]) -> str:
   """Return a prose fragment with formatting violations auto-fixed.
 
   Args:
     line: Markdown text containing no code.
+    rules: The enabled rule ids; disabled rules leave the text alone.
 
   Returns:
     The fixed fragment.
   """
-  line = line.replace("（", "(").replace("）", ")")
-  out: list[str] = []
-  chars = list(line)
-  for i, ch in enumerate(chars):
-    if ch in PUNCT_MAP:
-      prev = chars[i - 1] if i > 0 else ""
-      nxt = chars[i + 1] if i + 1 < len(chars) else ""
-      if re.match(f"[{CJK}]", prev) or re.match(f"[{CJK}]", nxt):
-        out.append(PUNCT_MAP[ch])
-        continue
-    out.append(ch)
-  line = "".join(out)
-  line = ENGLISH_TOKEN_PAREN.sub("\x00", line)
-  line = re.sub(f"([{WORD}]|\\*\\*|`|\\))\\(", r"\1 (", line)
-  line = re.sub(f"\\)((?:\\*\\*)?[{WORD}]|`)", r") \1", line)
-  return line.replace("\x00", "(")
+  if "R2" in rules:
+    line = line.replace("（", "(").replace("）", ")")
+  if "R1" in rules:
+    out: list[str] = []
+    chars = list(line)
+    for i, ch in enumerate(chars):
+      if ch in PUNCT_MAP:
+        prev = chars[i - 1] if i > 0 else ""
+        nxt = chars[i + 1] if i + 1 < len(chars) else ""
+        if re.match(f"[{CJK}]", prev) or re.match(f"[{CJK}]", nxt):
+          out.append(PUNCT_MAP[ch])
+          continue
+      out.append(ch)
+    line = "".join(out)
+  if "R3" in rules:
+    line = ENGLISH_TOKEN_PAREN.sub("\x00", line)
+    line = re.sub(f"([{WORD}]|\\*\\*|`|\\))\\(", r"\1 (", line)
+    line = re.sub(f"\\)((?:\\*\\*)?[{WORD}]|`)", r") \1", line)
+    line = line.replace("\x00", "(")
+  return line
 
 
-def fix_text(text: str) -> str:
+def fix_text(text: str, rules: Collection[str] = ALL_RULES) -> str:
   """Return the text with formatting violations auto-fixed.
 
   Fenced code blocks and inline code spans are left untouched (code keeps
@@ -244,6 +263,7 @@ def fix_text(text: str) -> str:
 
   Args:
     text: Raw Markdown content.
+    rules: The enabled rule ids; defaults to every rule.
 
   Returns:
     The content with full-width parens replaced, CJK-adjacent punctuation
@@ -251,16 +271,17 @@ def fix_text(text: str) -> str:
   """
   lines = text.split("\n")
   return "\n".join(
-      line if spans is None else _fix_line(line, spans)
+      line if spans is None else _fix_line(line, spans, rules)
       for line, spans in zip(lines, _protected(lines), strict=True)
   )
 
 
-def check_text(text: str) -> list[Finding]:
+def check_text(text: str, rules: Collection[str] = ALL_RULES) -> list[Finding]:
   """Check Markdown text and return its violations in reading order.
 
   Args:
     text: Raw Markdown content.
+    rules: The enabled rule ids; defaults to every rule.
 
   Returns:
     One ``Finding`` per violation, ordered by line then by rule id.
@@ -274,6 +295,8 @@ def check_text(text: str) -> list[Finding]:
       continue
     token_parens = {t.start() for t in ENGLISH_TOKEN_PAREN.finditer(line)}
     for rule, name, pattern in CHECKS:
+      if rule not in rules:
+        continue
       for m in pattern.finditer(line):
         if any(m.start() < b and m.end() > a for a, b in code_spans):
           continue  # inside inline code
@@ -284,18 +307,21 @@ def check_text(text: str) -> list[Finding]:
   return findings
 
 
-def check_file(path: pathlib.Path) -> list[str]:
+def check_file(
+    path: pathlib.Path, rules: Collection[str] = ALL_RULES
+) -> list[str]:
   """Check one file and return its violation descriptions.
 
   Args:
     path: Markdown file to scan.
+    rules: The enabled rule ids; defaults to every rule.
 
   Returns:
     Human-readable ``file:line`` violation lines, empty when clean.
   """
   return [
       f"{path}:{f.line}: [{f.name}] …{f.snippet}…"
-      for f in check_text(path.read_text(encoding="utf-8"))
+      for f in check_text(path.read_text(encoding="utf-8"), rules)
   ]
 
 
@@ -315,13 +341,31 @@ def main() -> int:
   """Run the checker CLI.
 
   Returns:
-    Process exit code: 0 when clean, 1 when violations were found.
+    Process exit code: 0 when clean, 1 when violations were found, 2 when
+    the configuration is invalid.
   """
   ap = argparse.ArgumentParser()
   _ = ap.add_argument("files", nargs="*")
   _ = ap.add_argument("--all", action="store_true")
   _ = ap.add_argument("--fix", action="store_true")
+  _ = ap.add_argument(
+      "--disable",
+      action="append",
+      metavar="RULE",
+      help=(
+          "rule ids to disable, repeatable or comma-separated; overrides"
+          " the config file"
+      ),
+  )
   args = ap.parse_args()
+
+  try:
+    rules = ALL_RULES - config.resolve_disabled(
+        args.disable, pathlib.Path.cwd(), ALL_RULES
+    )
+  except config.ConfigError as e:
+    print(f"config error: {e}", file=sys.stderr)
+    return 2
 
   paths = (
       tracked_markdown() if args.all else [pathlib.Path(f) for f in args.files]
@@ -333,11 +377,11 @@ def main() -> int:
   for path in paths:
     if args.fix:
       src = path.read_text(encoding="utf-8")
-      dst = fix_text(src)
+      dst = fix_text(src, rules)
       if src != dst:
         _ = path.write_text(dst, encoding="utf-8")
         print(f"fixed: {path}")
-    all_problems.extend(check_file(path))
+    all_problems.extend(check_file(path, rules))
 
   if all_problems:
     print("\n".join(all_problems))
