@@ -28,7 +28,7 @@ CI (`.github/workflows/ci.yml`，required check 名为 `check`) 在 PR 与 main 
 
 ```sh
 uv run pre-commit run --all-files   # ruff + pyink + isort + basedpyright + pydoclint + uv-lock + 用本仓 linter lint 本仓的 Markdown
-uv run pytest -q                    # 测试套件 (中文排版规则的检测、修复与幂等)
+uv run pytest -q                    # 测试套件 (含对 `spec/fixtures/` 黄金集的比对)
 ```
 
 - 首次 clone 后先 `uv run pre-commit install`：钩子是本地状态，不随仓库分发，漏装则 commit 无任何拦截。

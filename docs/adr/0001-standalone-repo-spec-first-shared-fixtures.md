@@ -40,7 +40,7 @@
 
 - 本仓对外是一个独立的 pre-commit hook / CLI；wealth-management 等消费方各自开 PR 改配置指到这里。
 - 规则改动的顺序固定：先改 `spec/`，再改各实现；每加一条 fixture 就是所有实现的回归测试。
-- Python 版的现有测试要拆成「fixture 数据 + 薄 runner」，别的实现才能复用；这由迁入之后的独立 PR 做。
+- Python 版的现有测试要拆成「fixture 数据 + 薄 runner」，别的实现才能复用；已完成：规范在 `spec/rules.md`，黄金集在 `spec/fixtures/`，格式与判定见 `spec/README.md`，Python 的薄 runner 是 `tests/test_fixtures.py`。
 - 迁出后 wealth-management 删除 `python/lo-linting`，改为消费本仓。
 
 ## 状态
