@@ -17,7 +17,7 @@
 | `spec/rules.md` | **规则语义的正本**：R1–R11、全局豁免、修复顺序、配置模型 |
 | `spec/fixtures/` | 黄金集 (golden fixtures)；格式与 runner 判定见 `spec/README.md` |
 | `src/lo_md_lint/`、`tests/` | Python 参考实现与测试；`tests/test_fixtures.py` 是驱动黄金集的薄 runner |
-| `docs/tracker.md` | **backlog 的正本**，13 条，由 `mdlint-orchestra` 在合入后记账 |
+| `docs/tracker.md` | **backlog 的正本**：还没做的事，每条一句去向；由 `mdlint-orchestra` 在合入后记账 |
 | `docs/adr/` | 决策记录 0001–0005；0005 是定位与愿景 |
 | `docs/research/` | 两份调研，是规则与愿景的证据链 |
 | `docs/incidents/` | 事故记录 |
@@ -33,7 +33,7 @@ uv run pytest -q
 
 ## 二、当前版本与 tag 语义
 
-`pyproject.toml` 的版本是 **0.3.0**，最新 tag `v0.3.0` 就在 `main` 的当前 tip 上。四个 tag 的语义：
+`pyproject.toml` 的版本是 **0.3.0**，最新 tag 是 `v0.3.0`。消费方引用的永远是 tag 而不是 `main` —— 不改版本的改动 (比如文档) 合入后 `main` 会领先于最新 tag，那不代表有新版本可升。四个 tag 的语义：
 
 | tag | 内容 | 对消费方是否 no-op |
 | --- | --- | --- |
