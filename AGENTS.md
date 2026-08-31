@@ -42,4 +42,4 @@ LGTM 后从评论取 approved SHA，确认本地 tip 与之相同 (`git rev-pars
 
 - orchestra 简称 `mdlint`：常驻 `mdlint-orchestra` / `mdlint-shell`；任务对、research 与将来的仓级 skill (如 `mdlint-pr-review`) 一律用这个前缀。仓名 `lo-md-lint` 与包名 / 命令名不受此影响。
 - 本仓暂无 tracker；依赖锁文件是 `uv.lock` (与仓根 `pyproject.toml`)。
-- 审查标准暂用 `~/dev/wealth-management/.agents/skills/wm-pr-review/SKILL.md` (本仓尚无自有 pr-review skill，`.agents/skills/` 先占位)。
+- 审查标准 = 用户级 `pr-review` skill (`~/.agents/skills/pr-review`，machine-setup 分发)，触碰 Python 时叠加用户级 `python-review`；本仓暂无仓级 `mdlint-pr-review` / `mdlint-python-review`，需要加严时再建，仓级只写增量。不指向任何其它仓库的文件。
