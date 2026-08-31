@@ -1,0 +1,44 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.7
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+  - repo: https://github.com/google/pyink
+    rev: 25.12.0
+    hooks:
+      - id: pyink
+  - repo: https://github.com/PyCQA/isort
+    rev: 8.0.1
+    hooks:
+      - id: isort
+  - repo: https://github.com/DetachHead/basedpyright-pre-commit-mirror
+    rev: 1.39.0
+    hooks:
+      - id: basedpyright
+  # Docstring Args:/Returns:/Raises: must match the actual signature. Types are
+  # deliberately NOT checked in docstrings (basedpyright owns types; docstrings
+  # never repeat them).
+  - repo: https://github.com/jsh9/pydoclint
+    rev: 0.9.1
+    hooks:
+      - id: pydoclint
+        args:
+          - --style=google
+          - --arg-type-hints-in-docstring=False
+          - --check-return-types=False
+          - --check-yield-types=False
+          - --show-filenames-in-every-violation-message=True
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.11.7
+    hooks:
+      - id: uv-lock
+        files: pyproject\.toml$
+  # Dogfooding: this repo's own Markdown is checked by this repo's linter.
+  - repo: local
+    hooks:
+      - id: lo-md-lint
+        name: chinese markdown format (lo-md-lint)
+        language: system
+        entry: uv run lo-md-lint
+        files: \.md$

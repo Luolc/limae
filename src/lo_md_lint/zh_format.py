@@ -1,0 +1,309 @@
+"""Chinese Markdown formatting checker.
+
+The rules are the 语言规范 section of the global ~/.agents/AGENTS.md.
+
+Rules:
+  R1: No half-width , ; : ? ! adjacent to a CJK character.
+  R2: No full-width parentheses; use half-width ( ) instead.
+  R3: Half-width parens need an outside space when adjacent to a word
+    character, a bold marker, or an inline-code backtick. Markdown link
+    syntax ``](...)`` is exempt.
+
+Fenced code blocks and inline code spans (CommonMark backtick runs, which
+may cross line breaks inside a paragraph but not block boundaries) are
+exempt from every rule and never rewritten by ``--fix``.
+
+Usage (from the repo root)::
+
+  uv run lo-md-lint [--fix] FILE...
+  uv run lo-md-lint --all [--fix]
+
+Exit code 0 = clean, 1 = violations found (in check mode).
+"""
+
+import argparse
+import pathlib
+import re
+import subprocess
+import sys
+
+CJK = "一-鿿"
+WORD = f"A-Za-z0-9{CJK}"
+PUNCT_MAP = {",": "，", ";": "；", ":": "：", "?": "？", "!": "！"}
+
+# Terms with intrinsic parens, e.g. 401(k), 403(b), 501(c): the "(" is part of
+# the term, not prose punctuation — exempt from R3 spacing.
+TERM_PAREN = re.compile(r"\d\([a-z0-9]{1,3}\)")
+BACKTICK_RUN = re.compile("`+")
+
+# Conservative block boundaries for inline code spans: a span may continue
+# onto the next line only inside one paragraph / list item / blockquote.
+# ATX heading, table row and thematic break are single-line blocks; any
+# block opener also ends the previous line's inline container, except that
+# consecutive ``>`` lines form one blockquote paragraph.
+SINGLE_LINE_BLOCK = re.compile(
+    r"^ {0,3}(?:#{1,6}(?:\s|$)|\||(?:[-*_]\s*){3,}$)"
+)
+BLOCK_START = re.compile(
+    SINGLE_LINE_BLOCK.pattern[:-1] + r"|[-*+]\s|\d{1,9}[.)]\s|>)"
+)
+QUOTE_LINE = re.compile(r"^ {0,3}>")
+
+CHECKS = [
+    (
+        "R1 halfwidth punct next to CJK",
+        re.compile(f"[{CJK}][,;:?!]|[,;:?!][{CJK}]"),
+    ),
+    ("R2 fullwidth paren", re.compile("[（）]")),
+    ("R3 no space before (", re.compile(f"(?:[{WORD}]|\\*\\*|`)\\(")),
+    ("R3 no space after )", re.compile(f"\\)(?:[{WORD}]|\\*\\*[{WORD}])")),
+]
+
+
+def _is_fence(line: str) -> bool:
+  """Return whether the line opens or closes a fenced code block.
+
+  Args:
+    line: One Markdown source line.
+
+  Returns:
+    True when the stripped line starts with a code fence marker.
+  """
+  return line.lstrip().startswith(("```", "~~~"))
+
+
+def _code_spans(text: str) -> list[tuple[int, int]]:
+  """Return the interiors of the inline code spans in one paragraph.
+
+  A backtick run opens a span closed by the next run of the same length;
+  a run with no such closer is literal text (CommonMark code spans).
+
+  Args:
+    text: Paragraph text; line breaks inside it may fall within a span.
+
+  Returns:
+    ``(start, end)`` index pairs of the text between the delimiters.
+  """
+  runs = list(BACKTICK_RUN.finditer(text))
+  spans: list[tuple[int, int]] = []
+  i = 0
+  while i < len(runs):
+    width = len(runs[i].group(0))
+    closer = next(
+        (j for j in range(i + 1, len(runs)) if len(runs[j].group(0)) == width),
+        None,
+    )
+    if closer is None:
+      i += 1
+      continue
+    spans.append((runs[i].end(), runs[closer].start()))
+    i = closer + 1
+  return spans
+
+
+def _protected(lines: list[str]) -> list[list[tuple[int, int]] | None]:
+  """Return, per line, the character ranges the rules must not touch.
+
+  Fence lines and fenced content are protected whole (``None``). Other
+  lines carry the inline code interiors on that line, computed per block
+  (consecutive lines up to a blank line or a block opener; see
+  ``BLOCK_START``) so a span may cross a line break inside a paragraph but
+  never a block boundary.
+
+  Args:
+    lines: The Markdown source split into lines.
+
+  Returns:
+    One entry per line: ``None`` for verbatim lines, else ``(start, end)``
+    pairs relative to that line.
+  """
+  result: list[list[tuple[int, int]] | None] = [None] * len(lines)
+  paragraph: list[int] = []
+
+  def flush() -> None:
+    spans = _code_spans("\n".join(lines[i] for i in paragraph))
+    offset = 0
+    for i in paragraph:
+      end = offset + len(lines[i])
+      result[i] = [
+          (max(a, offset) - offset, min(b, end) - offset)
+          for a, b in spans
+          if a < end and b > offset
+      ]
+      offset = end + 1
+    paragraph.clear()
+
+  in_fence = False
+  for i, line in enumerate(lines):
+    if _is_fence(line):
+      flush()
+      in_fence = not in_fence
+    elif in_fence:
+      continue
+    elif line.strip():
+      continues_quote = bool(
+          paragraph
+          and QUOTE_LINE.match(line)
+          and QUOTE_LINE.match(lines[paragraph[-1]])
+      )
+      if BLOCK_START.match(line) and not continues_quote:
+        flush()
+      paragraph.append(i)
+      if SINGLE_LINE_BLOCK.match(line):
+        flush()
+    else:
+      flush()
+      result[i] = []
+  flush()
+  return result
+
+
+def _fix_line(line: str, spans: list[tuple[int, int]]) -> str:
+  """Return one line with violations auto-fixed outside inline code.
+
+  Args:
+    line: One Markdown line outside fenced code blocks.
+    spans: Inline code interiors on this line, from ``_protected``.
+
+  Returns:
+    The fixed line; inline code is copied through verbatim.
+  """
+  parts: list[str] = []
+  pos = 0
+  for start, end in spans:
+    parts.append(_fix_prose(line[pos:start]))
+    parts.append(line[start:end])
+    pos = end
+  parts.append(_fix_prose(line[pos:]))
+  return "".join(parts)
+
+
+def _fix_prose(line: str) -> str:
+  """Return a prose fragment with formatting violations auto-fixed.
+
+  Args:
+    line: Markdown text containing no code.
+
+  Returns:
+    The fixed fragment.
+  """
+  line = line.replace("（", "(").replace("）", ")")
+  out: list[str] = []
+  chars = list(line)
+  for i, ch in enumerate(chars):
+    if ch in PUNCT_MAP:
+      prev = chars[i - 1] if i > 0 else ""
+      nxt = chars[i + 1] if i + 1 < len(chars) else ""
+      if re.match(f"[{CJK}]", prev) or re.match(f"[{CJK}]", nxt):
+        out.append(PUNCT_MAP[ch])
+        continue
+    out.append(ch)
+  line = "".join(out)
+  line = TERM_PAREN.sub(lambda m: m.group(0).replace("(", "\x00", 1), line)
+  line = re.sub(f"([{WORD}]|\\*\\*|`)\\(", r"\1 (", line)
+  line = re.sub(f"\\)([{WORD}])", r") \1", line)
+  return line.replace("\x00", "(")
+
+
+def fix_text(text: str) -> str:
+  """Return the text with formatting violations auto-fixed.
+
+  Fenced code blocks and inline code spans are left untouched (code keeps
+  half-width punctuation).
+
+  Args:
+    text: Raw Markdown content.
+
+  Returns:
+    The content with full-width parens replaced, CJK-adjacent punctuation
+    converted to full-width, and paren spacing inserted.
+  """
+  lines = text.split("\n")
+  return "\n".join(
+      line if spans is None else _fix_line(line, spans)
+      for line, spans in zip(lines, _protected(lines), strict=True)
+  )
+
+
+def check_file(path: pathlib.Path) -> list[str]:
+  """Check one file and return its violation descriptions.
+
+  Args:
+    path: Markdown file to scan.
+
+  Returns:
+    Human-readable ``file:line`` violation lines, empty when clean.
+  """
+  problems: list[str] = []
+  lines = path.read_text(encoding="utf-8").splitlines()
+  for lineno, (line, code_spans) in enumerate(
+      zip(lines, _protected(lines), strict=True), 1
+  ):
+    if code_spans is None:
+      continue
+    term_spans = [t.span() for t in TERM_PAREN.finditer(line)]
+    for name, pattern in CHECKS:
+      for m in pattern.finditer(line):
+        if any(m.start() < b and m.end() > a for a, b in code_spans):
+          continue  # inside inline code
+        if name.startswith("R3 no space before") and m.group(0).endswith("("):
+          if m.start() > 0 and line[m.start() - 1] == "]":
+            continue  # markdown link ](url)
+          paren = m.end() - 1
+          if any(a <= paren < b for a, b in term_spans):
+            continue  # term-intrinsic paren, e.g. 401(k)
+        snippet = line[max(0, m.start() - 12) : m.end() + 12]
+        problems.append(f"{path}:{lineno}: [{name}] …{snippet}…")
+  return problems
+
+
+def tracked_markdown() -> list[pathlib.Path]:
+  """Return the git-tracked Markdown files.
+
+  Returns:
+    Paths relative to the repository root.
+  """
+  out = subprocess.run(
+      ["git", "ls-files", "*.md"], capture_output=True, text=True, check=True
+  )
+  return [pathlib.Path(p) for p in out.stdout.splitlines()]
+
+
+def main() -> int:
+  """Run the checker CLI.
+
+  Returns:
+    Process exit code: 0 when clean, 1 when violations were found.
+  """
+  ap = argparse.ArgumentParser()
+  _ = ap.add_argument("files", nargs="*")
+  _ = ap.add_argument("--all", action="store_true")
+  _ = ap.add_argument("--fix", action="store_true")
+  args = ap.parse_args()
+
+  paths = (
+      tracked_markdown() if args.all else [pathlib.Path(f) for f in args.files]
+  )
+  if not paths:
+    ap.error("no files given (use --all or list files)")
+
+  all_problems: list[str] = []
+  for path in paths:
+    if args.fix:
+      src = path.read_text(encoding="utf-8")
+      dst = fix_text(src)
+      if src != dst:
+        _ = path.write_text(dst, encoding="utf-8")
+        print(f"fixed: {path}")
+    all_problems.extend(check_file(path))
+
+  if all_problems:
+    print("\n".join(all_problems))
+    print(f"\n{len(all_problems)} violation(s). --fix auto-fixes most.")
+    return 1
+  print(f"OK: {len(paths)} file(s) clean")
+  return 0
+
+
+if __name__ == "__main__":
+  sys.exit(main())

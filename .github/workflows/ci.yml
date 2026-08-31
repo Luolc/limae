@@ -1,0 +1,39 @@
+# Fast PR gate: format/lint/type-check + tests — the same quality bar that
+# runs locally (see AGENTS.md). Keeps main always-green; `check` is the
+# required check for branch protection.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# One in-flight run per ref; newer pushes cancel older ones.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv (with cache)
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Sync deps (creates .venv, installs dev group)
+        run: uv sync
+
+      - name: Tests
+        run: uv run pytest -q
+
+      # ruff + pyink + isort + basedpyright + pydoclint + uv-lock + lo-md-lint.
+      # basedpyright type-checks against .venv, so this runs after `uv sync`.
+      - name: Format / lint / type-check
+        run: uv run pre-commit run --all-files --show-diff-on-failure
