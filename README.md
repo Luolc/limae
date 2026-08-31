@@ -13,7 +13,28 @@ Markdown linter，从中文技术写作的排版规则起步。
 
 ## 现状
 
-Python 参考实现已就位，规则集只有中文排版一套 (R1 CJK 旁的半角标点、R2 全角括号、R3 半角括号外侧空格)，尚未 flag 化；`spec/` 还没建起来。安装与被别的仓消费的方式留给分发 PR。
+Python 参考实现已就位，规则集只有中文排版一套 (R1 CJK 旁的半角标点、R2 全角括号、R3 半角括号外侧空格)，尚未 flag 化；`spec/` 还没建起来。
+
+## 使用
+
+作为 pre-commit 远端 hook (推荐)，`rev` 固定到一个 tag ([tag 列表](https://github.com/Luolc/lo-md-lint/tags))：
+
+```yaml
+repos:
+  - repo: https://github.com/Luolc/lo-md-lint
+    rev: <tag>
+    hooks:
+      - id: lo-md-lint
+```
+
+默认只检查、不修复；要自动修复就自己加 `args: ["--fix"]`。
+
+不接 pre-commit、手动或在 CI 里一次性跑：
+
+```sh
+uvx --from git+https://github.com/Luolc/lo-md-lint@<tag> lo-md-lint --all
+uvx --from git+https://github.com/Luolc/lo-md-lint@<tag> lo-md-lint <file>...
+```
 
 ## 本地开发
 

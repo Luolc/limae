@@ -1,0 +1,6 @@
+- id: lo-md-lint
+  name: Lint Markdown with lo-md-lint
+  description: Check Markdown files against lo-md-lint's Chinese typography rules.
+  entry: lo-md-lint
+  language: python
+  files: \.md$
