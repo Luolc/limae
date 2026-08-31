@@ -1,13 +1,14 @@
-"""Rule-flag configuration: the ``disable`` key and where it comes from.
+"""Rule-flag configuration: the ``disable`` / ``enable`` keys and sources.
 
 ``spec/rules.md`` section 「配置」 is the normative description; this module
-is its Python implementation. Rules are all enabled by default and config
-can only turn rules off, so no configuration at all is exactly today's
-behaviour.
+is its Python implementation. The enabled set is
+``(default | enable) - disable``, so no configuration at all is exactly
+the default behaviour.
 
 Sources, highest priority first:
 
-1. The CLI ``--disable`` flag (repeatable, comma-separated).
+1. The CLI ``--disable`` / ``--enable`` flags (repeatable,
+   comma-separated); either one present replaces the config file wholesale.
 2. The nearest config file, walking up from the current working directory
    to the repository root: ``lo-md-lint.toml`` (keys at top level), else a
    ``pyproject.toml`` carrying a ``[tool.lo-md-lint]`` table.
@@ -23,6 +24,7 @@ CONFIG_FILENAME = "lo-md-lint.toml"
 PYPROJECT_FILENAME = "pyproject.toml"
 TOOL_TABLE = "lo-md-lint"
 DISABLE_KEY = "disable"
+ENABLE_KEY = "enable"
 
 
 class ConfigError(Exception):
@@ -101,44 +103,107 @@ def _checked(
   return frozenset(ids)
 
 
-def resolve_disabled(
+def _split_cli(values: Sequence[str] | None) -> list[str]:
+  """Split repeatable, comma-separated CLI flag values into rule ids.
+
+  Args:
+    values: Raw flag values, or None when the flag was not given.
+
+  Returns:
+    The individual rule ids, whitespace stripped.
+  """
+  return [
+      rule.strip()
+      for value in values or []
+      for rule in value.split(",")
+      if rule.strip()
+  ]
+
+
+def _key_list(
+    table: dict[str, object], key: str, path: pathlib.Path
+) -> list[str]:
+  """Read one rule-id list key from a config table.
+
+  Args:
+    table: The lo-md-lint config table.
+    key: ``disable`` or ``enable``.
+    path: The config file, for the error message.
+
+  Returns:
+    The listed rule ids, empty when the key is absent.
+
+  Raises:
+    ConfigError: The value is not a list of strings.
+  """
+  raw = table.get(key, [])
+  if not isinstance(raw, list) or not all(isinstance(r, str) for r in raw):
+    raise ConfigError(f"{path}: `{key}` must be a list of rule ids")
+  return [r for r in raw if isinstance(r, str)]
+
+
+def _exclusive(
+    disabled: frozenset[str], enabled: frozenset[str], source: str
+) -> None:
+  """Reject rule ids listed as both disabled and enabled.
+
+  Args:
+    disabled: Ids from ``disable``.
+    enabled: Ids from ``enable``.
+    source: Where the ids came from, for the error message.
+
+  Raises:
+    ConfigError: At least one id appears in both lists.
+  """
+  both = disabled & enabled
+  if both:
+    raise ConfigError(
+        f"{source}: rule id(s) {', '.join(sorted(both))} in both"
+        f" `{DISABLE_KEY}` and `{ENABLE_KEY}`"
+    )
+
+
+def resolve_rules(
     cli_disable: Sequence[str] | None,
+    cli_enable: Sequence[str] | None,
     start: pathlib.Path,
     known: Collection[str],
+    default: frozenset[str],
 ) -> frozenset[str]:
-  """Return the rule ids to turn off for this run.
+  """Return the enabled rule ids for this run.
 
-  ``--disable`` on the command line replaces the config file wholesale;
-  there is no per-key merging.
+  The enabled set is ``(default | enable) - disable``. Either CLI flag on
+  the command line replaces the config file wholesale; there is no
+  per-key merging.
 
   Args:
     cli_disable: Raw ``--disable`` values, each one or more comma-separated
-      rule ids; empty or None to fall back to the config file.
+      rule ids; empty or None means the flag was not given.
+    cli_enable: Raw ``--enable`` values, same syntax.
     start: Directory the config-file search starts from, normally the cwd.
     known: Every rule id this implementation knows.
+    default: The rule ids enabled when nothing is configured.
 
   Returns:
-    The disabled rule ids, empty when everything stays enabled.
+    The enabled rule ids.
 
   Raises:
-    ConfigError: Bad toml, a malformed ``disable`` value, or an unknown id.
+    ConfigError: Bad toml, a malformed key, an unknown id, or an id in
+      both ``disable`` and ``enable``.
   """
-  if cli_disable:
-    ids = [
-        rule.strip()
-        for value in cli_disable
-        for rule in value.split(",")
-        if rule.strip()
-    ]
-    return _checked(ids, known, "--disable")
+  if cli_disable or cli_enable:
+    disabled = _checked(_split_cli(cli_disable), known, "--disable")
+    enabled = _checked(_split_cli(cli_enable), known, "--enable")
+    _exclusive(disabled, enabled, "command line")
+    return (default | enabled) - disabled
 
   found = find_config(start)
   if found is None:
-    return frozenset()
+    return default
   path, table = found
   if not isinstance(table, dict):
     raise ConfigError(f"{path}: [tool.{TOOL_TABLE}] must be a table")
-  raw = table.get(DISABLE_KEY, [])
-  if not isinstance(raw, list) or not all(isinstance(r, str) for r in raw):
-    raise ConfigError(f"{path}: `{DISABLE_KEY}` must be a list of rule ids")
-  return _checked(raw, known, str(path))
+  disabled = _checked(_key_list(table, DISABLE_KEY, path), known, str(path))
+  enabled = _checked(_key_list(table, ENABLE_KEY, path), known, str(path))
+  _exclusive(disabled, enabled, str(path))
+  return (default | enabled) - disabled

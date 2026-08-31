@@ -67,6 +67,42 @@ def test_pyproject_table_turns_a_rule_off(
   assert run(["t.md"], monkeypatch) == 0
 
 
+def test_cli_enable_turns_a_default_off_rule_on(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+  p = tmp_path / "t.md"
+  p.write_text("中文[链接](https://example.com/) 后文", encoding="utf-8")
+  assert run([str(p)], monkeypatch) == 0  # R9 is off by default
+  assert run(["--enable", "R9", str(p)], monkeypatch) == 1
+  assert run(["--enable", "R9", "--fix", str(p)], monkeypatch) == 0
+  expected = "中文 [链接](https://example.com/) 后文"
+  assert p.read_text(encoding="utf-8") == expected
+
+
+def test_config_enable_key_turns_a_default_off_rule_on(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+  (tmp_path / "lo-md-lint.toml").write_text(
+      'enable = ["R9"]\n', encoding="utf-8"
+  )
+  (tmp_path / "t.md").write_text(
+      "中文[链接](https://example.com/) 后文", encoding="utf-8"
+  )
+  monkeypatch.chdir(tmp_path)
+  assert run(["t.md"], monkeypatch) == 1
+
+
+def test_same_id_disabled_and_enabled_is_a_config_error(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  p = tmp_path / "t.md"
+  p.write_text("你好,世界", encoding="utf-8")
+  assert run(["--disable", "R9", "--enable", "R9", str(p)], monkeypatch) == 2
+  assert "in both" in capsys.readouterr().err
+
+
 def test_unknown_rule_id_is_a_config_error(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -74,7 +110,7 @@ def test_unknown_rule_id_is_a_config_error(
 ):
   p = tmp_path / "t.md"
   p.write_text("你好,世界", encoding="utf-8")
-  assert run(["--disable", "R9", str(p)], monkeypatch) == 2
+  assert run(["--disable", "R99", str(p)], monkeypatch) == 2
   assert "unknown rule id" in capsys.readouterr().err
 
 

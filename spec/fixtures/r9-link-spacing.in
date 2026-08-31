@@ -1,0 +1,7 @@
+前文[链接](https://example.com/a)后文
+
+已有空格 [链接](https://example.com/b) 不变
+
+普通[方括号]不是链接
+
+图片 ![替代文字](https://example.com/c.png)照旧

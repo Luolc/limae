@@ -3,7 +3,7 @@ import tomllib
 
 import pytest
 
-from lo_md_lint.zh_format import ALL_RULES, check_text, fix_text
+from lo_md_lint.zh_format import check_text, DEFAULT_RULES, fix_text
 
 FIXTURES = pathlib.Path(__file__).resolve().parents[1] / "spec" / "fixtures"
 CASES = sorted(p.stem for p in FIXTURES.glob("*.in"))
@@ -16,9 +16,10 @@ def read(case: str, suffix: str) -> str:
 def rules(case: str) -> frozenset[str]:
   conf = FIXTURES / (case + ".conf")
   if not conf.exists():
-    return ALL_RULES
-  return ALL_RULES - frozenset(
-      tomllib.loads(read(case, ".conf")).get("disable", [])
+    return DEFAULT_RULES
+  table = tomllib.loads(read(case, ".conf"))
+  return (DEFAULT_RULES | frozenset(table.get("enable", []))) - frozenset(
+      table.get("disable", [])
   )
 
 
