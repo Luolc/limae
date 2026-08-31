@@ -164,7 +164,7 @@ https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing (2026-08-31 仍标�
 - em dash 过密、粗体过密、emoji 列表、碎片标题
 - AI 词汇：`delve`、`tapestry`、`leverage`、`realm`、`robust`、`seamless`、`underscore`、`foster`、`harness`、`unpack`
 
-维基自己的 caveat (事实，不是 pedantry)：单点 tell **不是检测器**；人类识别 LLM 文本接近随机；em dash / delve 都有人类先例。Kobak 等对 PubMed 的测量：`delves` 在 2024 摘要里相对 2022 暴涨约 28 倍 (社区常引)。Washington Post 2025-04-09 专门写过「em dash = ChatGPT hyphen」是神话。The Economist 2026 年一组比较甚至发现：多数模型的 em dash 已不再高于人类，**缺标点**反而更像模型——例外是 Claude 仍偏爱 em dash。
+维基自己的 caveat (事实，不是 pedantry)：单点 tell **不是检测器**；人类识别 LLM 文本接近随机；em dash / delve 都有人类先例。Kobak 等对 PubMed 的测量：`delves` 在 2024 摘要里相对 2022 暴涨约 28 倍 (社区常引)。Washington Post 2025-04-09 专门写过「em dash = ChatGPT hyphen」是神话。The Economist 2026 年一组比较甚至发现：多数模型的 em dash 已不再高于人类，**缺标点**反而更像模型 —— 例外是 Claude 仍偏爱 em dash。
 
 **B. Claudish 专用 (Deng spec + dictionary + claudeisms)**：见 §1.4。与通用 slop 的差别是：少 `delve/tapestry`，多 `load-bearing/gated/spine/shape/landed/drift/verdict`。这是 coding-agent 文档的指纹，不是 ChatGPT 博客的指纹。
 
@@ -190,7 +190,7 @@ https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing (2026-08-31 仍标�
 
 ### 2.2 中文 (事实，按出处)
 
-**A. 中文维基《AI生成文的特征》** (知识源，持续更新)
+**A. 中文维基 `《AI生成文的特征》`** (知识源，持续更新)
 
 https://zh.wikipedia.org/zh-cn/Wikipedia:AI生成文的特征 (快捷 WP:AISIGNS)
 
@@ -200,7 +200,7 @@ https://zh.wikipedia.org/zh-cn/Wikipedia:AI生成文的特征 (快捷 WP:AISIGNS
 
 结构：否定平行「这不是……而是……」(引朱宥勋)；排比三段式；粗体轰炸；列表式行文 (marker + 粗体 + 引号)；emoji；破折号过密；表格误用；编号切段；聊天残留 (「希望这对你有帮助」「当然可以」)；知识截止免责；Markdown 当 wikitext 粘进来；`turn0search0`、`utm_source=chatgpt.com`。
 
-朱宥勋视频 (清单常引)：https://www.youtube.com/watch?v=9uuX6cb81C8 「对『AI腔』厌烦了吗？分析AI生成文字的经典句型」。论点：该句型本身是合法的「定义 + 区分」，问题是滥用造成审美疲劳。
+朱宥勋视频 (清单常引)：https://www.youtube.com/watch?v=9uuX6cb81C8 `「对『AI腔』厌烦了吗？分析AI生成文字的经典句型」`。论点：该句型本身是合法的「定义 + 区分」，问题是滥用造成审美疲劳。
 
 **B. 中文 skill / 词表 (可抄组织方式)**
 
@@ -219,7 +219,7 @@ https://zh.wikipedia.org/zh-cn/Wikipedia:AI生成文的特征 (快捷 WP:AISIGNS
 **C. 中文特有、英文清单没有的层**
 
 1. **翻译腔 (translationese)**：知识份子 2026 文把 AI 中文的「像翻译」解释为默认语言是英语分析性写作 (Baker 的 translationese)。例：`He gave me a smile` → 「他给了我一个微笑」，人话是「他朝我笑了笑」。https://www.zhishifenzi.com/depth/depth/10608.html
-2. **直译术语**：掘金 2026-07-07「那些看不懂的 AI 味词语」——`gate` → 「门控」(人话：把关)；`cross-cutting` → 「横切」；`first-class citizen` → 「一等公民」；`contract` → 「契约」(人话：约定 / 接口约定)。https://juejin.cn/post/7659706081527169075
+2. **直译术语**：掘金 2026-07-07「那些看不懂的 AI 味词语」 —— `gate` → 「门控」(人话：把关)；`cross-cutting` → 「横切」；`first-class citizen` → 「一等公民」；`contract` → 「契约」(人话：约定 / 接口约定)。https://juejin.cn/post/7659706081527169075
 3. **公文 / 互联网黑话**：赋能、抓手、闭环、沉淀、对齐、拉通、赛道、心智、高质量发展、未来可期、拭目以待。
 4. **接住体**：爱范儿 2026-05-08 记录 ChatGPT 中文口癖「稳稳地接住你」，推测是 `I got you` 的戏剧化直译。DeepSeek / 豆包有各自口癖 (豆包「最直接、最真相、最不绕弯…」排比)。https://www.ifanr.com/1665148
 5. **工程师腔**：说人话 skill 把「抽象底层接口，实现高内聚低耦合」列为技术文档 AI 味。https://www.xmsumi.com/detail/3011
@@ -231,7 +231,7 @@ https://zh.wikipedia.org/zh-cn/Wikipedia:AI生成文的特征 (快捷 WP:AISIGNS
 最近似、有出处的同类：
 
 - 「稳稳接住」：翻译腔把松弛英语口语戏剧化 (爱范儿；中文维基词表含「稳 / 接住」)
-- 进行时直译：英语 present continuous / `in flight` / `it's flying` (进展顺利) 译成「正在飞」——这是翻译腔机制上说得通的假说，**不是已发表清单**
+- 进行时直译：英语 present continuous / `in flight` / `it's flying` (进展顺利) 译成「正在飞」 —— 这是翻译腔机制上说得通的假说，**不是已发表清单**
 - 直译术语族：门控 / 横切 / 一等公民 (掘金)
 
 ### 2.4 这一节的判断
@@ -272,7 +272,7 @@ https://zh.wikipedia.org/zh-cn/Wikipedia:AI生成文的特征 (快捷 WP:AISIGNS
 
 - **BitsAI-Fix** (ByteDance, arXiv:2508.03487)：tree-sitter 扩上下文 → LLM 出 search-and-replace patch → **再跑一遍 lint 验收** → 规则奖励惩罚多余改动。冷启动用可验证 lint 失败当 RL 数据。https://arxiv.org/html/2508.03487v1
 - **ast-grep rewriters**：YAML 规则匹配 + `fix` 字段，多 rewriter 一次应用。确定性，不是 LLM。https://ast-grep.github.io/guide/rewrite/rewriter
-- **Rhys Sullivan / Peter Steinberger 2025-11**：公开论点是「能写成 agent 规则的，应改写成 lint 规则」——给模型清晰报错、真强制、省 context。https://x.com/RhysSullivan (quoted by @steipete/status/1993377986452898220)
+- **Rhys Sullivan / Peter Steinberger 2025-11**：公开论点是「能写成 agent 规则的，应改写成 lint 规则」 —— 给模型清晰报错、真强制、省 context。https://x.com/RhysSullivan (quoted by @steipete/status/1993377986452898220)
 - 散文侧最接近：`llm-slop-detector` 的字符 quick fix；`cclint why --ai`；Vale 标完由人 / agent 改。**没有看到成熟的「Markdown AI 腔 warning → LLM fix → 用同一套黄金集回归」开源产品。**
 
 ### 3.4 这一节的判断
@@ -315,7 +315,7 @@ https://zh.wikipedia.org/zh-cn/Wikipedia:AI生成文的特征 (快捷 WP:AISIGNS
 
 ### 4.2 HL 实际在说什么 (事实)
 
-博客定义 (中译综述与原文一致，36氪 2026-05-15 等)：
+博客定义 (中译综述与原文一致，`36氪` 2026-05-15 等)：
 
 - HL 的主体是**程序代码**，不是网络权重
 - 闭环仍是 state → action → feedback → update；update 由 coding agent **直接改代码** (策略、检测器、测试、配置、记忆)
@@ -352,7 +352,7 @@ https://zh.wikipedia.org/zh-cn/Wikipedia:AI生成文的特征 (快捷 WP:AISIGNS
 1. 规则写在 `spec/`，fixture 是 golden trace
 2. 从改写 pair 只**提议**规则 (AIR 风格 if-then)
 3. 人审之后才进规范；agent 可以养实验分支，但不能绕过黄金集
-4. 新规则必须跑全量 fixture，回归失败就删规则或改规则——对应 HL 的「旧能力固化成测试」
+4. 新规则必须跑全量 fixture，回归失败就删规则或改规则 —— 对应 HL 的「旧能力固化成测试」
 
 不要把 HL 理解成「让模型自己从 pair 长出不可读的检测器」。翁家翌强调的价值是策略**可读、可回归、可删**。
 
@@ -391,7 +391,7 @@ https://github.com/huacnlee/autocorrect
 
 ### 5.3 这一节的判断
 
-术语选词 **可以** 做 experimental、而且是少数 **可 fix** 的 AI 腔规则——但必须：
+术语选词 **可以** 做 experimental、而且是少数 **可 fix** 的 AI 腔规则 —— 但必须：
 
 - 词表分区 (crypto / 系统 / 通用)，避免 `secret` 全局替换
 - 只收录高置信、单义或可被周围英文锚点消歧的项 (文中同时出现 `secret` 与 key/token/API 才报「密钥」)
@@ -431,7 +431,7 @@ Claudish 哲学里「语义压缩、降抽象」几乎不能变 findings：同�
 
 ### 7.2 建议下一步做实验
 
-1. **手工蒸馏 10–20 条 experimental warning**：从本仓文档 + 合成 fixture 里捡「不是 X 而是 Y」、`综上所述`、无端 `load-bearing`、两三条高置信术语。全部 non-fixable (术语除外)，默认 disable，用新规则 id，不破坏 R1–R3 逐行模型——若做不到逐行，先单开 `experimental/` 规范，不要假装是 R4。
+1. **手工蒸馏 10–20 条 experimental warning**：从本仓文档 + 合成 fixture 里捡「不是 X 而是 Y」、`综上所述`、无端 `load-bearing`、两三条高置信术语。全部 non-fixable (术语除外)，默认 disable，用新规则 id，不破坏 R1–R3 逐行模型 —— 若做不到逐行，先单开 `experimental/` 规范，不要假装是 R4。
 2. **收集改写 pair (合成数据)**：用 Deng 的 english-to-claudish 生成「腔」样本，人改或 to-english 当目标，跑一轮 AIR 式规则提议，人审后再决定进不进 spec。测试 fixture 只用 ACME / Foo 这类合成串。
 3. **对照 Vale**：同一批中文 Markdown 跑 `vale-ai-tells` (英文规则会误报) 和中文词表 regex，量假阳性。这能回答「密度阈值要不要」。
 4. **LLM 润色原型 (仓外 scratch)**：复用 Deng claudish-to-english spec 当 prompt，只对 `docs/` 出旁路文件，验证会不会改坏术语、代码围栏、R1–R3。不接 CI。
