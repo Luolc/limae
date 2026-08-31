@@ -18,4 +18,4 @@ ADR-0001 定下规范先于实现与多实现共用 fixture；本批只做搬家
 
 ## 状态
 
-proposed (2026-08-31)。
+proposed (2026-08-31)。flag 化与 `[tool.lo-md-lint]` 配置表已由 ADR-0003 落地 (2026-08-31)；Rust 主实现部分仍 proposed。
