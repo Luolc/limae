@@ -14,7 +14,8 @@ Rules:
   R4: A space at every boundary between a CJK character and an ASCII
     letter, both directions.
   R5: A space at every boundary between a CJK character and an ASCII
-    digit, both directions (no exemption for 年月日).
+    digit, both directions; 年月日 are exempt only where the
+    ``skip_zh_units`` config key lists them.
   R6: A space between a number and a listed ASCII unit (``16GB``); ``%``
     and ``°`` stay tight, letter-prefixed tokens (hex) are exempt.
   R7: A space between a CJK character and the delimiter run of an inline
@@ -35,7 +36,8 @@ verbatim Japanese quotation).
 
 Every rule except R9 is enabled by default; ``--disable`` / ``--enable``
 and the toml config found by :mod:`lo_md_lint.config` turn rules off and
-on. A disabled rule is neither reported nor fixed.
+on. A disabled rule is neither reported nor fixed. The config's
+``skip_zh_units`` key additionally tunes R5.
 
 Usage (from the repo root)::
 
@@ -101,6 +103,10 @@ CJK_LATIN_BOUNDARY = re.compile(
     f"(?<=[{CJK}])(?=[A-Za-z])|(?<=[A-Za-z])(?=[{CJK}])"
 )
 CJK_DIGIT_BOUNDARY = re.compile(f"(?<=[{CJK}])(?=[0-9])|(?<=[0-9])(?=[{CJK}])")
+# R5's `skip_zh_units` exemption: a digit run, `.` / `,` separated segments
+# included (1.5, 1,000), directly followed by a listed measure word exempts
+# both of its own boundaries.
+NUMBER_RUN = re.compile("[0-9]+(?:[.,][0-9]+)*")
 # R6: the digit run must not continue an English token (0x1F, hex strings)
 # and the unit must end the token (2FA, 16GBx are not number-plus-unit).
 NUMBER_UNIT = re.compile(
@@ -436,7 +442,10 @@ def _exempt(m: re.Match[str], spans: list[tuple[int, int]]) -> bool:
 
 
 def _fix_line(
-    line: str, spans: list[tuple[int, int]], rules: Collection[str]
+    line: str,
+    spans: list[tuple[int, int]],
+    rules: Collection[str],
+    units: str,
 ) -> str:
   """Return one line with violations auto-fixed outside exempt ranges.
 
@@ -444,6 +453,7 @@ def _fix_line(
     line: One Markdown line outside fenced code blocks.
     spans: Inline code interiors on this line, from ``_protected``.
     rules: The enabled rule ids; disabled rules leave the text alone.
+    units: ``skip_zh_units``, the measure words exempting R5 boundaries.
 
   Returns:
     The fixed line; inline code, URL and kana quote ranges are copied
@@ -457,16 +467,16 @@ def _fix_line(
   closes = False
   for start, end, is_code in ranges:
     opens = is_code and start > pos and line[start - 1] == "`"
-    parts.append(_fix_frag(line[pos:start], rules, closes, opens))
+    parts.append(_fix_frag(line[pos:start], rules, units, closes, opens))
     parts.append(line[start:end])
     pos = end
     closes = is_code and end < len(line) and line[end] == "`"
-  parts.append(_fix_frag(line[pos:], rules, closes, False))
+  parts.append(_fix_frag(line[pos:], rules, units, closes, False))
   return "".join(parts)
 
 
 def _fix_frag(
-    frag: str, rules: Collection[str], closes: bool, opens: bool
+    frag: str, rules: Collection[str], units: str, closes: bool, opens: bool
 ) -> str:
   """Return one prose fragment fixed, including its span delimiters (R7).
 
@@ -478,13 +488,14 @@ def _fix_frag(
   Args:
     frag: Prose between two code interiors (delimiter runs included).
     rules: The enabled rule ids; disabled rules leave the text alone.
+    units: ``skip_zh_units``, the measure words exempting R5 boundaries.
     closes: Whether the fragment starts with a closing delimiter run.
     opens: Whether the fragment ends with an opening delimiter run.
 
   Returns:
     The fixed fragment.
   """
-  frag = _fix_prose(frag, rules)
+  frag = _fix_prose(frag, rules, units)
   if "R7" in rules:
     if closes:
       frag = R7_CLOSE_EDGE.sub(r"\1 ", frag)
@@ -581,6 +592,43 @@ def _fix_r3(line: str) -> str:
   return line.replace("\x00", "(")
 
 
+def _unit_skips(text: str, units: str) -> set[int]:
+  """Return the R5 boundary offsets exempted by ``skip_zh_units``.
+
+  Args:
+    text: One line or prose fragment; offsets are relative to it.
+    units: The listed measure-word characters, empty for no exemption.
+
+  Returns:
+    Offsets of the exempt zero-width boundaries: both ends of every digit
+    run that a listed measure word directly follows.
+  """
+  if not units:
+    return set()
+  return {
+      pos
+      for m in NUMBER_RUN.finditer(text)
+      if m.end() < len(text) and text[m.end()] in units
+      for pos in (m.start(), m.end())
+  }
+
+
+def _fix_r5(line: str, units: str) -> str:
+  """Return the fragment with CJK-to-digit spaces inserted.
+
+  Args:
+    line: Markdown text containing no code.
+    units: ``skip_zh_units``, the measure words whose digit runs are exempt.
+
+  Returns:
+    The fixed fragment.
+  """
+  skips = _unit_skips(line, units)
+  return CJK_DIGIT_BOUNDARY.sub(
+      lambda m: "" if m.start() in skips else " ", line
+  )
+
+
 def _fix_r8(line: str) -> str:
   """Return the fragment with dash-side spaces inserted.
 
@@ -597,38 +645,44 @@ def _fix_r8(line: str) -> str:
 # The per-fragment fix pipeline in the fix order of spec/rules.md 「修复顺序」:
 # width conversions first, the space-inserting rules in id order, and the
 # space-removing R11 last. R7 is missing because only _fix_line knows
-# which backticks delimit a span.
-_PROSE_FIXES: list[tuple[str, typing.Callable[[str], str]]] = [
-    ("R10", lambda line: line.translate(HALFWIDTH_DIGITS)),
-    ("R2", lambda line: line.replace("（", "(").replace("）", ")")),
-    ("R1", _fix_r1),
-    ("R3", _fix_r3),
-    ("R4", lambda line: CJK_LATIN_BOUNDARY.sub(" ", line)),
-    ("R5", lambda line: CJK_DIGIT_BOUNDARY.sub(" ", line)),
-    ("R6", lambda line: NUMBER_UNIT.sub(r"\1 \2", line)),
-    ("R8", _fix_r8),
-    ("R9", lambda line: LINK_AFTER_CJK_FIX.sub(" ", line)),
-    ("R11", _fix_r11),
+# which backticks delimit a span. Every step takes `skip_zh_units`, but
+# only R5 has a use for it.
+_PROSE_FIXES: list[tuple[str, typing.Callable[[str, str], str]]] = [
+    ("R10", lambda line, _units: line.translate(HALFWIDTH_DIGITS)),
+    ("R2", lambda line, _units: line.replace("（", "(").replace("）", ")")),
+    ("R1", lambda line, _units: _fix_r1(line)),
+    ("R3", lambda line, _units: _fix_r3(line)),
+    ("R4", lambda line, _units: CJK_LATIN_BOUNDARY.sub(" ", line)),
+    ("R5", _fix_r5),
+    ("R6", lambda line, _units: NUMBER_UNIT.sub(r"\1 \2", line)),
+    ("R8", lambda line, _units: _fix_r8(line)),
+    ("R9", lambda line, _units: LINK_AFTER_CJK_FIX.sub(" ", line)),
+    ("R11", lambda line, _units: _fix_r11(line)),
 ]
 
 
-def _fix_prose(line: str, rules: Collection[str]) -> str:
+def _fix_prose(line: str, rules: Collection[str], units: str) -> str:
   """Return a prose fragment with formatting violations auto-fixed.
 
   Args:
     line: Markdown text containing no code.
     rules: The enabled rule ids; disabled rules leave the text alone.
+    units: ``skip_zh_units``, the measure words exempting R5 boundaries.
 
   Returns:
     The fixed fragment.
   """
   for rule, fix in _PROSE_FIXES:
     if rule in rules:
-      line = fix(line)
+      line = fix(line, units)
   return line
 
 
-def fix_text(text: str, rules: Collection[str] = DEFAULT_RULES) -> str:
+def fix_text(
+    text: str,
+    rules: Collection[str] = DEFAULT_RULES,
+    skip_zh_units: str = "",
+) -> str:
   """Return the text with formatting violations auto-fixed.
 
   Fenced code blocks and inline code spans are left untouched (code keeps
@@ -637,6 +691,8 @@ def fix_text(text: str, rules: Collection[str] = DEFAULT_RULES) -> str:
   Args:
     text: Raw Markdown content.
     rules: The enabled rule ids; defaults to the default-enabled set.
+    skip_zh_units: Measure words whose digit runs are exempt from R5;
+      defaults to no exemption.
 
   Returns:
     The content with full-width parens replaced, CJK-adjacent punctuation
@@ -648,7 +704,7 @@ def fix_text(text: str, rules: Collection[str] = DEFAULT_RULES) -> str:
   while True:
     lines = text.split("\n")
     fixed = "\n".join(
-        line if spans is None else _fix_line(line, spans, rules)
+        line if spans is None else _fix_line(line, spans, rules, skip_zh_units)
         for line, spans in zip(lines, _protected(lines), strict=True)
     )
     if fixed == text:
@@ -657,13 +713,17 @@ def fix_text(text: str, rules: Collection[str] = DEFAULT_RULES) -> str:
 
 
 def check_text(
-    text: str, rules: Collection[str] = DEFAULT_RULES
+    text: str,
+    rules: Collection[str] = DEFAULT_RULES,
+    skip_zh_units: str = "",
 ) -> list[Finding]:
   """Check Markdown text and return its violations in reading order.
 
   Args:
     text: Raw Markdown content.
     rules: The enabled rule ids; defaults to the default-enabled set.
+    skip_zh_units: Measure words whose digit runs are exempt from R5;
+      defaults to no exemption.
 
   Returns:
     One ``Finding`` per violation, ordered by line then by rule id.
@@ -676,6 +736,7 @@ def check_text(
     if code_spans is None:
       continue
     exempt_spans = code_spans + _prose_spans(line, code_spans)
+    unit_skips = _unit_skips(line, skip_zh_units)
     token_parens = {t.start() for t in ENGLISH_TOKEN_PAREN.finditer(line)}
     abbrev_dots = _abbrev_dots(line)
     line_findings: list[tuple[int, int, Finding]] = []
@@ -683,8 +744,10 @@ def check_text(
       if rule not in rules:
         continue
       for m in pattern.finditer(line):
-        if _exempt(m, exempt_spans):
-          continue  # involves inline code or a URL range
+        if _exempt(m, exempt_spans) or (
+            rule == "R5" and m.start() in unit_skips
+        ):
+          continue  # inline code / URL range, or a skip_zh_units boundary
         if m.group(0).endswith("(") and m.end() - 1 in token_parens:
           continue  # paren inside an English token, e.g. word(s), 401(k)
         if rule == "R7" and not _is_delimiter_run(m, pattern, code_spans):
@@ -722,20 +785,26 @@ def _is_delimiter_run(
 
 
 def check_file(
-    path: pathlib.Path, rules: Collection[str] = DEFAULT_RULES
+    path: pathlib.Path,
+    rules: Collection[str] = DEFAULT_RULES,
+    skip_zh_units: str = "",
 ) -> list[str]:
   """Check one file and return its violation descriptions.
 
   Args:
     path: Markdown file to scan.
     rules: The enabled rule ids; defaults to the default-enabled set.
+    skip_zh_units: Measure words whose digit runs are exempt from R5;
+      defaults to no exemption.
 
   Returns:
     Human-readable ``file:line`` violation lines, empty when clean.
   """
   return [
       f"{path}:{f.line}: [{f.name}] …{f.snippet}…"
-      for f in check_text(path.read_text(encoding="utf-8"), rules)
+      for f in check_text(
+          path.read_text(encoding="utf-8"), rules, skip_zh_units
+      )
   ]
 
 
@@ -783,7 +852,7 @@ def main() -> int:
   args = ap.parse_args()
 
   try:
-    rules = config.resolve_rules(
+    settings = config.resolve(
         args.disable, args.enable, pathlib.Path.cwd(), ALL_RULES, DEFAULT_RULES
     )
   except config.ConfigError as e:
@@ -800,11 +869,13 @@ def main() -> int:
   for path in paths:
     if args.fix:
       src = path.read_text(encoding="utf-8")
-      dst = fix_text(src, rules)
+      dst = fix_text(src, settings.rules, settings.skip_zh_units)
       if src != dst:
         _ = path.write_text(dst, encoding="utf-8")
         print(f"fixed: {path}")
-    all_problems.extend(check_file(path, rules))
+    all_problems.extend(
+        check_file(path, settings.rules, settings.skip_zh_units)
+    )
 
   if all_problems:
     print("\n".join(all_problems))

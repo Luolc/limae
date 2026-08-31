@@ -166,3 +166,56 @@ def test_non_list_disable_is_a_config_error(
   monkeypatch.chdir(tmp_path)
   assert run(["t.md"], monkeypatch) == 2
   assert "must be a list of rule ids" in capsys.readouterr().err
+
+
+def test_config_skip_zh_units_exempts_a_date(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+  (tmp_path / "lo-md-lint.toml").write_text(
+      'skip_zh_units = "年月日"\n', encoding="utf-8"
+  )
+  p = tmp_path / "t.md"
+  p.write_text("他2011年5月15日入职\n", encoding="utf-8")
+  monkeypatch.chdir(tmp_path)
+  assert run(["--fix", "t.md"], monkeypatch) == 0
+  assert p.read_text(encoding="utf-8") == "他2011年5月15日入职\n"
+
+
+def test_cli_flag_drops_the_config_files_skip_zh_units(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+  (tmp_path / "lo-md-lint.toml").write_text(
+      'skip_zh_units = "年"\n', encoding="utf-8"
+  )
+  (tmp_path / "t.md").write_text("共2011年\n", encoding="utf-8")
+  monkeypatch.chdir(tmp_path)
+  # A CLI flag replaces the config file wholesale, this key included.
+  assert run(["--disable", "R1", "t.md"], monkeypatch) == 1
+
+
+def test_non_string_skip_zh_units_is_a_config_error(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  (tmp_path / "lo-md-lint.toml").write_text(
+      'skip_zh_units = ["年"]\n', encoding="utf-8"
+  )
+  (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
+  monkeypatch.chdir(tmp_path)
+  assert run(["t.md"], monkeypatch) == 2
+  assert "must be a string of CJK characters" in capsys.readouterr().err
+
+
+def test_non_cjk_skip_zh_units_is_a_config_error(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  (tmp_path / "lo-md-lint.toml").write_text(
+      'skip_zh_units = "年 月"\n', encoding="utf-8"
+  )
+  (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
+  monkeypatch.chdir(tmp_path)
+  assert run(["t.md"], monkeypatch) == 2
+  assert "must be a string of CJK characters" in capsys.readouterr().err

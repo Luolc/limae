@@ -1,9 +1,10 @@
-"""Rule-flag configuration: the ``disable`` / ``enable`` keys and sources.
+"""Configuration: the ``disable`` / ``enable`` / ``skip_zh_units`` keys.
 
 ``spec/rules.md`` section 「配置」 is the normative description; this module
 is its Python implementation. The enabled set is
-``(default | enable) - disable``, so no configuration at all is exactly
-the default behaviour.
+``(default | enable) - disable`` and ``skip_zh_units`` defaults to the
+empty string, so no configuration at all is exactly the default
+behaviour.
 
 Sources, highest priority first:
 
@@ -18,17 +19,37 @@ The two file carriers are isomorphic: same keys, different nesting.
 
 from collections.abc import Collection, Sequence
 import pathlib
+import re
 import tomllib
+import typing
 
 CONFIG_FILENAME = "lo-md-lint.toml"
 PYPROJECT_FILENAME = "pyproject.toml"
 TOOL_TABLE = "lo-md-lint"
 DISABLE_KEY = "disable"
 ENABLE_KEY = "enable"
+SKIP_ZH_UNITS_KEY = "skip_zh_units"
+# The spec's CJK class (spec/rules.md 「CJK 与 word 字符」), spelled out here
+# rather than imported so that validation does not depend on the checker,
+# which imports this module.
+ALL_CJK = re.compile("^[一-鿿]*$")
 
 
 class ConfigError(Exception):
   """Configuration the spec does not allow (bad toml, unknown rule id)."""
+
+
+class Settings(typing.NamedTuple):
+  """The resolved configuration of one run.
+
+  Attributes:
+    rules: The enabled rule ids.
+    skip_zh_units: Chinese measure-word characters exempted from R5, one
+      character per unit; empty means no exemption.
+  """
+
+  rules: frozenset[str]
+  skip_zh_units: str
 
 
 def _load_toml(path: pathlib.Path) -> dict[str, object]:
@@ -142,6 +163,28 @@ def _key_list(
   return [r for r in raw if isinstance(r, str)]
 
 
+def _key_units(table: dict[str, object], path: pathlib.Path) -> str:
+  """Read the ``skip_zh_units`` key from a config table.
+
+  Args:
+    table: The lo-md-lint config table.
+    path: The config file, for the error message.
+
+  Returns:
+    The measure-word characters, empty when the key is absent.
+
+  Raises:
+    ConfigError: The value is not a string of CJK characters.
+  """
+  raw = table.get(SKIP_ZH_UNITS_KEY, "")
+  if not isinstance(raw, str) or not ALL_CJK.match(raw):
+    raise ConfigError(
+        f"{path}: `{SKIP_ZH_UNITS_KEY}` must be a string of CJK characters,"
+        " one per unit"
+    )
+  return raw
+
+
 def _exclusive(
     disabled: frozenset[str], enabled: frozenset[str], source: str
 ) -> None:
@@ -163,18 +206,18 @@ def _exclusive(
     )
 
 
-def resolve_rules(
+def resolve(
     cli_disable: Sequence[str] | None,
     cli_enable: Sequence[str] | None,
     start: pathlib.Path,
     known: Collection[str],
     default: frozenset[str],
-) -> frozenset[str]:
-  """Return the enabled rule ids for this run.
+) -> Settings:
+  """Return the settings of this run.
 
   The enabled set is ``(default | enable) - disable``. Either CLI flag on
   the command line replaces the config file wholesale; there is no
-  per-key merging.
+  per-key merging, so ``skip_zh_units`` falls back to its default too.
 
   Args:
     cli_disable: Raw ``--disable`` values, each one or more comma-separated
@@ -185,7 +228,7 @@ def resolve_rules(
     default: The rule ids enabled when nothing is configured.
 
   Returns:
-    The enabled rule ids.
+    The enabled rule ids and the R5 measure-word exemptions.
 
   Raises:
     ConfigError: Bad toml, a malformed key, an unknown id, or an id in
@@ -195,15 +238,15 @@ def resolve_rules(
     disabled = _checked(_split_cli(cli_disable), known, "--disable")
     enabled = _checked(_split_cli(cli_enable), known, "--enable")
     _exclusive(disabled, enabled, "command line")
-    return (default | enabled) - disabled
+    return Settings((default | enabled) - disabled, "")
 
   found = find_config(start)
   if found is None:
-    return default
+    return Settings(default, "")
   path, table = found
   if not isinstance(table, dict):
     raise ConfigError(f"{path}: [tool.{TOOL_TABLE}] must be a table")
   disabled = _checked(_key_list(table, DISABLE_KEY, path), known, str(path))
   enabled = _checked(_key_list(table, ENABLE_KEY, path), known, str(path))
   _exclusive(disabled, enabled, str(path))
-  return (default | enabled) - disabled
+  return Settings((default | enabled) - disabled, _key_units(table, path))

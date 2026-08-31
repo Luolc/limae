@@ -16,12 +16,12 @@
 | `<case>.in` | 输入的 Markdown 文本 |
 | `<case>.fixed` | 期望的 `--fix` 输出；「应保持不变」的 case 与 `.in` 逐字相同 |
 | `<case>.findings` | 期望的违规列表，每行 `<行号> <规则 id>`，如 `3 R1`；空文件表示无违规 |
-| `<case>.conf` | 可选：这个 case 的配置，内容就是独立配置文件 `lo-md-lint.toml` 的内容 —— `disable` 与 `enable` 两个键 (见 `rules.md`「配置」)；没有这个文件 = 默认集 |
+| `<case>.conf` | 可选：这个 case 的配置，内容就是独立配置文件 `lo-md-lint.toml` 的内容 —— 配置键见 `rules.md`「配置」；没有这个文件 = 默认配置 |
 
 约定：
 
 - **三个文件都必须存在**，都是 UTF-8、都以一个换行结束。空的 `.findings` 就是零字节文件 —— 不允许省略，省略与「无违规」无法区分。
-- **`.conf` 只在这个 case 要改配置时才有**：它是唯一可选的文件，其余三个永远齐全。带 `.conf` 的 case 用它算出的启用规则集跑 (启用集 = (默认集 ∪ `enable`) − `disable`)，不带的用默认集 —— 「配置」本身也是规范的一部分，所以配置维度的期望同样手写进 `.fixed` 与 `.findings`。
+- **`.conf` 只在这个 case 要改配置时才有**：它是唯一可选的文件，其余三个永远齐全。带 `.conf` 的 case 用它算出的配置跑 (启用集 = (默认集 ∪ `enable`) − `disable`，其余键各按 `rules.md` 的默认值)，不带的用默认配置 —— 「配置」本身也是规范的一部分，所以配置维度的期望同样手写进 `.fixed` 与 `.findings`。
 - **`.findings` 的顺序是实现报告违规的顺序**：先按行号升序，同一行内按 `rules.md` 的规则顺序 (R1、R2、……)，同一条规则内按出现位置。同一行的同一条规则可以出现多次，如 `（测试）` 的两处 R2。
 - **`.in` 与 `.fixed` 逐行对齐**：修复不增删行 (见 `rules.md`「处理单位」)，两个文件的行数永远相同。
 - **只用合成假数据**：`ACME`、`$1,000`、`Foo` 这类；不得出现任何真实的个人或业务信息 (`AGENTS.md`「隐私边界」)。
@@ -34,7 +34,7 @@
 
 ## runner 的判定
 
-每个实现写一个薄 runner，遍历 `fixtures/*.in`，按 `<case>.conf` 算出这个 case 的启用规则集 (没有该文件就是默认集)，用它跑 `check` 与 `fix`，对每个 case 断言三条：
+每个实现写一个薄 runner，遍历 `fixtures/*.in`，按 `<case>.conf` 算出这个 case 的配置 (没有该文件就是默认配置)，用它跑 `check` 与 `fix`，对每个 case 断言三条：
 
 1. **修复正确**：`fix(<case>.in) == <case>.fixed`。
 2. **修复幂等 (idempotent)**：`fix(<case>.fixed) == <case>.fixed`。
