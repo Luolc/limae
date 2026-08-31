@@ -377,7 +377,9 @@ def _prose_spans(
   """Return the non-code exempt ranges on one line (exemptions 3 and 4).
 
   Kana quote interiors first, so a verbatim quotation wins over a URL
-  range inside it; then minimal-form inline link destinations and raw
+  range inside it; an interior is claimed around the inline code spans
+  nested in it, which stay code, so the quotation as a whole is still
+  exempt end to end. Then minimal-form inline link destinations and raw
   ``http(s)://`` URLs with their trailing punctuation stripped.
   Candidates overlapping an inline code interior, or a range already
   claimed, are dropped so the ranges stay disjoint.
@@ -398,7 +400,12 @@ def _prose_spans(
       taken.append((a, b))
 
   for a, b in _quote_spans(line):
-    claim(a, b)
+    start = a
+    for c, d in sorted(code_spans):
+      if start <= c and d <= b:  # code nested in the quotation
+        claim(start, c)  # up to and including the opening delimiter run
+        start = d  # resume at the closing run
+    claim(start, b)
   for m in URL_DESTINATION.finditer(line):
     claim(*m.span(1))
   for m in RAW_URL.finditer(line):
