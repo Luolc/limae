@@ -11,7 +11,12 @@ backlog 的正本，由 `mdlint-orchestra` 在合入后记账 (全局守则「�
 - **`quote_style` majority 档**：仿 pyink majority-quotes，按文档内多数引号风格统一，作 corner / curly 之外的第三档。
 - **规则 fixable / non-fixable 分级**：non-fixable 规则当 warning 报告，学 ruff 的 fixable 标注。
 
-## 愿景 (用户 2026-08-31 指示，只记条目)
+## 实现与分发
+
+- **Rust 主实现 (ADR-0002)**：主实现转 Rust，对着同一套 `spec/` 与黄金集跑，Python 版留作参考实现；crate 布局与分发形态 (多语言 SDK、LSP、编辑器与 CI 集成，对标 AutoCorrect) 届时另起 ADR。
+- **行内 disable 注释与忽略文件**：抄 AutoCorrect / zhlint 的逃生口 —— 注释里关掉某条规则、以及与 `.gitignore` 同语法的忽略文件，让单点误报不必动配置 (`zh-typography-guidelines-survey.md` §4.1、§5.5)。
+
+## 愿景 (正本 `docs/adr/0005-agent-native-positioning.md`，这里只记条目)
 
 - **LLM 语义润色**：agent 调用的语义层润色特性，与确定性 lint 互补。
 - **heuristic learning**：从润色前后 pair 蒸馏 experimental 规则 (术语选词、破折号过量等)。
