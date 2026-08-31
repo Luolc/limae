@@ -23,6 +23,9 @@ Rules:
     next to a non-space, non-dash character.
   R9 (default off): A space between a CJK character and the opening ``[``
     of an inline link.
+  R10: No full-width digits; use half-width 0-9 instead.
+  R11: No spaces next to full-width punctuation (，。、；：？！); spaces
+    next to a dash stay (R8 owns those).
 
 Fenced code blocks and inline code spans (CommonMark backtick runs, which
 may cross line breaks inside a paragraph but not block boundaries) are
@@ -53,6 +56,24 @@ from lo_md_lint import config
 CJK = "一-鿿"
 WORD = f"A-Za-z0-9{CJK}"
 PUNCT_MAP = {",": "，", ";": "；", ":": "：", "?": "？", "!": "！"}
+
+# R1's full-stop extension: a `.` next to CJK becomes `。` unless it is
+# glued to an ASCII letter/digit (extensions, domains, versions), part of
+# a `...` run, or one of these abbreviations' dots (spec's normative
+# list). An occurrence must not be preceded by an ASCII letter.
+ABBREVIATIONS = (
+    "e.g.", "i.e.", "etc.", "cf.", "vs.",
+    "Mr.", "Mrs.", "Ms.", "Dr.", "Prof.", "St.",
+)  # fmt: skip
+ABBREV = re.compile(
+    "(?<![A-Za-z])(?:"
+    + "|".join(
+        re.escape(a) for a in sorted(ABBREVIATIONS, key=len, reverse=True)
+    )
+    + ")"
+)
+R1_DOT = re.compile(f"(?<=[{CJK}])\\.(?![A-Za-z0-9.])|(?<!\\.)\\.(?=[{CJK}])")
+CJK_CHAR = re.compile(f"[{CJK}]")
 
 # A "(" inside an English token, e.g. credential(s), word(s), 401(k), f(x):
 # the paren belongs to the token, not to prose — exempt from R3 spacing on the
@@ -115,6 +136,20 @@ RAW_URL = re.compile(
 )
 TRAILING_PUNCT = ")]}>,.;:!?"
 
+# R10: full-width digits.
+FULLWIDTH_DIGIT = re.compile("[０-９]")
+HALFWIDTH_DIGITS = str.maketrans("０１２３４５６７８９", "0123456789")
+# R11: a space run with a full-width punctuation mark on one end and a
+# visible character on the other (a dash is R8's territory, a `|` is
+# table-cell padding). Both end characters are consumed so
+# that contact with an exempt range suppresses the finding, consistent
+# with the fragment-local fix.
+FW_PUNCT = "，。、；：？！"
+SPACE_BEFORE_FW = re.compile(f"[^\\s—⸺|] +[{FW_PUNCT}]")
+SPACE_AFTER_FW = re.compile(f"[{FW_PUNCT}] +[^\\s—⸺|]")
+SPACE_BEFORE_FW_FIX = re.compile(f"(?<=[^\\s—⸺|]) +(?=[{FW_PUNCT}])")
+SPACE_AFTER_FW_FIX = re.compile(f"(?<=[{FW_PUNCT}]) +(?=[^\\s—⸺|])")
+
 # Conservative block boundaries for inline code spans: a span may continue
 # onto the next line only inside one paragraph / list item / blockquote.
 # ATX heading, table row and thematic break are single-line blocks; any
@@ -135,6 +170,7 @@ CHECKS = [
         "R1 halfwidth punct next to CJK",
         re.compile(f"[{CJK}][,;:?!]|[,;:?!][{CJK}]"),
     ),
+    ("R1", "R1 halfwidth period next to CJK", R1_DOT),
     ("R2", "R2 fullwidth paren", re.compile("[（）]")),
     (
         "R3",
@@ -154,6 +190,9 @@ CHECKS = [
     ("R8", "R8 no space before dash", DASH_LEFT),
     ("R8", "R8 no space after dash", DASH_RIGHT),
     ("R9", "R9 no space between CJK and link", LINK_AFTER_CJK),
+    ("R10", "R10 fullwidth digit", FULLWIDTH_DIGIT),
+    ("R11", "R11 space before fullwidth punct", SPACE_BEFORE_FW),
+    ("R11", "R11 space after fullwidth punct", SPACE_AFTER_FW),
 ]
 
 # The rule ids of spec/rules.md. Configuration starts from DEFAULT_RULES
@@ -162,6 +201,13 @@ CHECKS = [
 ALL_RULES: frozenset[str] = frozenset(rule for rule, _, _ in CHECKS)
 DEFAULT_OFF: frozenset[str] = frozenset({"R9"})
 DEFAULT_RULES: frozenset[str] = ALL_RULES - DEFAULT_OFF
+
+# Report order within one line: the rule-id order of spec/rules.md, then
+# position (spec/README.md's findings order).
+RULE_ORDER: dict[str, int] = {}
+for _rule, _, _ in CHECKS:
+  if _rule not in RULE_ORDER:
+    RULE_ORDER[_rule] = len(RULE_ORDER)
 
 
 class Finding(typing.NamedTuple):
@@ -392,6 +438,35 @@ def _fix_frag(
   return frag
 
 
+def _abbrev_dots(line: str) -> set[int]:
+  """Return the positions of dots inside abbreviation occurrences.
+
+  Args:
+    line: Markdown text.
+
+  Returns:
+    0-based indexes of every ``.`` within a listed abbreviation.
+  """
+  return {
+      m.start() + i
+      for m in ABBREV.finditer(line)
+      for i, ch in enumerate(m.group(0))
+      if ch == "."
+  }
+
+
+def _cjk(ch: str) -> bool:
+  """Return whether a character is CJK.
+
+  Args:
+    ch: A single character, or the empty string for a missing neighbour.
+
+  Returns:
+    True for a character in the CJK range.
+  """
+  return bool(CJK_CHAR.match(ch)) if ch else False
+
+
 def _fix_r1(line: str) -> str:
   """Return the fragment with CJK-adjacent half-width punct full-width.
 
@@ -401,17 +476,39 @@ def _fix_r1(line: str) -> str:
   Returns:
     The fixed fragment.
   """
+  abbrev = _abbrev_dots(line)
   out: list[str] = []
   chars = list(line)
   for i, ch in enumerate(chars):
-    if ch in PUNCT_MAP:
-      prev = chars[i - 1] if i > 0 else ""
-      nxt = chars[i + 1] if i + 1 < len(chars) else ""
-      if re.match(f"[{CJK}]", prev) or re.match(f"[{CJK}]", nxt):
-        out.append(PUNCT_MAP[ch])
-        continue
+    prev = chars[i - 1] if i > 0 else ""
+    nxt = chars[i + 1] if i + 1 < len(chars) else ""
+    if ch in PUNCT_MAP and (_cjk(prev) or _cjk(nxt)):
+      out.append(PUNCT_MAP[ch])
+      continue
+    if (
+        ch == "."
+        and (_cjk(prev) or _cjk(nxt))
+        and prev != "."
+        and not (nxt and re.match(r"[A-Za-z0-9.]", nxt))
+        and i not in abbrev
+    ):
+      out.append("。")
+      continue
     out.append(ch)
   return "".join(out)
+
+
+def _fix_r11(line: str) -> str:
+  """Return the fragment with spaces next to full-width punct removed.
+
+  Args:
+    line: Markdown text containing no code.
+
+  Returns:
+    The fixed fragment.
+  """
+  line = SPACE_AFTER_FW_FIX.sub("", line)
+  return SPACE_BEFORE_FW_FIX.sub("", line)
 
 
 def _fix_r3(line: str) -> str:
@@ -443,9 +540,11 @@ def _fix_r8(line: str) -> str:
 
 
 # The per-fragment fix pipeline in the fix order of spec/rules.md 「修复顺序」:
-# width conversions first, then the spacing rules in id order. R7 is
-# missing because only _fix_line knows which backticks delimit a span.
+# width conversions first, the space-inserting rules in id order, and the
+# space-removing R11 last. R7 is missing because only _fix_line knows
+# which backticks delimit a span.
 _PROSE_FIXES: list[tuple[str, typing.Callable[[str], str]]] = [
+    ("R10", lambda line: line.translate(HALFWIDTH_DIGITS)),
     ("R2", lambda line: line.replace("（", "(").replace("）", ")")),
     ("R1", _fix_r1),
     ("R3", _fix_r3),
@@ -454,6 +553,7 @@ _PROSE_FIXES: list[tuple[str, typing.Callable[[str], str]]] = [
     ("R6", lambda line: NUMBER_UNIT.sub(r"\1 \2", line)),
     ("R8", _fix_r8),
     ("R9", lambda line: LINK_AFTER_CJK_FIX.sub(" ", line)),
+    ("R11", _fix_r11),
 ]
 
 
@@ -522,6 +622,8 @@ def check_text(
       continue
     exempt_spans = code_spans + _url_spans(line, code_spans)
     token_parens = {t.start() for t in ENGLISH_TOKEN_PAREN.finditer(line)}
+    abbrev_dots = _abbrev_dots(line)
+    line_findings: list[tuple[int, int, Finding]] = []
     for rule, name, pattern in CHECKS:
       if rule not in rules:
         continue
@@ -532,8 +634,14 @@ def check_text(
           continue  # paren inside an English token, e.g. word(s), 401(k)
         if rule == "R7" and not _is_delimiter_run(m, pattern, code_spans):
           continue  # unpaired backticks are plain text, not a span
+        if pattern is R1_DOT and m.start() in abbrev_dots:
+          continue  # a dot of e.g. / Dr. / ... stays half-width
         snippet = line[max(0, m.start() - 12) : m.end() + 12]
-        findings.append(Finding(lineno, rule, name, snippet))
+        line_findings.append(
+            (RULE_ORDER[rule], m.start(), Finding(lineno, rule, name, snippet))
+        )
+    line_findings.sort(key=lambda t: (t[0], t[1]))
+    findings.extend(f for _, _, f in line_findings)
   return findings
 
 

@@ -13,7 +13,7 @@ Markdown linter，从中文技术写作的排版规则起步。
 
 ## 现状
 
-Python 参考实现已就位，规则集是中文排版一套：标点转换 (R1 CJK 旁的半角标点、R2 全角括号)、空格 (R3 半角括号外侧、R4 CJK–拉丁字母、R5 CJK–数字、R6 数字–单位、R7 行内代码定界符、R8 破折号两侧、R9 链接前，默认关)。每条都可单独开关 (ADR-0003 / ADR-0004)。`spec/` 已建起来：规则规范在 `spec/rules.md`，黄金 fixture 在 `spec/fixtures/`，格式与 runner 的判定见 `spec/README.md`；Python 的薄 runner 是 `tests/test_fixtures.py`。
+Python 参考实现已就位，规则集是中文排版一套：宽度转换 (R1 CJK 旁的半角标点含句号、R2 全角括号、R10 全角数字)、空格 (R3 半角括号外侧、R4 CJK–拉丁字母、R5 CJK–数字、R6 数字–单位、R7 行内代码定界符、R8 破折号两侧、R11 全角标点旁去空格、R9 链接前，默认关)。每条都可单独开关 (ADR-0003 / ADR-0004)。`spec/` 已建起来：规则规范在 `spec/rules.md`，黄金 fixture 在 `spec/fixtures/`，格式与 runner 的判定见 `spec/README.md`；Python 的薄 runner 是 `tests/test_fixtures.py`。
 
 ## 使用
 
