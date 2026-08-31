@@ -32,7 +32,7 @@ uv run pytest -q                    # 测试套件 (含对 `spec/fixtures/` 黄�
 ```
 
 - 首次 clone 后先 `uv run pre-commit install`：钩子是本地状态，不随仓库分发，漏装则 commit 无任何拦截。
-- 本仓用自己的 linter 检查自己的 Markdown (dogfooding)。规则一改、文档标红时，先判断是文档错还是规则错，按全局守则「linter 是工具，不是法律」处理：规则错就改规则 (以及 `spec/` 建起来之后的规范)，不改文档迁就。
+- 本仓用自己的 linter 检查自己的 Markdown (dogfooding)。规则一改、文档标红时，先判断是文档错还是规则错，按全局守则「linter 是工具，不是法律」处理：规则错就改规则与 `spec/` 下的规范和黄金集，不改文档迁就。
 
 ## 合并
 
