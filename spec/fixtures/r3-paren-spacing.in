@@ -15,3 +15,19 @@ Foo(核心)
 [链接](https://example.com) 后文
 
 某 401(k) pre-tax 与 403(b) 计划。
+
+逐字引用 Configure the credential(s) to use 这句英文文案
+
+函数 f(x) 与 word(s) 都不报
+
+嵌套 f(g(x)) 不报
+
+选 option(s)后接中文
+
+[链接](https://example.com)(注)
+
+(x)**粗体**
+
+**加粗 (x)**
+
+(x)`code`
