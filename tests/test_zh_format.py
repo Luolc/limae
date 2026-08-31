@@ -76,3 +76,57 @@ def test_unknown_rule_id_is_a_config_error(
   p.write_text("你好,世界", encoding="utf-8")
   assert run(["--disable", "R9", str(p)], monkeypatch) == 2
   assert "unknown rule id" in capsys.readouterr().err
+
+
+def test_cli_disable_replaces_the_config_file(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+  (tmp_path / "lo-md-lint.toml").write_text(
+      'disable = ["R1"]\n', encoding="utf-8"
+  )
+  (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
+  monkeypatch.chdir(tmp_path)
+  # Wholesale override, not a merge: R3 goes off and R1 comes back on.
+  assert run(["--disable", "R3", "t.md"], monkeypatch) == 1
+
+
+def test_standalone_file_wins_over_pyproject_table(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+  (tmp_path / "lo-md-lint.toml").write_text(
+      'disable = ["R1"]\n', encoding="utf-8"
+  )
+  (tmp_path / "pyproject.toml").write_text(
+      "[tool.lo-md-lint]\ndisable = []\n", encoding="utf-8"
+  )
+  (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
+  monkeypatch.chdir(tmp_path)
+  assert run(["t.md"], monkeypatch) == 0
+
+
+def test_invalid_toml_is_a_config_error(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  # Not a config source of ours, but an unparseable candidate still stops
+  # the search rather than silently walking past a possible config.
+  (tmp_path / "pyproject.toml").write_text("[project\n", encoding="utf-8")
+  (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
+  monkeypatch.chdir(tmp_path)
+  assert run(["t.md"], monkeypatch) == 2
+  assert "pyproject.toml" in capsys.readouterr().err
+
+
+def test_non_list_disable_is_a_config_error(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  (tmp_path / "lo-md-lint.toml").write_text(
+      'disable = "R1"\n', encoding="utf-8"
+  )
+  (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
+  monkeypatch.chdir(tmp_path)
+  assert run(["t.md"], monkeypatch) == 2
+  assert "must be a list of rule ids" in capsys.readouterr().err
