@@ -458,4 +458,3 @@ textlint-rule-zh-half-and-full-width-bracket 的三档：一律半角 (当前 R2
 - [darkyzhou/textlint-rule-preset-zh-technical-writing](https://github.com/darkyzhou/textlint-rule-preset-zh-technical-writing)
 - [textlint Collection of textlint rule · Chinese](https://github.com/textlint/textlint/wiki/Collection-of-textlint-rule)
 - 本仓 `spec/rules.md`、`docs/adr/0002-rule-flags-and-rust.md`
-</content>
