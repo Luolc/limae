@@ -1,4 +1,4 @@
-"""Configuration: the config keys and the ``.lo-md-lint-ignore`` file.
+"""Configuration: the config keys and the ``.limae-ignore`` file.
 
 ``spec/rules.md`` section 「配置」 is the normative description; this module
 is its Python implementation. The enabled set is
@@ -12,12 +12,20 @@ Sources, highest priority first:
 1. The CLI ``--disable`` / ``--enable`` flags (repeatable,
    comma-separated); either one present replaces the config file wholesale.
 2. The nearest config file, walking up from the current working directory
-   to the repository root: ``lo-md-lint.toml`` (keys at top level), else a
-   ``pyproject.toml`` carrying a ``[tool.lo-md-lint]`` table.
+   to the repository root: ``limae.toml`` (keys at top level), else a
+   ``pyproject.toml`` carrying a ``[tool.limae]`` table.
 
 The two file carriers are isomorphic: same keys, different nesting.
 
-The ignore file ``.lo-md-lint-ignore`` (``spec/rules.md`` section
+The pre-rename spellings are still recognised, with identical semantics.
+Which way the two spellings clash differs by file, and the criterion is
+whether the state is a config shape that makes long-term sense: two
+config sources of the same carrier in one directory can only be a
+half-finished migration, so that is a config error, while a leftover
+ignore file changes nothing about how the run reads and is simply
+ignored (``spec/rules.md`` sections 「发现顺序」 and 「忽略文件」).
+
+The ignore file ``.limae-ignore`` (``spec/rules.md`` section
 「忽略文件」) is found by the same upward walk, independently of the config
 file, and drops input files by gitignore patterns.
 """
@@ -30,10 +38,14 @@ import typing
 
 import pathspec
 
-CONFIG_FILENAME = "lo-md-lint.toml"
+CONFIG_FILENAME = "limae.toml"
 PYPROJECT_FILENAME = "pyproject.toml"
-IGNORE_FILENAME = ".lo-md-lint-ignore"
-TOOL_TABLE = "lo-md-lint"
+IGNORE_FILENAME = ".limae-ignore"
+TOOL_TABLE = "limae"
+# The pre-rename spellings, still recognised through the transition.
+LEGACY_CONFIG_FILENAME = "lo-md-lint.toml"
+LEGACY_IGNORE_FILENAME = ".lo-md-lint-ignore"
+LEGACY_TOOL_TABLE = "lo-md-lint"
 DISABLE_KEY = "disable"
 ENABLE_KEY = "enable"
 SKIP_ZH_UNITS_KEY = "skip_zh_units"
@@ -89,6 +101,54 @@ def _load_toml(path: pathlib.Path) -> dict[str, object]:
     raise ConfigError(f"{path}: {e}") from e
 
 
+def _standalone(directory: pathlib.Path) -> pathlib.Path | None:
+  """Find the standalone config file of one directory.
+
+  Args:
+    directory: Directory to look in.
+
+  Returns:
+    ``limae.toml``, else the transitional ``lo-md-lint.toml``, else None.
+
+  Raises:
+    ConfigError: Both spellings are present.
+  """
+  current = directory / CONFIG_FILENAME
+  legacy = directory / LEGACY_CONFIG_FILENAME
+  if current.is_file() and legacy.is_file():
+    raise ConfigError(
+        f"{directory}: both {CONFIG_FILENAME} and {LEGACY_CONFIG_FILENAME}"
+        f" are present; keep only {CONFIG_FILENAME}"
+    )
+  if current.is_file():
+    return current
+  return legacy if legacy.is_file() else None
+
+
+def _tool_table(tools: Mapping[str, object], path: pathlib.Path) -> object:
+  """Find this tool's table in a ``pyproject.toml``'s ``[tool]`` table.
+
+  Args:
+    tools: The parsed ``[tool]`` table.
+    path: The ``pyproject.toml`` it came from, for the error message.
+
+  Returns:
+    The table under the current or the transitional name, or None when
+    neither is there.
+
+  Raises:
+    ConfigError: Both names are present.
+  """
+  if TOOL_TABLE in tools and LEGACY_TOOL_TABLE in tools:
+    raise ConfigError(
+        f"{path}: both [tool.{TOOL_TABLE}] and [tool.{LEGACY_TOOL_TABLE}]"
+        f" are present; keep only [tool.{TOOL_TABLE}]"
+    )
+  if TOOL_TABLE in tools:
+    return tools[TOOL_TABLE]
+  return tools.get(LEGACY_TOOL_TABLE)
+
+
 def find_config(start: pathlib.Path) -> tuple[pathlib.Path, object] | None:
   """Find the nearest config file at or above a directory.
 
@@ -101,17 +161,19 @@ def find_config(start: pathlib.Path) -> tuple[pathlib.Path, object] | None:
     start: Directory to start the upward walk from, normally the cwd.
 
   Returns:
-    The config file and its lo-md-lint table, or None when there is none.
+    The config file and its config table, or None when there is none.
   """
   for directory in [start, *start.parents]:
-    standalone = directory / CONFIG_FILENAME
-    if standalone.is_file():
+    standalone = _standalone(directory)
+    if standalone is not None:
       return standalone, _load_toml(standalone)
     pyproject = directory / PYPROJECT_FILENAME
     if pyproject.is_file():
       tools = _load_toml(pyproject).get("tool")
-      if isinstance(tools, dict) and TOOL_TABLE in tools:
-        return pyproject, tools[TOOL_TABLE]
+      if isinstance(tools, dict):
+        table = _tool_table(tools, pyproject)
+        if table is not None:
+          return pyproject, table
     if (directory / ".git").exists():
       break
   return None
@@ -165,7 +227,7 @@ def _key_list(
   """Read one rule-id list key from a config table.
 
   Args:
-    table: The lo-md-lint config table.
+    table: The config table.
     key: ``disable`` or ``enable``.
     path: The config file, for the error message.
 
@@ -185,7 +247,7 @@ def _key_units(table: dict[str, object], path: pathlib.Path) -> str:
   """Read the ``skip_zh_units`` key from a config table.
 
   Args:
-    table: The lo-md-lint config table.
+    table: The config table.
     path: The config file, for the error message.
 
   Returns:
@@ -209,7 +271,7 @@ def _key_severity(
   """Read the ``severity`` key from a config table.
 
   Args:
-    table: The lo-md-lint config table.
+    table: The config table.
     path: The config file, for the error message.
     known: Every rule id this implementation knows.
 
@@ -240,7 +302,7 @@ def _key_bool(table: dict[str, object], key: str, path: pathlib.Path) -> bool:
   """Read one boolean key from a config table.
 
   Args:
-    table: The lo-md-lint config table.
+    table: The config table.
     key: The key to read.
     path: The config file, for the error message.
 
@@ -367,7 +429,9 @@ def _find_ignore(start: pathlib.Path) -> pathlib.Path | None:
   """Find the nearest ignore file at or above a directory.
 
   Walks up like ``find_config`` but independently of it: a directory
-  holding a config file and no ignore file does not end the walk.
+  holding a config file and no ignore file does not end the walk. In one
+  directory ``.limae-ignore`` wins over the transitional
+  ``.lo-md-lint-ignore``, and a leftover old file is not an error.
 
   Args:
     start: Directory to start the upward walk from, normally the cwd.
@@ -376,9 +440,10 @@ def _find_ignore(start: pathlib.Path) -> pathlib.Path | None:
     The ignore file, or None when there is none.
   """
   for directory in [start, *start.parents]:
-    candidate = directory / IGNORE_FILENAME
-    if candidate.is_file():
-      return candidate
+    for name in (IGNORE_FILENAME, LEGACY_IGNORE_FILENAME):
+      candidate = directory / name
+      if candidate.is_file():
+        return candidate
     if (directory / ".git").exists():
       break
   return None
