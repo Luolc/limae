@@ -19,7 +19,7 @@ def test_cli_reports_then_fixes(
   monkeypatch.setattr(sys, "argv", ["limae", str(p)])
   assert zh_format.main() == 1
   assert (
-      f"{p}:1: error: [R1 halfwidth punct next to CJK]"
+      f"{p}:1: error: [zh-typography-1 halfwidth punct next to CJK]"
       in capsys.readouterr().out
   )
   monkeypatch.setattr(sys, "argv", ["limae", "--fix", str(p)])
@@ -44,14 +44,18 @@ def test_cli_disable_flag_turns_a_rule_off(
 ):
   p = tmp_path / "t.md"
   p.write_text("你好,世界", encoding="utf-8")
-  assert run(["--fix", "--disable", "R1", str(p)], monkeypatch) == 0
+  assert (
+      run(["--fix", "--disable", "zh-typography-1", str(p)], monkeypatch) == 0
+  )
   assert p.read_text(encoding="utf-8") == "你好,世界"
 
 
 def test_standalone_config_file_turns_a_rule_off(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
-  (tmp_path / "limae.toml").write_text('disable = ["R1"]\n', encoding="utf-8")
+  (tmp_path / "limae.toml").write_text(
+      'disable = ["zh-typography-1"]\n', encoding="utf-8"
+  )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
   monkeypatch.chdir(tmp_path)
   assert run(["t.md"], monkeypatch) == 0
@@ -61,7 +65,7 @@ def test_pyproject_table_turns_a_rule_off(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
   (tmp_path / "pyproject.toml").write_text(
-      '[tool.limae]\ndisable = ["R1"]\n', encoding="utf-8"
+      '[tool.limae]\ndisable = ["zh-typography-1"]\n', encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
   monkeypatch.chdir(tmp_path)
@@ -73,9 +77,9 @@ def test_cli_enable_turns_a_default_off_rule_on(
 ):
   p = tmp_path / "t.md"
   p.write_text("中文[链接](https://example.com/) 后文", encoding="utf-8")
-  assert run([str(p)], monkeypatch) == 0  # R9 is off by default
-  assert run(["--enable", "R9", str(p)], monkeypatch) == 1
-  assert run(["--enable", "R9", "--fix", str(p)], monkeypatch) == 0
+  assert run([str(p)], monkeypatch) == 0  # zh-typography-9 is off by default
+  assert run(["--enable", "zh-typography-9", str(p)], monkeypatch) == 1
+  assert run(["--enable", "zh-typography-9", "--fix", str(p)], monkeypatch) == 0
   expected = "中文 [链接](https://example.com/) 后文"
   assert p.read_text(encoding="utf-8") == expected
 
@@ -83,7 +87,9 @@ def test_cli_enable_turns_a_default_off_rule_on(
 def test_config_enable_key_turns_a_default_off_rule_on(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
-  (tmp_path / "limae.toml").write_text('enable = ["R9"]\n', encoding="utf-8")
+  (tmp_path / "limae.toml").write_text(
+      'enable = ["zh-typography-9"]\n', encoding="utf-8"
+  )
   (tmp_path / "t.md").write_text(
       "中文[链接](https://example.com/) 后文", encoding="utf-8"
   )
@@ -98,7 +104,19 @@ def test_same_id_disabled_and_enabled_is_a_config_error(
 ):
   p = tmp_path / "t.md"
   p.write_text("你好,世界", encoding="utf-8")
-  assert run(["--disable", "R9", "--enable", "R9", str(p)], monkeypatch) == 2
+  assert (
+      run(
+          [
+              "--disable",
+              "zh-typography-9",
+              "--enable",
+              "zh-typography-9",
+              str(p),
+          ],
+          monkeypatch,
+      )
+      == 2
+  )
   assert "in both" in capsys.readouterr().err
 
 
@@ -116,17 +134,22 @@ def test_unknown_rule_id_is_a_config_error(
 def test_cli_disable_replaces_the_config_file(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
-  (tmp_path / "limae.toml").write_text('disable = ["R1"]\n', encoding="utf-8")
+  (tmp_path / "limae.toml").write_text(
+      'disable = ["zh-typography-1"]\n', encoding="utf-8"
+  )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
   monkeypatch.chdir(tmp_path)
-  # Wholesale override, not a merge: R3 goes off and R1 comes back on.
-  assert run(["--disable", "R3", "t.md"], monkeypatch) == 1
+  # Wholesale override, not a merge: zh-typography-3 goes off and
+  # zh-typography-1 comes back on.
+  assert run(["--disable", "zh-typography-3", "t.md"], monkeypatch) == 1
 
 
 def test_standalone_file_wins_over_pyproject_table(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
-  (tmp_path / "limae.toml").write_text('disable = ["R1"]\n', encoding="utf-8")
+  (tmp_path / "limae.toml").write_text(
+      'disable = ["zh-typography-1"]\n', encoding="utf-8"
+  )
   (tmp_path / "pyproject.toml").write_text(
       "[tool.limae]\ndisable = []\n", encoding="utf-8"
   )
@@ -154,7 +177,9 @@ def test_non_list_disable_is_a_config_error(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ):
-  (tmp_path / "limae.toml").write_text('disable = "R1"\n', encoding="utf-8")
+  (tmp_path / "limae.toml").write_text(
+      'disable = "zh-typography-1"\n', encoding="utf-8"
+  )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
   monkeypatch.chdir(tmp_path)
   assert run(["t.md"], monkeypatch) == 2
@@ -183,7 +208,7 @@ def test_cli_flag_drops_the_config_files_skip_zh_units(
   (tmp_path / "t.md").write_text("共2011年\n", encoding="utf-8")
   monkeypatch.chdir(tmp_path)
   # A CLI flag replaces the config file wholesale, this key included.
-  assert run(["--disable", "R1", "t.md"], monkeypatch) == 1
+  assert run(["--disable", "zh-typography-1", "t.md"], monkeypatch) == 1
 
 
 def test_non_string_skip_zh_units_is_a_config_error(
@@ -220,14 +245,14 @@ def test_severity_key_downgrades_a_rule_to_warning(
     capsys: pytest.CaptureFixture[str],
 ):
   (tmp_path / "limae.toml").write_text(
-      'severity = { R1 = "warning" }\n', encoding="utf-8"
+      'severity = { zh-typography-1 = "warning" }\n', encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("你好,世界\n", encoding="utf-8")
   monkeypatch.chdir(tmp_path)
   # Reported and told apart from an error, but the run still passes.
   assert run(["t.md"], monkeypatch) == 0
   out = capsys.readouterr().out
-  assert "t.md:1: warning: [R1" in out
+  assert "t.md:1: warning: [zh-typography-1" in out
   assert "0 error(s), 1 warning(s)" in out
 
 
@@ -235,7 +260,7 @@ def test_a_warning_rule_is_still_fixed(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
   (tmp_path / "limae.toml").write_text(
-      'severity = { R1 = "warning" }\n', encoding="utf-8"
+      'severity = { zh-typography-1 = "warning" }\n', encoding="utf-8"
   )
   p = tmp_path / "t.md"
   p.write_text("你好,世界\n", encoding="utf-8")
@@ -251,7 +276,7 @@ def test_bad_severity_value_is_a_config_error(
     capsys: pytest.CaptureFixture[str],
 ):
   (tmp_path / "limae.toml").write_text(
-      'severity = { R1 = "fatal" }\n', encoding="utf-8"
+      'severity = { zh-typography-1 = "fatal" }\n', encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
   monkeypatch.chdir(tmp_path)
@@ -271,7 +296,9 @@ def test_enable_experimental_joins_the_experimental_rules(
   monkeypatch.chdir(tmp_path)
   # The experimental rules are warnings, so the run still passes.
   assert run(["t.md"], monkeypatch) == 0
-  assert "t.md:1: warning: [A1 formulaic phrase]" in capsys.readouterr().out
+  assert (
+      "t.md:1: warning: [zh-tell-1 formulaic phrase]" in capsys.readouterr().out
+  )
 
 
 def test_experimental_id_in_enable_is_a_config_error(
@@ -279,7 +306,9 @@ def test_experimental_id_in_enable_is_a_config_error(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ):
-  (tmp_path / "limae.toml").write_text('enable = ["A1"]\n', encoding="utf-8")
+  (tmp_path / "limae.toml").write_text(
+      'enable = ["zh-tell-1"]\n', encoding="utf-8"
+  )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
   monkeypatch.chdir(tmp_path)
   assert run(["t.md"], monkeypatch) == 2
@@ -356,12 +385,12 @@ def test_ignore_file_negation_keeps_a_file(
 def test_wordlists_load_from_the_packaged_spec_directory():
   # src/limae/wordlists is a symlink to spec/wordlists; the phrases
   # and terms must be readable through the installed package either way.
-  assert "综上所述" in wordlists.phrases("A1")
-  assert "testament" in wordlists.phrases("A5")
-  assert "load-bearing" in wordlists.phrases("A7")
-  assert "零售" in wordlists.phrases("A8-allow")
-  assert "保守秘密" in wordlists.phrases("T2-allow")
-  assert not [p for p in wordlists.phrases("A1") if p.startswith("#")]
+  assert "综上所述" in wordlists.phrases("zh-tell-1")
+  assert "testament" in wordlists.phrases("en-tell-1")
+  assert "load-bearing" in wordlists.phrases("en-tell-3")
+  assert "零售" in wordlists.phrases("zh-tell-5-allow")
+  assert "保守秘密" in wordlists.phrases("zh-word-2-allow")
+  assert not [p for p in wordlists.phrases("zh-tell-1") if p.startswith("#")]
   assert [t for t in wordlists.terms() if t.wrong == "代币"] == [
       wordlists.Term("代币", "令牌", ("token", "OAuth", "JWT", "鉴权", "认证"))
   ]
@@ -373,7 +402,7 @@ def test_legacy_standalone_config_file_is_still_read(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
   (tmp_path / "lo-md-lint.toml").write_text(
-      'disable = ["R1"]\n', encoding="utf-8"
+      'disable = ["zh-typography-1"]\n', encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
   monkeypatch.chdir(tmp_path)
@@ -384,7 +413,7 @@ def test_legacy_pyproject_table_is_still_read(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
   (tmp_path / "pyproject.toml").write_text(
-      '[tool.lo-md-lint]\ndisable = ["R1"]\n', encoding="utf-8"
+      '[tool.lo-md-lint]\ndisable = ["zh-typography-1"]\n', encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
   monkeypatch.chdir(tmp_path)
@@ -396,9 +425,11 @@ def test_both_standalone_config_names_is_a_config_error(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ):
-  (tmp_path / "limae.toml").write_text('disable = ["R1"]\n', encoding="utf-8")
+  (tmp_path / "limae.toml").write_text(
+      'disable = ["zh-typography-1"]\n', encoding="utf-8"
+  )
   (tmp_path / "lo-md-lint.toml").write_text(
-      'disable = ["R3"]\n', encoding="utf-8"
+      'disable = ["zh-typography-3"]\n', encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
   monkeypatch.chdir(tmp_path)
@@ -412,8 +443,8 @@ def test_both_pyproject_tables_is_a_config_error(
     capsys: pytest.CaptureFixture[str],
 ):
   (tmp_path / "pyproject.toml").write_text(
-      '[tool.limae]\ndisable = ["R1"]\n'
-      '[tool.lo-md-lint]\ndisable = ["R3"]\n',
+      '[tool.limae]\ndisable = ["zh-typography-1"]\n'
+      '[tool.lo-md-lint]\ndisable = ["zh-typography-3"]\n',
       encoding="utf-8",
   )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")

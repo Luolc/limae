@@ -252,7 +252,7 @@ https://zh.wikipedia.org/zh-cn/Wikipedia:AI生成文的特征 (快捷 WP:AISIGNS
 2. **确定性探测器 (lint)**：
    - Vale `vale-ai-tells`：prose linter 风格包，标 tell 不改写。https://github.com/krishnasunkam/vale-ai-tells
    - `llm-slop-detector`：编辑器诊断 + 字符级 quick fix，短语无 fix。https://github.com/mandakan/llm-slop-detector
-   - AutoCorrect (`huacnlee/autocorrect`)：CJK 空格 / 标点 / 可选 spellcheck 词表，**与 lo-md-lint 的 R1–R3 最近邻**。https://github.com/huacnlee/autocorrect (~1.6k stars)
+   - AutoCorrect (`huacnlee/autocorrect`)：CJK 空格 / 标点 / 可选 spellcheck 词表，**与 lo-md-lint 的 zh-typography-1 到 zh-typography-3 最近邻**。https://github.com/huacnlee/autocorrect (~1.6k stars)
 3. **LLM 显示层改写**：`claudish-to-english` 插件 (见 §1)。
 
 商业「humanizer / undetectable.ai」一类不列入：目标是骗检测器，和文档质量相反。
@@ -280,7 +280,7 @@ https://zh.wikipedia.org/zh-cn/Wikipedia:AI生成文的特征 (快捷 WP:AISIGNS
 `lo-md-lint` 若做 LLM 语义润色，业界默认拆成两段，不要揉成一条规则：
 
 1. **确定性 floor** (Vale / AutoCorrect 模式)：词表、句式、标点密度 → warning，多数 non-fixable。
-2. **可选 LLM pass**：只在用户要润色时跑，输出是改写或建议，不是 CI required check。BitsAI-Fix 的「再 lint 一次」值得抄：LLM patch 必须仍通过 R1–R3 和将来的 experimental 规则。
+2. **可选 LLM pass**：只在用户要润色时跑，输出是改写或建议，不是 CI required check。BitsAI-Fix 的「再 lint 一次」值得抄：LLM patch 必须仍通过 zh-typography-1 到 zh-typography-3 和将来的 experimental 规则。
 
 不要做第三种：用 LLM 当 linter 的判定器 (每次 CI 调模型)。没有黄金集稳定性，也没有 `spec/fixtures/` 可回归。
 
@@ -381,7 +381,7 @@ https://zh.wikipedia.org/zh-cn/Wikipedia:AI生成文的特征 (快捷 WP:AISIGNS
 
 https://github.com/huacnlee/autocorrect
 
-- 主业是 CJK-英文空格和标点 (与 lo-md-lint R1–R3 同族)
+- 主业是 CJK-英文空格和标点 (与 lo-md-lint zh-typography-1 到 zh-typography-3 同族)
 - `spellcheck` 默认关；用户在 `.autocorrectrc` 的 `spellcheck.words` 里加**项目专用**词
 - 文档明确：不要把 apple、python 这种普通词放进去
 - 映射语法：`nodejs = Node.js`、`AppStore = App Store` (错误形 = 正确形)
@@ -410,7 +410,7 @@ https://github.com/huacnlee/autocorrect
 
 | 层 | 例子 | 进 CI？ | fix？ |
 | --- | --- | --- | --- |
-| 已有 R1–R3 | 全角标点、括号空格 | 是 | 是 |
+| 已有 zh-typography-1 到 zh-typography-3 | 全角标点、括号空格 | 是 | 是 |
 | Experimental warning，确定性 | 「不是 A 而是 B」密度；`综上所述` / `值得注意的是`；`load-bearing` 在中文文档里的无端出现；术语小表 | 默认关，flag 开 | 词表可 fix，句式多半否 |
 | LLM 润色 | Deng spec 当 prompt；Gvozdev 式旁路 `.plain.md` | 否 | 人审后才回写 |
 
@@ -431,10 +431,10 @@ Claudish 哲学里「语义压缩、降抽象」几乎不能变 findings：同�
 
 ### 7.2 建议下一步做实验
 
-1. **手工蒸馏 10–20 条 experimental warning**：从本仓文档 + 合成 fixture 里捡「不是 X 而是 Y」、`综上所述`、无端 `load-bearing`、两三条高置信术语。全部 non-fixable (术语除外)，默认 disable，用新规则 id，不破坏 R1–R3 逐行模型 —— 若做不到逐行，先单开 `experimental/` 规范，不要假装是 R4。
+1. **手工蒸馏 10–20 条 experimental warning**：从本仓文档 + 合成 fixture 里捡「不是 X 而是 Y」、`综上所述`、无端 `load-bearing`、两三条高置信术语。全部 non-fixable (术语除外)，默认 disable，用新规则 id，不破坏 zh-typography-1 到 zh-typography-3 逐行模型 —— 若做不到逐行，先单开 `experimental/` 规范，不要假装是 zh-typography-4。
 2. **收集改写 pair (合成数据)**：用 Deng 的 english-to-claudish 生成「腔」样本，人改或 to-english 当目标，跑一轮 AIR 式规则提议，人审后再决定进不进 spec。测试 fixture 只用 ACME / Foo 这类合成串。
 3. **对照 Vale**：同一批中文 Markdown 跑 `vale-ai-tells` (英文规则会误报) 和中文词表 regex，量假阳性。这能回答「密度阈值要不要」。
-4. **LLM 润色原型 (仓外 scratch)**：复用 Deng claudish-to-english spec 当 prompt，只对 `docs/` 出旁路文件，验证会不会改坏术语、代码围栏、R1–R3。不接 CI。
+4. **LLM 润色原型 (仓外 scratch)**：复用 Deng claudish-to-english spec 当 prompt，只对 `docs/` 出旁路文件，验证会不会改坏术语、代码围栏、zh-typography-1 到 zh-typography-3。不接 CI。
 5. **术语小表试点**：5–15 个本仓真实会错的词 (密钥 / 缓存 / 令牌…)，带上下文锚点，测 `--fix` 会不会误伤「秘密」。
 
 ### 7.3 不建议碰

@@ -84,8 +84,8 @@ class Settings(typing.NamedTuple):
 
   Attributes:
     rules: The enabled rule ids.
-    skip_zh_units: Chinese measure-word characters exempted from R5, one
-      character per unit; empty means no exemption.
+    skip_zh_units: Chinese measure-word characters exempted from
+      zh-typography-5, one character per unit; empty means no exemption.
     severity: The user's per-rule severity overrides; a rule absent here
       keeps the severity the spec gives it.
   """
@@ -404,8 +404,8 @@ def resolve(
       ``enable_experimental`` can add to the enabled set.
 
   Returns:
-    The enabled rule ids, the R5 measure-word exemptions and the severity
-    overrides.
+    The enabled rule ids, the zh-typography-5 measure-word exemptions
+    and the severity overrides.
 
   Raises:
     ConfigError: Bad toml, a malformed key, an unknown id, an id in both

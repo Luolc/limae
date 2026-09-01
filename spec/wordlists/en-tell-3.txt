@@ -1,11 +1,11 @@
-# A7：Claudish 专用词 (coding-agent register) —— coding agent 文档的指纹，
-# 与 A5 的通用 slop 指纹不是同一类 (调研 §2.1 B)。
+# en-tell-3：Claudish 专用词 (coding-agent register) —— coding agent 文档的指纹，
+# 与 en-tell-1 的通用 slop 指纹不是同一类 (调研 §2.1 B)。
 # 一行一条，全词匹配、大小写不敏感；`#` 开头是注释，空行忽略。
-# 格式与匹配语义的正本是 spec/rules.md「词表」与 A7 条目。
+# 格式与匹配语义的正本是 spec/rules.md「词表」与 en-tell-3 条目。
 #
 # 词源：Deng 的 claudish-to-english / english-to-claudish spec 点名的
 # high-signal 词，加 archiewood/claudeisms 与 louisabraham/load-bearing
-# 两份语料里的头部词 (调研 §1.4)。收词自检与 A5 的同一条，见 A5.txt。
+# 两份语料里的头部词 (调研 §1.4)。收词自检与 en-tell-1 的同一条，见 en-tell-1.txt。
 #
 # **这张表当前只有一条。** 三轮自检下来，Deng 那份 high-signal 清单上的
 # 词绝大多数都造得出常规技术行文 —— 它们本来就是正当的技术词，spec 自己

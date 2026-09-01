@@ -2,7 +2,7 @@
 
 本文件是规则的正本 (normative)，语言无关：任何实现 (implementation) 都按这里的判定与修复行为工作，并以 `spec/fixtures/` 的黄金集 (golden fixtures) 验收。规范是上游 —— 实现与规范不一致时先改规范、再改实现 (ADR-0001)。
 
-规则 id 稳定且不复用，按家族分前缀 (见「规则属性」)，当前是 R1–R11、A1–A8、T1–T2；实现报告违规时用的 id 必须与这里一致。fixture 格式与 runner 的判定见 `spec/README.md`。
+规则 id 稳定且不复用，形如 `<语言>-<家族>-<序号>` (见「规则属性」)，当前是 `zh-typography-1` 到 `zh-typography-11`、`zh-tell-1` 到 `zh-tell-5`、`en-tell-1` 到 `en-tell-3`、`zh-word-1` 与 `zh-word-2`；实现报告违规时用的 id 必须与这里一致。fixture 格式与 runner 的判定见 `spec/README.md`。
 
 ## 通用模型
 
@@ -10,8 +10,8 @@
 
 - **逐行判定**：一个违规永远落在一行之内，报告的位置就是「行号 + 规则 id」。
 - **逐行修复**：`--fix` 只在行内改写，不增删行、不改变行数，因此输入与期望输出逐行对齐。
-- **一行内按「修复顺序」小节的固定次序依次应用各规则的修复**：前一条规则的产物立刻落进后一条的判定范围。所以 `术语（covered call）策略` 报的是两处 R2，修完却是 `术语 (covered call) 策略` —— R2 换出的半角括号由 R3 接着补空格。
-- **`--fix` 的输出是不动点 (fixpoint)**：一整遍修复可能让新的判定成立 —— 比如 R2 把全角括号换成半角后，一段文本恰好构成链接 destination，全局豁免的范围随之改变 —— 实现反复应用整套修复直到文本不再变化。绝大多数输入一遍就稳定；黄金集的 `.fixed` 都是不动点，runner 的幂等断言由此定义成立。
+- **一行内按「修复顺序」小节的固定次序依次应用各规则的修复**：前一条规则的产物立刻落进后一条的判定范围。所以 `术语（covered call）策略` 报的是两处 zh-typography-2，修完却是 `术语 (covered call) 策略` —— zh-typography-2 换出的半角括号由 zh-typography-3 接着补空格。
+- **`--fix` 的输出是不动点 (fixpoint)**：一整遍修复可能让新的判定成立 —— 比如 zh-typography-2 把全角括号换成半角后，一段文本恰好构成链接 destination，全局豁免的范围随之改变 —— 实现反复应用整套修复直到文本不再变化。绝大多数输入一遍就稳定；黄金集的 `.fixed` 都是不动点，runner 的幂等断言由此定义成立。
 - **检查只看原文**：`check` 报告的是修复前文本上的违规，不预测修复后会不会产生新的违规。
 
 ### CJK 与 word 字符
@@ -24,11 +24,11 @@
 下面四类内容对所有规则豁免：既不报违规，`--fix` 也原样输出。
 
 1. **围栏代码块 (fenced code block)**：去掉行首空白后以 ` ``` ` 或 `~~~` 开头的行是围栏行；围栏行本身与两条围栏之间的全部内容都豁免。
-2. **行内代码 (inline code span)**：按 CommonMark 的反引号串规则 —— 一段连续反引号开启一个 span，由下一段**等长**的反引号串闭合；找不到等长闭合串的反引号串是普通文本。豁免的是两条定界串**之间**的内容；定界反引号本身算正文，所以 `` `code`(x) `` 仍然报 R3。
+2. **行内代码 (inline code span)**：按 CommonMark 的反引号串规则 —— 一段连续反引号开启一个 span，由下一段**等长**的反引号串闭合；找不到等长闭合串的反引号串是普通文本。豁免的是两条定界串**之间**的内容；定界反引号本身算正文，所以 `` `code`(x) `` 仍然报 zh-typography-3。
    - 一个 span 可以跨行，但不跨块 (block)：空行截断，下列块起始也截断 —— ATX 标题 `#`、表格行 `|`、主题分隔线、无序列表项 `-` / `*` / `+`、有序列表项 `1.` / `1)`、引用块 `>`；例外是连续的 `>` 行属于同一个引用块段落，彼此不截断。
 3. **链接 destination 与裸 URL**：它们是地址不是行文，改写会把链接改坏。两种范围都不跨行，且只在行内代码之外识别。
-   - **inline link / 图片的 destination**：`](` 之后到下一个半角 `)` 之间的内容，按最简式样识别 (与 R9 一致)。`](` 与收尾的 `)` 本身是语法字符，照旧参与各规则判定 —— R3 的 `](` 豁免、`)(` 判定与 `)后文` 的右方向判定都不变。
-   - **裸 URL**：以 `http://` 或 `https://` 开头、且前一个字符不是 ASCII 字母或数字的连续 URL 字符串。URL 字符指 RFC 3986 的 `A-Za-z0-9` 加 `-._~:/?#[]@!$&'()*+,;=%`；CJK、空白与其它字符结束它。识别出的串再从尾部剥去尾随标点 `)]}>,.;:!?` —— 剥掉的标点算正文，所以 `(https://example.com/x)继续` 的右括号仍按 R3 报，`https://example.com/foo,再看` 的逗号仍按 R1 转全角。
+   - **inline link / 图片的 destination**：`](` 之后到下一个半角 `)` 之间的内容，按最简式样识别 (与 zh-typography-9 一致)。`](` 与收尾的 `)` 本身是语法字符，照旧参与各规则判定 —— zh-typography-3 的 `](` 豁免、`)(` 判定与 `)后文` 的右方向判定都不变。
+   - **裸 URL**：以 `http://` 或 `https://` 开头、且前一个字符不是 ASCII 字母或数字的连续 URL 字符串。URL 字符指 RFC 3986 的 `A-Za-z0-9` 加 `-._~:/?#[]@!$&'()*+,;=%`；CJK、空白与其它字符结束它。识别出的串再从尾部剥去尾随标点 `)]}>,.;:!?` —— 剥掉的标点算正文，所以 `(https://example.com/x)继续` 的右括号仍按 zh-typography-3 报，`https://example.com/foo,再看` 的逗号仍按 zh-typography-1 转全角。
 4. **含假名的引用 span**：引用括号对 `「」`、`『』`、`《》` 的配对内容含假名 (ひらがな / カタカナ，U+3040–U+30FF) 时，这对括号之间的内容视同行内代码 —— 逐字引用的日文原文不是本规则集要管的行文，改写会毁掉引用的可追溯性。范围不跨行；与 URL 范围重叠时以引用 span 为准。
    - **配对**：同一行内从左到右扫描开括号，一个开括号与使同类括号深度归零的那个闭括号配对 —— 即包住它内部全部同类嵌套的那个；配对成功就跳过整对，从闭括号右边继续找下一个 span。没有这样的闭括号时这个开括号不构成 span，照旧参与各规则判定，扫描从它右边一个字符继续 (所以 `「外层「かな」` 里内层那对仍成 span)。
    - **嵌套**：只取最外层的一对，落在一对括号内部的配对 (同类或异类) 不再单独识别 —— 不做更复杂的嵌套解析。
@@ -38,33 +38,33 @@
 
 ```text
 《exampleで始めるdotfile管理》  → 不变 (含假名，整段豁免)
-「ひらがな管理,テスト」         → 不变 (含假名，R1 也不报)
+「ひらがな管理,テスト」         → 不变 (含假名，zh-typography-1 也不报)
 「外层「かな」尾部FOO」         → 不变 (同类嵌套取最外层，尾部也在 span 内)
 「ひらがな『dotfile管理』の例」 → 不变 (异类嵌套同样取最外层)
 「かな`code`尾部FOO」           → 不变 (span 内的行内代码仍是行内代码，整段照样不改)
-《外层《Python编程》尾部》      → 《外层《Python 编程》尾部》 (不含假名，R4 照常)
-「グループFOO推進本部           → 「グループFOO 推進本部 (未配对，R4 照常)
+《外层《Python编程》尾部》      → 《外层《Python 编程》尾部》 (不含假名，zh-typography-4 照常)
+「グループFOO推進本部           → 「グループFOO 推進本部 (未配对，zh-typography-4 照常)
 ```
 
-**豁免的边界语义对四类范围统一**：一个违规只要涉及豁免范围内的任何字符就豁免。对插空格的边界类规则 (R4、R5、R8)，「涉及的字符」是边界两侧的字符，所以紧贴豁免范围两端的边界也不报不补 —— `见https://example.com快照` 原样保留 (两个边界各有一侧在 URL 里)，要留白就手写空格。
+**豁免的边界语义对四类范围统一**：一个违规只要涉及豁免范围内的任何字符就豁免。对插空格的边界类规则 (zh-typography-4、zh-typography-5、zh-typography-8)，「涉及的字符」是边界两侧的字符，所以紧贴豁免范围两端的边界也不报不补 —— `见https://example.com快照` 原样保留 (两个边界各有一侧在 URL 里)，要留白就手写空格。
 
 ### 词表
 
-A1 / A3 / A4 / A5 / A7 / A8 / T1 / T2 的判定依赖词表 (wordlist)。词表与规则条目一样是规范的一部分，语言无关、所有实现共用，放在 `spec/wordlists/` —— 改词表就是改规范，不需要改任何实现 (ADR-0007)。
+zh-tell-1 / zh-tell-3 / zh-tell-4 / en-tell-1 / en-tell-3 / zh-tell-5 / zh-word-1 / zh-word-2 的判定依赖词表 (wordlist)。词表与规则条目一样是规范的一部分，语言无关、所有实现共用，放在 `spec/wordlists/` —— 改词表就是改规范，不需要改任何实现 (ADR-0007)。
 
 | 文件 | 规则 | 格式 |
 | --- | --- | --- |
-| `A1.txt` / `A3.txt` / `A4.txt` | A1 / A3 / A4 | UTF-8 纯文本，一行一条；每条前后的空白去掉，`#` 开头的行是注释，空行忽略 |
-| `A5.txt` / `A7.txt` | A5 / A7 | 同上，一行一条的纯文本；条目是英文词或英文短语 |
-| `A8-allow.txt` / `T2-allow.txt` | A8 / T2 | 同上，一行一条的纯文本；条目是中文词。这两张是**豁免表** (allowlist)，方向与其余词表相反 —— 命中它才不报 |
-| `T1.toml` | T1 | toml，一个 `entries` 数组，每条三个键 `wrong` / `right` / `anchors` |
+| `zh-tell-1.txt` / `zh-tell-3.txt` / `zh-tell-4.txt` | zh-tell-1 / zh-tell-3 / zh-tell-4 | UTF-8 纯文本，一行一条；每条前后的空白去掉，`#` 开头的行是注释，空行忽略 |
+| `en-tell-1.txt` / `en-tell-3.txt` | en-tell-1 / en-tell-3 | 同上，一行一条的纯文本；条目是英文词或英文短语 |
+| `zh-tell-5-allow.txt` / `zh-word-2-allow.txt` | zh-tell-5 / zh-word-2 | 同上，一行一条的纯文本；条目是中文词。这两张是**豁免表** (allowlist)，方向与其余词表相反 —— 命中它才不报 |
+| `zh-word-1.toml` | zh-word-1 | toml，一个 `entries` 数组，每条三个键 `wrong` / `right` / `anchors` |
 
 词表分两种匹配语义，按词表所属的规则定，两种都不把条目当正则：
 
-- **中文词表 (A1 / A3 / A4) 匹配字面子串 (literal substring)**：每一条按原文逐字匹配，不做分词、不做繁简或大小写折叠 (T1 的锚点是唯一的例外，见 T1)。命中的那几个字符就是违规的位置。
-- **英文词表 (A5 / A7) 匹配整词 (whole word)、大小写不敏感**：一条只有在命中处两端都不是 `A-Za-z0-9_` 时才算数 —— `pivotal` 不命中 `pivotally`、也不命中 `is_pivotal`；连字符不是边界字符，所以 `load-bearing` 在 `non-load-bearing` 里算命中 (连字符压缩本身就是要管的形态)。**不做词干还原 (stemming)**：要管的屈折形在词表里逐条写全 (`delve` / `delves` / `delving`)。
-- **豁免表 (A8 / T2) 按覆盖 (cover) 判定**：表里某条在行内的某次出现盖住了命中处的第一个字 (A8 的那个「零」、T2 的「秘」)，这一处就不报。条目都是连续的汉字，所以「盖住」就是命中处落在这次出现的范围之内 —— `零售` 盖住「零售价格」里的零，`从零` 盖住「从零建机」里的零：命中处两侧的固定搭配用同一张表表达，不需要前缀与后缀两套规则。
-- **豁免表在整行范围内查找，不受全局豁免约束**，与 T1 的锚点同理 —— 它是关于用词的证据，不是违规本身；违规本身照旧受全局豁免约束。
+- **中文词表 (zh-tell-1 / zh-tell-3 / zh-tell-4) 匹配字面子串 (literal substring)**：每一条按原文逐字匹配，不做分词、不做繁简或大小写折叠 (zh-word-1 的锚点是唯一的例外，见 zh-word-1)。命中的那几个字符就是违规的位置。
+- **英文词表 (en-tell-1 / en-tell-3) 匹配整词 (whole word)、大小写不敏感**：一条只有在命中处两端都不是 `A-Za-z0-9_` 时才算数 —— `pivotal` 不命中 `pivotally`、也不命中 `is_pivotal`；连字符不是边界字符，所以 `load-bearing` 在 `non-load-bearing` 里算命中 (连字符压缩本身就是要管的形态)。**不做词干还原 (stemming)**：要管的屈折形在词表里逐条写全 (`delve` / `delves` / `delving`)。
+- **豁免表 (zh-tell-5 / zh-word-2) 按覆盖 (cover) 判定**：表里某条在行内的某次出现盖住了命中处的第一个字 (zh-tell-5 的那个「零」、zh-word-2 的「秘」)，这一处就不报。条目都是连续的汉字，所以「盖住」就是命中处落在这次出现的范围之内 —— `零售` 盖住「零售价格」里的零，`从零` 盖住「从零建机」里的零：命中处两侧的固定搭配用同一张表表达，不需要前缀与后缀两套规则。
+- **豁免表在整行范围内查找，不受全局豁免约束**，与 zh-word-1 的锚点同理 —— 它是关于用词的证据，不是违规本身；违规本身照旧受全局豁免约束。
 - **长的先匹配**：一条是另一条的子串时，参与匹配的顺序按长度降序，同一处只算一次命中。
 - **全局豁免照常适用**：落在围栏代码块、行内代码、链接 destination / 裸 URL、含假名引用 span 里的文字不报也不改。英文词表尤其吃这一条 —— 英文词在标识符、路径与 URL 里极常见，它们落在行内代码或 URL 里就不是行文。
 - **词表为空** (整份文件只有注释与空行) 的规则永不报违规；**豁免表为空则相反** —— 什么都不豁免，判定照常。
@@ -73,15 +73,15 @@ A1 / A3 / A4 / A5 / A7 / A8 / T1 / T2 的判定依赖词表 (wordlist)。词表�
 
 `--fix` 在一行内按固定顺序应用启用的规则，这个顺序是契约的一部分，各实现必须一致：
 
-1. **T1** 术语替换
-2. **R10** 全角数字转半角
-3. **R2** 全角括号转半角
-4. **R1** CJK 旁半角标点转全角
-5. **R3** 半角括号外侧空格
-6. **R4–R9** 各空格规则，按 id 次序
-7. **R11** 全角标点旁去空格
+1. **zh-word-1** 术语替换
+2. **zh-typography-10** 全角数字转半角
+3. **zh-typography-2** 全角括号转半角
+4. **zh-typography-1** CJK 旁半角标点转全角
+5. **zh-typography-3** 半角括号外侧空格
+6. **zh-typography-4 到 zh-typography-9** 各空格规则，按 id 次序
+7. **zh-typography-11** 全角标点旁去空格
 
-理由：选词在最前 (T1)，换出的词要落进后面全部规则的判定范围；宽度转换居中 (R10、R2、R1)，空格规则在后 —— 转换的产物要落进空格规则的判定范围：R10 换出的半角数字接着被 R5 / R6 补空格，R2 换出的半角括号由 R3 接着补空格。落进判定范围不等于一定补空格：配了 `skip_zh_units = "年"` 时 `２０１１年` 修成 `2011年`，R10 照转，R5 因豁免不补 (见 R5)。R3 到 R9 之间管的边界互不重叠 (括号、字母、数字、单位、定界反引号、破折号、链接各是不同的字符类)，相互顺序不影响结果，按 id 固定只为确定性。R11 删空格，放在所有补空格的规则之后收尾 —— R1 把 `你好, 世界` 转成 `你好， 世界` 之后正是 R11 把这个空格删掉；R8 刚补的破折号旁空格不被回收，靠的是 R11 判定里的破折号豁免而不是顺序。被关掉的规则跳过，其余次序不变。
+理由：选词在最前 (zh-word-1)，换出的词要落进后面全部规则的判定范围；宽度转换居中 (zh-typography-10、zh-typography-2、zh-typography-1)，空格规则在后 —— 转换的产物要落进空格规则的判定范围：zh-typography-10 换出的半角数字接着被 zh-typography-5 / zh-typography-6 补空格，zh-typography-2 换出的半角括号由 zh-typography-3 接着补空格。落进判定范围不等于一定补空格：配了 `skip_zh_units = "年"` 时 `２０１１年` 修成 `2011年`，zh-typography-10 照转，zh-typography-5 因豁免不补 (见 zh-typography-5)。zh-typography-3 到 zh-typography-9 之间管的边界互不重叠 (括号、字母、数字、单位、定界反引号、破折号、链接各是不同的字符类)，相互顺序不影响结果，按 id 固定只为确定性。zh-typography-11 删空格，放在所有补空格的规则之后收尾 —— zh-typography-1 把 `你好, 世界` 转成 `你好， 世界` 之后正是 zh-typography-11 把这个空格删掉；zh-typography-8 刚补的破折号旁空格不被回收，靠的是 zh-typography-11 判定里的破折号豁免而不是顺序。被关掉的规则跳过，其余次序不变。
 
 ## 规则属性
 
@@ -97,27 +97,28 @@ A1 / A3 / A4 / A5 / A7 / A8 / T1 / T2 的判定依赖词表 (wordlist)。词表�
 - **严重度**：`error` 参与退出码，`warning` 不参与，两者都进报告 (见「退出码」)。严重度不影响修复 —— **fixable 的规则被降成 warning，`--fix` 照样修**；要一条规则不改文本，办法是关掉它 (`disable`) 或就地用行内指令。
 - **成熟度**：`experimental` = 规范与黄金 fixture 都已就位、但误报率还没在真实语料上验证到可以默认打开的规则，默认不进启用集；`enable_experimental = true` 把全部 experimental 规则一次纳入启用集，纳入后与普通规则同等对待。毕业成 stable 与降回 experimental 都逐条手工裁决，本规范不写量化判据。
 
-### 规则 id 的前缀
+### 规则 id 的格式
 
-规则 id 按家族 (family) 分前缀，学 ruff 的做法：前缀标明这条规则管的是哪一类问题，之后是这个家族里的序号。**前缀只是命名，不是新的配置维度** —— 全部规则共用同一个 `disable` / `enable` / `severity` 命名空间，加一个家族不需要新键 (ADR-0007)。
+规则 id 形如 `<语言>-<家族>-<序号>`，全小写、连字符分隔 (ADR-0010)：语言说明这条规则判的是哪种文本，家族说明它管哪一类问题，序号在「语言 + 家族」这一层内从 1 开始。**id 只是命名，不是新的配置维度** —— 全部规则共用同一个 `disable` / `enable` / `severity` 命名空间，加一个族不需要新键，也没有「按族开关」或「按语言开关」的写法：id 里的语言是规则自身的属性，不是文档的属性，判定照旧不分语言 (ADR-0006 §五)。
 
-| 前缀 | 家族 | 当前 |
+| 族 | 管什么 | 当前 |
 | --- | --- | --- |
-| `R` | 中文排版 (typography)：字符宽度、空格、标点 | R1–R11 |
-| `A` | AI 腔 (AI tells)：套话、句式、黑话、聊天残留、英文 tell、造词 —— 中英文同一家族，规则不分语言 (ADR-0006 §五) | A1–A8 |
-| `T` | 术语选词 (terminology)：该换词的地方 —— T1 是 `wrong = right` 的替换，T2 是没有唯一替换、只报不改的误用 | T1–T2 |
+| `zh-typography` | 中文排版：字符宽度、空格、标点 | `zh-typography-1` 到 `zh-typography-11` |
+| `zh-tell` | 中文 AI 腔：套话、句式、黑话、聊天残留、造词 | `zh-tell-1` 到 `zh-tell-5` |
+| `en-tell` | 英文 AI 腔：AI 词汇、否定平行、Claudish 专用词 | `en-tell-1` 到 `en-tell-3` |
+| `zh-word` | 中文用词：该换词或该换说法的地方 —— `zh-word-1` 是 `wrong = right` 的替换，`zh-word-2` 是没有唯一替换、只报不改的误用 | `zh-word-1` 与 `zh-word-2` |
 
 ### 每条规则的三轴取值
 
-每条规则的条目在标题下有一行 `属性：<可修复性> · <严重度> · <成熟度>`，给出它的三轴取值。**R1–R11 全部是 fixable · error · stable**。
+每条规则的条目在标题下有一行 `属性：<可修复性> · <严重度> · <成熟度>`，给出它的三轴取值。**`zh-typography` 一族全部是 fixable · error · stable**。
 
-**实验规则清单**：A1、A2、A3、A4、A5、A6、A7、A8、T1、T2，全部 warning · experimental —— 其中只有 T1 是 fixable，A1–A8 与 T2 都是 non-fixable。它们默认不进启用集，只有 `enable_experimental = true` 才一次纳入 (见「配置」)。
+**实验规则清单**：zh-tell-1、zh-tell-2、zh-tell-3、zh-tell-4、zh-tell-5、en-tell-1、en-tell-2、en-tell-3、zh-word-1、zh-word-2，全部 warning · experimental —— 其中只有 zh-word-1 是 fixable，`zh-tell` 与 `en-tell` 两族加 zh-word-2 都是 non-fixable。它们默认不进启用集，只有 `enable_experimental = true` 才一次纳入 (见「配置」)。
 
-「默认关闭」是配置层的事实，与成熟度独立：R9 是 stable 的默认关闭规则 —— 关的理由是上游规范自标争议而不是误报率没验过，它照旧用 `enable` 打开，与 `enable_experimental` 无关。
+「默认关闭」是配置层的事实，与成熟度独立：zh-typography-9 是 stable 的默认关闭规则 —— 关的理由是上游规范自标争议而不是误报率没验过，它照旧用 `enable` 打开，与 `enable_experimental` 无关。
 
 ## 配置
 
-规则分两类：**绝大多数规则默认启用**；个别规则默认关闭，并在自己的条目里标明 (当前只有 R9)。配置能关掉默认启用的规则、打开默认关闭的规则：关掉的规则既不报违规，`--fix` 也原样输出；打开的规则与默认启用的规则行为一致。开关之外还有覆盖严重度的 `severity`、纳入 experimental 规则的 `enable_experimental`、以及调整单条规则判定的键 (当前只有 R5 的 `skip_zh_units`)，三者默认都不改变任何判定。所以「没有任何配置」永远等价于「默认集」(默认启用规则的全体)，各实现的默认行为一致，消费方不加配置就不会有行为变化。
+规则分两类：**绝大多数规则默认启用**；个别规则默认关闭，并在自己的条目里标明 (当前只有 zh-typography-9)。配置能关掉默认启用的规则、打开默认关闭的规则：关掉的规则既不报违规，`--fix` 也原样输出；打开的规则与默认启用的规则行为一致。开关之外还有覆盖严重度的 `severity`、纳入 experimental 规则的 `enable_experimental`、以及调整单条规则判定的键 (当前只有 zh-typography-5 的 `skip_zh_units`)，三者默认都不改变任何判定。所以「没有任何配置」永远等价于「默认集」(默认启用规则的全体)，各实现的默认行为一致，消费方不加配置就不会有行为变化。
 
 配置是整次运行的开关，逃生口 (escape hatch) 另有两个，各占一节：「行内指令」按行 × 规则就地收窄，「忽略文件」把整份文件排除在输入之外。
 
@@ -129,8 +130,8 @@ A1 / A3 / A4 / A5 / A7 / A8 / T1 / T2 的判定依赖词表 (wordlist)。词表�
 - `enable` —— 要打开的规则 id 列表，用于默认关闭的规则；列出默认启用的规则是允许的空操作 (显式写出无害)。
 
 ```toml
-disable = ["R3"]
-enable = ["R9"]
+disable = ["zh-typography-3"]
+enable = ["zh-typography-9"]
 ```
 
 一次运行的启用集 = ((默认集 ∪ experimental 集) ∪ `enable`) − `disable`；其中 experimental 集只在 `enable_experimental = true` 时并入，否则是空集。
@@ -153,17 +154,17 @@ enable_experimental = true
 - **没有对应的 CLI flag，也没有逐条打开的办法**：experimental 规则 id 出现在 `enable` 键或命令行 `--enable` 上都是配置错误。命令行上出现 `--disable` / `--enable` 时配置文件整体不生效，这个键随之回到 `false` (见「来源与优先级」)，所以命令行上打不开任何 experimental 规则。
 - experimental 规则 id 出现在 `disable` 或 `severity` 里是合法的：这个键打开时生效，关闭时是空操作 —— 与「列出默认启用的规则是允许的空操作」同理。
 - 值不是布尔是配置错误。
-- 当前的 experimental 规则是 A1、A2、A3、A4、A5、A6、A7、A8、T1、T2 (见「规则属性」的实验规则清单)。
+- 当前的 experimental 规则是 zh-tell-1、zh-tell-2、zh-tell-3、zh-tell-4、en-tell-1、en-tell-2、en-tell-3、zh-tell-5、zh-word-1、zh-word-2 (见「规则属性」的实验规则清单)。
 
 ### 严重度的键：`severity`
 
 覆盖规则默认严重度的表，键是规则 id、值是 `"error"` 或 `"warning"` (语义见「规则属性」与「退出码」)：
 
 ```toml
-severity = { R8 = "warning" }
+severity = { zh-typography-8 = "warning" }
 ```
 
-- **类型**：一张 toml 表；不写等价于空表，即每条规则都用规范给它的默认严重度 (R1–R11 是 `error`，A1–A8 与 T1–T2 是 `warning`)。
+- **类型**：一张 toml 表；不写等价于空表，即每条规则都用规范给它的默认严重度 (`zh-typography` 一族是 `error`，`zh-tell` / `en-tell` / `zh-word` 三族是 `warning`)。
 - **只影响报告与退出码，不影响修复**：降成 `warning` 的 fixable 规则 `--fix` 照样修。
 - 对不在启用集里的规则写严重度是空操作 —— 关掉的规则本来就不报。
 - 值不是表、键是未知规则 id、值不是 `"error"` / `"warning"`，三者都是配置错误。
@@ -171,15 +172,15 @@ severity = { R8 = "warning" }
 
 ### 调整判定的键：`skip_zh_units`
 
-R5 的中文计量单位豁免表，与 `disable` / `enable` 写在同一张表里。名字沿用 zhlint 的 `skipZhUnits` 以便对照 (`docs/research/zh-typography-guidelines-survey.md` §3.2)。
+zh-typography-5 的中文计量单位豁免表，与 `disable` / `enable` 写在同一张表里。名字沿用 zhlint 的 `skipZhUnits` 以便对照 (`docs/research/zh-typography-guidelines-survey.md` §3.2)。
 
 ```toml
 skip_zh_units = "年月日天号时分秒"
 ```
 
 - **类型**：一个字符串，每个字符是一个中文计量单位字。
-- **默认 `""`**，与不写等价 —— R5 的判定不带任何例外，即今天的行为。
-- **语义**在 R5 条里定义，只影响 R5 的判定与修复，其它规则不受影响。
+- **默认 `""`**，与不写等价 —— zh-typography-5 的判定不带任何例外，即今天的行为。
+- **语义**在 zh-typography-5 条里定义，只影响 zh-typography-5 的判定与修复，其它规则不受影响。
 - 值不是字符串、或含 CJK 字符以外的字符 (CJK 见「CJK 与 word 字符」)，是配置错误；重复字符无害。
 
 ### 规划中的键：`quote_style` (已定案，未实现)
@@ -195,7 +196,7 @@ skip_zh_units = "年月日天号时分秒"
 
 两类来源，**CLI flag 优先于配置文件**；一次运行只有一个来源生效，不做逐键合并。
 
-1. **CLI flag `--disable` 与 `--enable`**：都接规则 id，可重复给也可逗号分隔 —— `--disable R3`、`--disable R1,R3`、`--disable R1 --disable R3` 等价于关掉列出的规则，`--enable` 同语法。命令行上只要出现了两者之一，配置文件整体不生效：缺席的另一个键按空算，配置文件里的 `skip_zh_units`、`severity` 与 `enable_experimental` 也随之失效，各自回到默认值。没有命令行开关的键不另开例外。
+1. **CLI flag `--disable` 与 `--enable`**：都接规则 id，可重复给也可逗号分隔 —— `--disable zh-typography-3`、`--disable zh-typography-1,zh-typography-3`、`--disable zh-typography-1 --disable zh-typography-3` 等价于关掉列出的规则，`--enable` 同语法。命令行上只要出现了两者之一，配置文件整体不生效：缺席的另一个键按空算，配置文件里的 `skip_zh_units`、`severity` 与 `enable_experimental` 也随之失效，各自回到默认值。没有命令行开关的键不另开例外。
 2. **配置文件**：两种同构 (isomorphic) 载体，见下。
 
 `--fix` 与 `--all` 的语义不受配置影响。
@@ -207,14 +208,14 @@ skip_zh_units = "年月日天号时分秒"
 - **独立文件 `limae.toml`**：键写在顶层。
 
   ```toml
-  disable = ["R3"]
+  disable = ["zh-typography-3"]
   ```
 
 - **`pyproject.toml` 的 `[tool.limae]` 表**：同样的键写在这张表里。
 
   ```toml
   [tool.limae]
-  disable = ["R3"]
+  disable = ["zh-typography-3"]
   ```
 
 过渡期仍识别旧名 `lo-md-lint.toml` 与 `[tool.lo-md-lint]`，与新名语义完全相同 (见「发现顺序」)。
@@ -238,12 +239,12 @@ skip_zh_units = "年月日天号时分秒"
 下面几种都是配置错误。实现必须打印错误并以配置错误的退出码结束 (见「退出码」)，不得静默忽略、也不得退化成默认集：
 
 1. **发现过程中读到的候选文件不是合法 toml** —— 独立文件与 `pyproject.toml` 都算，**也包括那份 `pyproject.toml` 里根本没有本工具的表的情况**：解析失败时无从判断里面有没有本工具的表，跳过它就可能静默忽略用户写下的配置。此时向上发现立即中止，不再看上一层。
-2. **`disable` 或 `enable` 不是字符串列表**，如 `disable = "R3"`。
+2. **`disable` 或 `enable` 不是字符串列表**，如 `disable = "zh-typography-3"`。
 3. **`disable` 或 `enable` 里有未知 id**，即不在本规范里的字符串。
 4. **同一个 id 同时出现在 `disable` 与 `enable` 里**。
 5. **`skip_zh_units` 不是字符串**，如 `skip_zh_units = ["年"]`。
 6. **`skip_zh_units` 含 CJK 字符以外的字符**，如 `skip_zh_units = "年 月"`、`skip_zh_units = "年y"`。
-7. **`severity` 不是表、键是未知规则 id、或取值不是 `"error"` / `"warning"`**，如 `severity = "warning"`、`severity = { R99 = "error" }`、`severity = { R1 = "fatal" }`。
+7. **`severity` 不是表、键是未知规则 id、或取值不是 `"error"` / `"warning"`**，如 `severity = "warning"`、`severity = { R99 = "error" }`、`severity = { zh-typography-1 = "fatal" }`。
 8. **experimental 规则 id 出现在 `enable` 键或命令行 `--enable` 上**：成熟度只有 `enable_experimental` 一个总开关。
 9. **`enable_experimental` 不是布尔**，如 `enable_experimental = "true"`。
 10. **同一层新旧同名的配置源并存**：某一层同时有 `limae.toml` 与 `lo-md-lint.toml`，或发现走到的那份 `pyproject.toml` 同时有 `[tool.limae]` 与 `[tool.lo-md-lint]` 两张表 (理由见「发现顺序」)。独立文件在某一层赢下 `pyproject.toml` 时那份 `pyproject.toml` 不被读取，它里面有几张表都不算错。
@@ -269,11 +270,11 @@ skip_zh_units = "年月日天号时分秒"
 | 指令 | 语义 |
 | --- | --- |
 | `<!-- limae-disable -->` | 从下一行起关掉全部规则，直到 `enable` 或文件结束 |
-| `<!-- limae-disable R4 R5 -->` | 从下一行起只关列出的规则 |
+| `<!-- limae-disable zh-typography-4 zh-typography-5 -->` | 从下一行起只关列出的规则 |
 | `<!-- limae-enable -->` | 恢复本次运行的启用集 |
-| `<!-- limae-enable R4 -->` | 只恢复列出的规则 |
+| `<!-- limae-enable zh-typography-4 -->` | 只恢复列出的规则 |
 | `<!-- limae-disable-next-line -->` | 只豁免紧随其后的一行的全部规则 |
-| `<!-- limae-disable-next-line R4 -->` | 只豁免紧随其后的一行的列出规则 |
+| `<!-- limae-disable-next-line zh-typography-4 -->` | 只豁免紧随其后的一行的列出规则 |
 
 - **规则 id 用空格或逗号分隔**，与 CLI `--disable` 同语法；不列 id 等于「全部规则」。
 - **文件顶部的 `disable` 就是整份文件关掉**，不另设整文件指令。
@@ -287,14 +288,14 @@ skip_zh_units = "年月日天号时分秒"
 - **过渡期仍识别旧前缀** `lo-md-lint-disable` / `lo-md-lint-enable` / `lo-md-lint-disable-next-line`：旧前缀只是同一条指令的另一个拼法，与新前缀语义完全相同，**可以在同一份文件里混用** —— `<!-- lo-md-lint-disable -->` 由 `<!-- limae-enable -->` 关掉是合法的，两个前缀共用上面那一个状态机。拼错的名字不论用哪个前缀都是普通文本。
 
 ```text
-<!-- limae-disable-next-line R4 -->
-サンプルIT推進部の例   → 不变 (只有下一行的 R4 被关掉)
+<!-- limae-disable-next-line zh-typography-4 -->
+サンプルIT推進部の例   → 不变 (只有下一行的 zh-typography-4 被关掉)
 
-<!-- limae-disable R4 R5 -->
-成段的原样文本         → R4、R5 关到 enable 为止，其余规则照常
+<!-- limae-disable zh-typography-4 zh-typography-5 -->
+成段的原样文本         → zh-typography-4、zh-typography-5 关到 enable 为止，其余规则照常
 <!-- limae-enable -->
 
-<!-- lo-md-lint-disable R4 -->
+<!-- lo-md-lint-disable zh-typography-4 -->
 成段的原样文本         → 旧前缀语义相同，可与新前缀混用
 <!-- limae-enable -->
 ```
@@ -316,7 +317,7 @@ docs/generated/*.md
 !docs/generated/index.md
 ```
 
-## R1：CJK 旁的半角标点
+## zh-typography-1：CJK 旁的半角标点
 
 属性：fixable · error · stable
 
@@ -326,36 +327,36 @@ docs/generated/*.md
 - **不触发**：两侧都不是 CJK 的半角标点原样保留。
 
 ```text
-你好,世界        → 你好，世界        (R1)
-ACME,主动层      → ACME，主动层      (R1，后一个字符是 CJK)
+你好,世界        → 你好，世界        (zh-typography-1)
+ACME,主动层      → ACME，主动层      (zh-typography-1，后一个字符是 CJK)
 a, b: c; d? e!   → 不变
 $1,000           → 不变
 https://example.com:8080 → 不变
-见上文.然后      → 见上文。然后      (R1)
-It works.中文    → It works。中文   (R1，后一个字符是 CJK)
+见上文.然后      → 见上文。然后      (zh-typography-1)
+It works.中文    → It works。中文   (zh-typography-1，后一个字符是 CJK)
 文件名.md        → 不变 (点后是 ASCII 字母)
 以 Dr.王 称呼    → 不变 (缩写表)
 中文...省略      → 不变 (点旁还是点)
 ```
 
-## R2：全角括号
+## zh-typography-2：全角括号
 
 属性：fixable · error · stable
 
-- **判定**：出现 `（` 或 `）`。**每个字符各报一处**，所以 `（测试）` 报两处 R2。
-- **修复**：分别换成 `(` 与 `)`；换完之后 R3 在同一次修复里继续处理外侧空格。
+- **判定**：出现 `（` 或 `）`。**每个字符各报一处**，所以 `（测试）` 报两处 zh-typography-2。
+- **修复**：分别换成 `(` 与 `)`；换完之后 zh-typography-3 在同一次修复里继续处理外侧空格。
 
 ```text
-（测试）                  → (测试)                    (R2 ×2)
-术语（covered call）策略   → 术语 (covered call) 策略   (R2 ×2)
-[链接](url)（注）         → [链接](url) (注)          (R2 ×2；换成半角后由 R3 补空格)
+（测试）                  → (测试)                    (zh-typography-2 ×2)
+术语（covered call）策略   → 术语 (covered call) 策略   (zh-typography-2 ×2)
+[链接](url)（注）         → [链接](url) (注)          (zh-typography-2 ×2；换成半角后由 zh-typography-3 补空格)
 ```
 
-## R3：半角括号外侧空格
+## zh-typography-3：半角括号外侧空格
 
 属性：fixable · error · stable
 
-半角括号的外侧与相邻文字之间要留一个空格，内侧不留。两个方向共用 id `R3`，各自独立报告；检测与修复对称 —— 凡报的每一处 `--fix` 都补空格。
+半角括号的外侧与相邻文字之间要留一个空格，内侧不留。两个方向共用 id `zh-typography-3`，各自独立报告；检测与修复对称 —— 凡报的每一处 `--fix` 都补空格。
 
 - **判定 (左)**：`(` 的前一个字符是 word 字符或 `)`，或 `(` 前面紧跟 `**`，或紧跟一个反引号 `` ` ``。`)(` 之间要空格，是因为前一个括号组是文字而不是语法。
 - **判定 (右)**：`)` 的后一个字符是 word 字符或一个反引号 `` ` ``，或 `)` 后面紧跟 `**` 再跟一个 word 字符。`**` 后面不跟 word 字符时不报：那是粗体的收尾标记 (`**加粗 (x)**`)，插空格会破坏它；反过来 `)**` 后跟 word 字符的 `**` 按 CommonMark 的 flanking 规则不可能收尾，只能是起始标记。
@@ -365,20 +366,20 @@ It works.中文    → It works。中文   (R1，后一个字符是 CJK)
   - **Markdown 链接**：`]` 不算相邻文字，`](` 是链接语法而不是行文，所以 `[链接](url)` 不报。
 
 ```text
-期权(covered call)策略  → 期权 (covered call) 策略   (R3 ×2)
-Foo(核心)               → Foo (核心)                (R3)
-**粗体**(x)             → **粗体** (x)              (R3)
-(x)**粗体**             → (x) **粗体**              (R3)
-`code`(x)               → `code` (x)                (R3)
-(x)`code`               → (x) `code`                (R3)
-查 401(k)计划            → 查 401(k) 计划            (R3，只报右方向)
-选 option(s)后接中文     → 选 option(s) 后接中文      (R3，只报右方向)
+期权(covered call)策略  → 期权 (covered call) 策略   (zh-typography-3 ×2)
+Foo(核心)               → Foo (核心)                (zh-typography-3)
+**粗体**(x)             → **粗体** (x)              (zh-typography-3)
+(x)**粗体**             → (x) **粗体**              (zh-typography-3)
+`code`(x)               → `code` (x)                (zh-typography-3)
+(x)`code`               → (x) `code`                (zh-typography-3)
+查 401(k)计划            → 查 401(k) 计划            (zh-typography-3，只报右方向)
+选 option(s)后接中文     → 选 option(s) 后接中文      (zh-typography-3，只报右方向)
 逐字引用 credential(s) 的文案 → 不变
-[链接](url)(注)          → [链接](url) (注)          (R3，`)(` 之间)
+[链接](url)(注)          → [链接](url) (注)          (zh-typography-3，`)(` 之间)
 [链接](https://example.com) 后文 → 不变
 ```
 
-## R4：CJK 与拉丁字母之间空格
+## zh-typography-4：CJK 与拉丁字母之间空格
 
 属性：fixable · error · stable
 
@@ -388,13 +389,13 @@ Foo(核心)               → Foo (核心)                (R3)
 - **无专名豁免**：产品官方写法把 CJK 与字母连写的 (`豆瓣FM` 这类)，要保留就放进行内代码，走全局豁免。
 
 ```text
-中文English混排   → 中文 English 混排   (R4 ×2)
-设为on           → 设为 on            (R4)
+中文English混排   → 中文 English 混排   (zh-typography-4 ×2)
+设为on           → 设为 on            (zh-typography-4)
 ACME，主动层      → 不变 (全角逗号隔开，不相邻)
 逐字引用 `豆瓣FM`  → 不变 (行内代码)
 ```
 
-## R5：CJK 与数字之间空格
+## zh-typography-5：CJK 与数字之间空格
 
 属性：fixable · error · stable
 
@@ -404,10 +405,10 @@ ACME，主动层      → 不变 (全角逗号隔开，不相邻)
 - **`skip_zh_units` 的豁免范围**：一段数字串紧跟一个列在这个键里的字时，这段数字串的**两个边界**都豁免 —— 数字串与该单位字之间的边界，以及数字串前一个字符与数字串之间的边界。数字串指 `[0-9]+`，内部可含 `.` 或 `,` 分隔的续段 (`1.5`、`1,000`)。单位字之后的边界由后面的 token 自行判定，本键不管。
 
 ```text
-2011年           → 2011 年             (R5)
-2011年5月15日     → 2011 年 5 月 15 日   (R5 ×5)
-第3个            → 第 3 个              (R5 ×2)
-共1,000股        → 共 1,000 股          (R5 ×2；千分位逗号两侧都不是 CJK，R1 不碰)
+2011年           → 2011 年             (zh-typography-5)
+2011年5月15日     → 2011 年 5 月 15 日   (zh-typography-5 ×5)
+第3个            → 第 3 个              (zh-typography-5 ×2)
+共1,000股        → 共 1,000 股          (zh-typography-5 ×2；千分位逗号两侧都不是 CJK，zh-typography-1 不碰)
 $1,000           → 不变
 ```
 
@@ -418,11 +419,11 @@ $1,000           → 不变
 他2011年出生      → 不变
 共3天            → 不变
 共1,000天         → 不变 (千分位逗号是数字串内部的分隔)
-第3个            → 第 3 个              (R5 ×2；个不在键里)
-第3天1次         → 第3天 1 次           (R5 ×2；1 后面跟的是次)
+第3个            → 第 3 个              (zh-typography-5 ×2；个不在键里)
+第3天1次         → 第3天 1 次           (zh-typography-5 ×2；1 后面跟的是次)
 ```
 
-## R6：数字与 ASCII 单位之间空格
+## zh-typography-6：数字与 ASCII 单位之间空格
 
 属性：fixable · error · stable
 
@@ -436,14 +437,14 @@ $1,000           → 不变
   - `2FA`、`3D`、`401k` —— 字母串不在单位表里。
 
 ```text
-16GB      → 16 GB     (R6)
-1.5GB     → 1.5 GB    (R6；数字段是 5，前面的 . 不挡)
-100Mbps   → 100 Mbps  (R6)
+16GB      → 16 GB     (zh-typography-6)
+1.5GB     → 1.5 GB    (zh-typography-6；数字段是 5，前面的 . 不挡)
+100Mbps   → 100 Mbps  (zh-typography-6)
 15% 与 90° → 不变
 0x1F      → 不变
 ```
 
-## R7：行内代码定界符与 CJK 之间空格
+## zh-typography-7：行内代码定界符与 CJK 之间空格
 
 属性：fixable · error · stable
 
@@ -454,12 +455,12 @@ $1,000           → 不变
 - **跨行的 span 一样管**：开启串在行尾 (内容从下一行开始)、闭合串在行首时，照样按本条判定，各自报在定界串所在的那一行。
 
 ```text
-用`ln(K/F)`计算   → 用 `ln(K/F)` 计算   (R7 ×2)
-`code`(x)        → `code` (x)         (R3，相邻的是括号不是 CJK)
+用`ln(K/F)`计算   → 用 `ln(K/F)` 计算   (zh-typography-7 ×2)
+`code`(x)        → `code` (x)         (zh-typography-3，相邻的是括号不是 CJK)
 未闭合`的反引号    → 不变 (反引号未配对，是普通文本)
 ```
 
-## R8：破折号两侧空格
+## zh-typography-8：破折号两侧空格
 
 属性：fixable · error · stable
 
@@ -468,15 +469,15 @@ $1,000           → 不变
 - **不触发**：行首 / 行尾一侧没有相邻字符；该侧已有空白；单个 `—`、三个及以上的 `———`、ASCII `-`、en dash `–` 都不是本规则的形态；行内代码 span 里的破折号走全局豁免，紧贴定界反引号内侧也不报。
 
 ```text
-你好——世界        → 你好 —— 世界      (R8 ×2)
-——行首引语        → —— 行首引语       (R8)
+你好——世界        → 你好 —— 世界      (zh-typography-8 ×2)
+——行首引语        → —— 行首引语       (zh-typography-8)
 正确 —— 用法      → 不变
 ———三连           → 不变 (不是恰好两个)
 范围 1–2 与 a-b   → 不变
 提到 `——` 本身     → 不变 (行内代码)
 ```
 
-## R9：链接与 CJK 之间空格
+## zh-typography-9：链接与 CJK 之间空格
 
 属性：fixable · error · stable
 
@@ -484,58 +485,58 @@ $1,000           → 不变
 
 - **判定**：CJK 字符紧邻一个行内链接 (inline link) 的起始 `[` 之前。链接按最简式样识别：同一行内 `[` 后跟不含 `]` 的显示文字，再接 `](`。每处报一处。
 - **修复**：在 CJK 与 `[` 之间插入一个半角空格。
-- **只管 `[` 一侧**：链接收尾的 `)` 与后文之间已在 R3 的右方向判定内 (R3 不区分链接括号与行文括号)，R9 不重复报。
-- **不触发**：普通方括号 (后面没有 `](`)；图片 `![…](…)` —— `[` 的前一个字符是 `!` 不是 CJK；`](` 语法本身照旧豁免 (R3 的既有豁免)。
+- **只管 `[` 一侧**：链接收尾的 `)` 与后文之间已在 zh-typography-3 的右方向判定内 (zh-typography-3 不区分链接括号与行文括号)，zh-typography-9 不重复报。
+- **不触发**：普通方括号 (后面没有 `](`)；图片 `![…](…)` —— `[` 的前一个字符是 `!` 不是 CJK；`](` 语法本身照旧豁免 (zh-typography-3 的既有豁免)。
 
 ```text
-前文[链接](https://example.com/)后文 → 前文 [链接](https://example.com/) 后文  (R9 左侧 + R3 右侧)
+前文[链接](https://example.com/)后文 → 前文 [链接](https://example.com/) 后文  (zh-typography-9 左侧 + zh-typography-3 右侧)
 普通[方括号]不是链接                 → 不变
 ```
 
-## R10：全角数字
+## zh-typography-10：全角数字
 
 属性：fixable · error · stable
 
-- **判定**：出现全角数字 `０-９` (U+FF10–U+FF19)。**每个字符各报一处**，所以 `２０１１` 报四处 R10。
-- **修复**：换成对应的半角数字；换出的半角数字在同一次修复里继续被 R5 / R6 补空格 (见「修复顺序」)。
+- **判定**：出现全角数字 `０-９` (U+FF10–U+FF19)。**每个字符各报一处**，所以 `２０１１` 报四处 zh-typography-10。
+- **修复**：换成对应的半角数字；换出的半角数字在同一次修复里继续被 zh-typography-5 / zh-typography-6 补空格 (见「修复顺序」)。
 
 ```text
-２０１１年   → 2011 年    (R10 ×4；空格来自同一次修复里的 R5)
+２０１１年   → 2011 年    (zh-typography-10 ×4；空格来自同一次修复里的 zh-typography-5)
 半角 0 不动  → 不变
 ```
 
-## R11：全角标点旁的空格
+## zh-typography-11：全角标点旁的空格
 
 属性：fixable · error · stable
 
 - **判定**：一段连续的空格 (U+0020)，一端紧邻集合 `，` `。` `、` `；` `：` `？` `！` 里的全角标点，另一端是一个非空白字符。两个方向各自独立报告：标点后的空格串一处，标点前的空格串一处；两端都是集合内标点的空格串两侧各报一处。
 - **修复**：删除这段空格。
-- **豁免 (破折号)**：空格串另一端的字符是 `—` (U+2014) 或 `⸺` (U+2E3A) 时不报不删 —— R8 刚补的破折号旁空格不能被本条回收。
+- **豁免 (破折号)**：空格串另一端的字符是 `—` (U+2014) 或 `⸺` (U+2E3A) 时不报不删 —— zh-typography-8 刚补的破折号旁空格不能被本条回收。
 - **豁免 (表格)**：空格串另一端的字符是 `|` 时不报不删 —— 那是表格单元格边界的 padding，属于 Markdown 语法排版不是行文。
 - **不触发**：行首 / 行尾的空白 (空格串的另一端必须有非空白字符)；两端字符照「全局豁免」的统一边界语义参与判定，所以紧贴 URL 等豁免范围的空格不动。
 
 ```text
-你好， 世界      → 你好，世界      (R11)
-你好 ，世界      → 你好，世界      (R11)
-前后 ： 都删     → 前后：都删      (R11 ×2)
+你好， 世界      → 你好，世界      (zh-typography-11)
+你好 ，世界      → 你好，世界      (zh-typography-11)
+前后 ： 都删     → 前后：都删      (zh-typography-11 ×2)
 你好， —— 世界   → 不变 (破折号豁免)
 | 单元格结尾。 |  → 不变 (表格豁免)
 ```
 
-## A1：中文套话
+## zh-tell-1：中文套话
 
 属性：non-fixable · warning · experimental
 
-- **判定**：一行内出现 `spec/wordlists/A1.txt` 里的任一条 —— 开场白与八股连接词，如「综上所述」「值得注意的是」「众所周知」。词表格式与匹配语义见「词表」。
+- **判定**：一行内出现 `spec/wordlists/zh-tell-1.txt` 里的任一条 —— 开场白与八股连接词，如「综上所述」「值得注意的是」「众所周知」。词表格式与匹配语义见「词表」。
 - **一行只报一处**：同一行命中多条、或同一条命中多次，都只报最左边的那一处。这类词天然成串出现，逐处报只会让报告刷屏。
 - **不修复**：套话该删还是该改写取决于上下文，没有唯一修法。
 
 ```text
-综上所述，这条路走不通。               → A1
-值得注意的是，众所周知的结论也要复核。   → A1 (命中两条，只报一处)
+综上所述，这条路走不通。               → zh-tell-1
+值得注意的是，众所周知的结论也要复核。   → zh-tell-1 (命中两条，只报一处)
 ```
 
-## A2：否定平行
+## zh-tell-2：否定平行
 
 属性：non-fixable · warning · experimental
 
@@ -544,59 +545,59 @@ $1,000           → 不变
 - **不修复**：改写要重排整句，没有唯一修法。
 
 ```text
-这不是排版问题，而是选词问题。   → A2
+这不是排版问题，而是选词问题。   → zh-tell-2
 不仅要修排版，更要修选词。       → 不变 (递进句式不收)
 不是这样，中间隔了很多很多很多很多很多很多很多字，而是那样。 → 不变 (相距超过 20 个字符)
 ```
 
-## A3：互联网黑话
+## zh-tell-3：互联网黑话
 
 属性：non-fixable · warning · experimental
 
-- **判定**：一行内出现 `spec/wordlists/A3.txt` 里的任一条 —— 公文与互联网黑话，如「赋能」「抓手」「赛道」。词表格式与匹配语义见「词表」。
-- **一行只报一处**，与 A1 同理。
+- **判定**：一行内出现 `spec/wordlists/zh-tell-3.txt` 里的任一条 —— 公文与互联网黑话，如「赋能」「抓手」「赛道」。词表格式与匹配语义见「词表」。
+- **一行只报一处**，与 zh-tell-1 同理。
 - **词表只收在技术文档里没有正当技术含义的词**：「对齐」「沉淀」「闭环」「生态」都有正当用法 (对齐两份配置、沉淀成文档、闭环控制、依赖生态)，不收。
 - **不修复**：黑话的替换词取决于它实际想说什么。
 
 ```text
-用数据赋能业务，是常见的说法。         → A3
-这个赛道的抓手还没找到。               → A3 (命中两条，只报一处)
+用数据赋能业务，是常见的说法。         → zh-tell-3
+这个赛道的抓手还没找到。               → zh-tell-3 (命中两条，只报一处)
 团队对齐了这一版的目标，闭环也走通了。   → 不变 (两条都不在词表里)
 ```
 
-## A4：聊天残留
+## zh-tell-4：聊天残留
 
 属性：non-fixable · warning · experimental
 
-- **判定**：一行内出现 `spec/wordlists/A4.txt` 里的任一条 —— 对话回复被整段粘进文档时留下的话，如「希望这对你有帮助」「如果你还有其他问题」。词表格式与匹配语义见「词表」。
-- **一行只报一处**，与 A1 同理。
+- **判定**：一行内出现 `spec/wordlists/zh-tell-4.txt` 里的任一条 —— 对话回复被整段粘进文档时留下的话，如「希望这对你有帮助」「如果你还有其他问题」。词表格式与匹配语义见「词表」。
+- **一行只报一处**，与 zh-tell-1 同理。
 - **词表只收整句级模板**：单词 (「当然」「以下是」) 在正常行文里太常见，不收。
 - **不修复**：残留句该整句删掉，不是替换。
 
 ```text
-希望这对你有帮助。                 → A4
-如果你还有其他问题，随时告诉我。     → A4 (命中两条，只报一处)
+希望这对你有帮助。                 → zh-tell-4
+如果你还有其他问题，随时告诉我。     → zh-tell-4 (命中两条，只报一处)
 ```
 
-## A5：英文 AI 词汇
+## en-tell-1：英文 AI 词汇
 
 属性：non-fixable · warning · experimental
 
-- **判定**：一行内出现 `spec/wordlists/A5.txt` 里的任一条 —— 通用 LLM 文风的高频英文词，如 `tapestry`、`testament`、`pivotal`、`evolving landscape`。词表格式与匹配语义见「词表」：整词、大小写不敏感。
-- **一行只报一处**，与 A1 同理。
+- **判定**：一行内出现 `spec/wordlists/en-tell-1.txt` 里的任一条 —— 通用 LLM 文风的高频英文词，如 `tapestry`、`testament`、`pivotal`、`evolving landscape`。词表格式与匹配语义见「词表」：整词、大小写不敏感。
+- **一行只报一处**，与 zh-tell-1 同理。
 - **规则不分语言** (ADR-0006 §五)：英文 tell 是 English-to-English 的，出现在中文文档里同样报，不做语言探测。
-- **收词自检**，与 A3 同一条判据、A7 共用：给候选词造一句**无修辞意图的常规技术行文**，造得出、读着自然就不收，造不出才收。`underscores` 造得出「Use underscores in generated field names.」，不收；`testament` 造不出，收。专名是唯一的例外 —— 冷门或已停更的产品叫这个名字 (Apache Tapestry、Pivotal Cloud Foundry) 不构成删词理由，否则任何词都能被某个产品名论证掉。
-- **判据背后是逐行模型的限制**：单点 tell 的假阳性本来就高，真正的判据是密度 (调研 §2.4)，而文档级 finding 的形制还没有 (ADR-0007 §三)。所以宁可词表短、真阳性密度高。`harness`、`realm`、`robust`、`leverage`、`unpack`、`delve`、`seamless`、`foster` 都是这样删掉的，逐条理由记在 `A5.txt` 的注释里。
+- **收词自检**，与 zh-tell-3 同一条判据、en-tell-3 共用：给候选词造一句**无修辞意图的常规技术行文**，造得出、读着自然就不收，造不出才收。`underscores` 造得出「Use underscores in generated field names.」，不收；`testament` 造不出，收。专名是唯一的例外 —— 冷门或已停更的产品叫这个名字 (Apache Tapestry、Pivotal Cloud Foundry) 不构成删词理由，否则任何词都能被某个产品名论证掉。
+- **判据背后是逐行模型的限制**：单点 tell 的假阳性本来就高，真正的判据是密度 (调研 §2.4)，而文档级 finding 的形制还没有 (ADR-0007 §三)。所以宁可词表短、真阳性密度高。`harness`、`realm`、`robust`、`leverage`、`unpack`、`delve`、`seamless`、`foster` 都是这样删掉的，逐条理由记在 `en-tell-1.txt` 的注释里。
 - **不修复**：这类词该换成什么取决于它实际想说什么。
 
 ```text
-This release is a testament to a pivotal shift. → A5 (命中两条，只报一处)
+This release is a testament to a pivotal shift. → en-tell-1 (命中两条，只报一处)
 The `testament` in `tapestry` is code.          → 不变 (行内代码豁免)
 See https://example.com/testament/ for details. → 不变 (裸 URL 豁免)
 The is_pivotal column of the table.             → 不变 (整词匹配，`_` 是边界字符)
 ```
 
-## A6：英文否定平行
+## en-tell-2：英文否定平行
 
 属性：non-fixable · warning · experimental
 
@@ -604,48 +605,48 @@ The is_pivotal column of the table.             → 不变 (整词匹配，`_` �
   1. `not just` … `but`；
   2. 否定的系动词 … 肯定的系动词 —— 前者是 `it's not` / `that's not` / `they're not` / `is not` / `are not` / `was not` / `were not` / `isn't` / `aren't` / `wasn't` / `weren't`，后者是 `it's` / `that's` / `they're` / `it is` / `that is` / `they are`。
 - 两种形态都按整词匹配、大小写不敏感，直撇号 `'` 与弯撇号 `’` 等价。
-- **每个非重叠匹配各报一处**，与 A2 同规矩：**句式类规则 (A2 / A6) 逐处报** —— 每个句式各是一处独立违规；**词表类规则 (A1 / A3 / A4 / A5 / A7) 一行只报一处** —— 同类词成串出现，逐处报只会刷屏。
-- **不收 `not only … but also …`**：它在英文里是正常的正式行文，与 A2 不收「不仅 … 而且 …」同一个理由。
+- **每个非重叠匹配各报一处**，与 zh-tell-2 同规矩：**句式类规则 (zh-tell-2 / en-tell-2) 逐处报** —— 每个句式各是一处独立违规；**词表类规则 (zh-tell-1 / zh-tell-3 / zh-tell-4 / en-tell-1 / en-tell-3) 一行只报一处** —— 同类词成串出现，逐处报只会刷屏。
+- **不收 `not only … but also …`**：它在英文里是正常的正式行文，与 zh-tell-2 不收「不仅 … 而且 …」同一个理由。
 - **不修复**：改写要重排整句，没有唯一修法。
 
 ```text
-This is not just a linter, but a spec.       → A6
-It's not a detector, it's a rule floor.      → A6
-The point isn't the words — it's the shape.  → A6
+This is not just a linter, but a spec.       → en-tell-2
+It's not a detector, it's a rule floor.      → en-tell-2
+The point isn't the words — it's the shape.  → en-tell-2
 Not only fast but also correct.              → 不变 (not only … but also 不收)
 ```
 
-## A7：Claudish 专用词
+## en-tell-3：Claudish 专用词
 
 属性：non-fixable · warning · experimental
 
-- **判定**：一行内出现 `spec/wordlists/A7.txt` 里的任一条 —— coding agent 文档的指纹，当前只有 `load-bearing` 一条。词表格式与匹配语义与 A5 相同，见「词表」。
-- **一行只报一处**，与 A1 同理。
-- **与 A5 分成两条**：A5 是通用 LLM 文风的指纹，A7 是 coding agent 文档的指纹 (`docs/research/claudish-and-ai-slop-survey.md` §2.1 B)。两支的误报来源不同，分开用户才能只关掉其中一支。
-- **词表只有一条，是自检的结果不是遗漏**：Deng 那份 high-signal 清单上的词绝大多数都造得出常规技术行文 —— `gated on`、`hard boundary`、`the key distinction`、`smoking gun` 都是，而且 Deng 的 spec 自己就把 `gate` 与 `boundary` 列进「明确不是禁词」那一行 (调研 §1.4)。剩下 `load-bearing`：软件文档里它没有本义 (本义属建筑)，造不出无修辞意图的句子，也是这批里唯一有频次实测的词。一条词的表照留、不凑数，第三批用真实语料长。删掉的词与各自那句常规技术行文逐条记在 `A7.txt` 的注释里。
-- **不修复**：与 A5 同理。
+- **判定**：一行内出现 `spec/wordlists/en-tell-3.txt` 里的任一条 —— coding agent 文档的指纹，当前只有 `load-bearing` 一条。词表格式与匹配语义与 en-tell-1 相同，见「词表」。
+- **一行只报一处**，与 zh-tell-1 同理。
+- **与 en-tell-1 分成两条**：en-tell-1 是通用 LLM 文风的指纹，en-tell-3 是 coding agent 文档的指纹 (`docs/research/claudish-and-ai-slop-survey.md` §2.1 B)。两支的误报来源不同，分开用户才能只关掉其中一支。
+- **词表只有一条，是自检的结果不是遗漏**：Deng 那份 high-signal 清单上的词绝大多数都造得出常规技术行文 —— `gated on`、`hard boundary`、`the key distinction`、`smoking gun` 都是，而且 Deng 的 spec 自己就把 `gate` 与 `boundary` 列进「明确不是禁词」那一行 (调研 §1.4)。剩下 `load-bearing`：软件文档里它没有本义 (本义属建筑)，造不出无修辞意图的句子，也是这批里唯一有频次实测的词。一条词的表照留、不凑数，第三批用真实语料长。删掉的词与各自那句常规技术行文逐条记在 `en-tell-3.txt` 的注释里。
+- **不修复**：与 en-tell-1 同理。
 
 ```text
-This constraint is load-bearing.               → A7
-A load-bearing check and a load-bearing default. → A7 (命中两处，只报一处)
+This constraint is load-bearing.               → en-tell-3
+A load-bearing check and a load-bearing default. → en-tell-3 (命中两处，只报一处)
 Read the `load-bearing` flag from config.      → 不变 (行内代码豁免)
 ```
 
-## A8：「零 + 名词」造词
+## zh-tell-5：「零 + 名词」造词
 
 属性：non-fixable · warning · experimental
 
-- **判定**：行内每一个「零」字各判定一次 —— 从这个「零」起向右取到汉字串的末尾 (下一个非汉字：标点、空格、拉丁字母、数字或行尾) 得到**候选串**；候选串含「零」在内是 2 到 5 个汉字、且没有被 `spec/wordlists/A8-allow.txt` 豁免 (豁免语义见「词表」)，就在这个「零」的位置报一处。
+- **判定**：行内每一个「零」字各判定一次 —— 从这个「零」起向右取到汉字串的末尾 (下一个非汉字：标点、空格、拉丁字母、数字或行尾) 得到**候选串**；候选串含「零」在内是 2 到 5 个汉字、且没有被 `spec/wordlists/zh-tell-5-allow.txt` 豁免 (豁免语义见「词表」)，就在这个「零」的位置报一处。
 - **候选串必须取到汉字串的末尾，不能用固定宽度的窗口**：用 1–3 个字的窗口去截，「零额外请求」会被截成「零额外请」 —— 判的与报的都不是那个词。
-- **上限 5 个汉字是压误报的取舍**：更长的汉字串多半是句子连着写而不是造词，一律不报，代价是造词后面直接连着两三个汉字时漏报。宁可漏报不要误报，与 A5 同一个取法。
+- **上限 5 个汉字是压误报的取舍**：更长的汉字串多半是句子连着写而不是造词，一律不报，代价是造词后面直接连着两三个汉字时漏报。宁可漏报不要误报，与 en-tell-1 同一个取法。
 - **候选串只有「零」一个字不报**：那是数词本身，不是构词的前缀。
-- **一行多处逐处报**：每个「零」各是一处独立的造词判定，同一条汉字串里的第二个「零」照样单独判 (`零或接近零额外请求` 报的是第二处)。这与 A6 里「词表类规则一行只报一处」的分界不冲突 —— 那条针对的是**命中表**：同类词成串出现，逐处报会刷屏；A8 的词表是**豁免表**，命中它反而不报，留下来的每一处都是各自成立的违规。
+- **一行多处逐处报**：每个「零」各是一处独立的造词判定，同一条汉字串里的第二个「零」照样单独判 (`零或接近零额外请求` 报的是第二处)。这与 en-tell-2 里「词表类规则一行只报一处」的分界不冲突 —— 那条针对的是**命中表**：同类词成串出现，逐处报会刷屏；zh-tell-5 的词表是**豁免表**，命中它反而不报，留下来的每一处都是各自成立的违规。
 - **不修复**：人话的改法随语境变 —— 不含 X / 没有 X / 不用 X / X 为零，没有唯一修法。
 
 ```text
-这一版做到零重复、零额外请求。         → A8 ×2 (逐处报)
-零维护，人话是「不用维护」。           → A8
-零或接近零额外请求。                   → A8 (第一个「零」的候选串超过 5 个汉字，第二个报)
+这一版做到零重复、零额外请求。         → zh-tell-5 ×2 (逐处报)
+零维护，人话是「不用维护」。           → zh-tell-5
+零或接近零额外请求。                   → zh-tell-5 (第一个「零」的候选串超过 5 个汉字，第二个报)
 零售价格、零成本、零信任都不报。       → 不变 (白名单盖住候选串的「零」)
 从零建机、非零退出都不报。             → 不变 (白名单同样收左侧的固定搭配)
 本节把零重建账号的全部细节写清楚。     → 不变 (候选串超过 5 个汉字)
@@ -653,41 +654,41 @@ Read the `load-bearing` flag from config.      → 不变 (行内代码豁免)
 行内代码 `零重复` 与 [说明](零重复.md) 都不报。 → 不变 (行内代码与链接 destination 豁免)
 ```
 
-## T1：术语选词
+## zh-word-1：术语选词
 
 属性：fixable · warning · experimental
 
-词表 `spec/wordlists/T1.toml` 的每条 entry 是一个 `wrong` / `right` / `anchors` 三元组，抄 AutoCorrect 的 `wrong = right` 形制 (`docs/research/claudish-and-ai-slop-survey.md` §5.2)，另加一个必要条件 —— 锚点。
+词表 `spec/wordlists/zh-word-1.toml` 的每条 entry 是一个 `wrong` / `right` / `anchors` 三元组，抄 AutoCorrect 的 `wrong = right` 形制 (`docs/research/claudish-and-ai-slop-survey.md` §5.2)，另加一个必要条件 —— 锚点。
 
 - **判定**：某条 entry 的 `wrong` 出现在某一行，**且同一行内出现该条 `anchors` 里的任一个锚点词**，则每个 `wrong` 命中各报一处 (与修复一一对应，所以不是「一行一处」)。
 - **锚点是语境证据，不是违规的一部分**：锚点在**整行**范围内查找，**不受全局豁免约束** —— 术语最常见的锚点正是行内代码里的 `secret` / `token`。违规本身 (`wrong` 的那几个字) 照旧受全局豁免约束。
 - **锚点匹配大小写不敏感**；`wrong` 与 `right` 逐字匹配。
 - **锚点是必要条件**：`anchors` 为空的 entry 永不命中，因此永不报、永不改。
 - **修复**：把命中的 `wrong` 换成同一条的 `right`。没有锚点的行一个字都不改 —— 「代币」在讲钱的语境里是对的，只有 `token` / `OAuth` / `鉴权` 在同一行时才是「令牌」的误译。
-- **词表只收「有唯一正确替换、且能被同行锚点消歧」的词**：「门控」(gate)、「一等公民」(first-class citizen)、「契约」(contract) 没有稳妥的唯一替换，也没有可靠锚点，不收；「秘密」(secret) 收不进来的理由记在 `T1.toml` 的注释里 —— 锚点与错误负相关。
+- **词表只收「有唯一正确替换、且能被同行锚点消歧」的词**：「门控」(gate)、「一等公民」(first-class citizen)、「契约」(contract) 没有稳妥的唯一替换，也没有可靠锚点，不收；「秘密」(secret) 收不进来的理由记在 `zh-word-1.toml` 的注释里 —— 锚点与错误负相关。
 
 ```text
-把 secret 写成秘钥是错的。            → 把 secret 写成密钥是错的。      (T1)
-轮换 token 时先备份秘钥，再删除旧秘钥。 → …备份密钥，再删除旧密钥。      (T1 ×2)
-用 `cache` 描述时不要写快取。          → 用 `cache` 描述时不要写缓存。   (T1，锚点在行内代码里照样算)
+把 secret 写成秘钥是错的。            → 把 secret 写成密钥是错的。      (zh-word-1)
+轮换 token 时先备份秘钥，再删除旧秘钥。 → …备份密钥，再删除旧密钥。      (zh-word-1 ×2)
+用 `cache` 描述时不要写快取。          → 用 `cache` 描述时不要写缓存。   (zh-word-1，锚点在行内代码里照样算)
 他把代币换成了现金。                   → 不变 (同一行没有锚点)
 行内代码 `秘钥 secret` 不算命中。      → 不变 (违规本身落在行内代码里)
 ```
 
-## T2：「秘密」误用
+## zh-word-2：「秘密」误用
 
 属性：non-fixable · warning · experimental
 
-- **判定**：行内出现「秘密」二字就在那里报一处，**不需要任何锚点**；被 `spec/wordlists/T2-allow.txt` 豁免的除外 (豁免语义见「词表」)。
-- **一行多处逐处报**，与 A8 同理：每一处「秘密」各是一处独立的误用。
+- **判定**：行内出现「秘密」二字就在那里报一处，**不需要任何锚点**；被 `spec/wordlists/zh-word-2-allow.txt` 豁免的除外 (豁免语义见「词表」)。
+- **一行多处逐处报**，与 zh-tell-5 同理：每一处「秘密」各是一处独立的误用。
 - **不修复**：技术文档里的「秘密」按语境该换成三者之一 —— 指 key 换「密钥」，指密码 / token / 私钥 / 助记词这类具体物换「凭证」，泛指换「敏感信息」。候选有三个、选哪个取决于语境，没有唯一修法。
-- **不用锚点，也不进 `T1.toml`**：「秘密」被当类别词用 (把密码、key、token 统称秘密) 这件事本身就不像中文行文，错不错与同一行有没有 `secret` / `key` 无关。ADR-0007 §五 记录的是 T1 那个形态 (fixable + 同行锚点) 下的取舍 —— 锚点分不清「作类别词的秘密」与「该译成密钥的 `secret`」，而 T1 是 fixable、判错就真改坏文本，所以那一批宁可漏报。T2 换了机制 (无锚点、non-fixable、三个候选)，那个两难不成立，所以它是新的一条规则，不是「T1 收回那条」。
+- **不用锚点，也不进 `zh-word-1.toml`**：「秘密」被当类别词用 (把密码、key、token 统称秘密) 这件事本身就不像中文行文，错不错与同一行有没有 `secret` / `key` 无关。ADR-0007 §五 记录的是 zh-word-1 那个形态 (fixable + 同行锚点) 下的取舍 —— 锚点分不清「作类别词的秘密」与「该译成密钥的 `secret`」，而 zh-word-1 是 fixable、判错就真改坏文本，所以那一批宁可漏报。zh-word-2 换了机制 (无锚点、non-fixable、三个候选)，那个两难不成立，所以它是新的一条规则，不是「zh-word-1 收回那条」。
 - **白名单只收「秘密」用本义的固定搭配**：「保守秘密」「商业秘密」「国家秘密」这类。它们在技术文档里几乎不出现，所以这张表短是常态，不是遗漏。
 
 ```text
-仓库里不得出现任何秘密。                 → T2 (泛指，人话是「敏感信息」)
-先把秘密写进 1Password，再删掉旧秘密。   → T2 ×2 (逐处报)
-这一条的说法是零秘密。                   → A8 + T2
+仓库里不得出现任何秘密。                 → zh-word-2 (泛指，人话是「敏感信息」)
+先把秘密写进 1Password，再删掉旧秘密。   → zh-word-2 ×2 (逐处报)
+这一条的说法是零秘密。                   → zh-tell-5 + zh-word-2
 双方有保守秘密的义务。                   → 不变 (白名单盖住命中)
 行内代码 `秘密` 与 `零秘密` 都不报。     → 不变 (行内代码豁免)
 ```

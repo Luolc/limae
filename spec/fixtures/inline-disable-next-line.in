@@ -1,4 +1,4 @@
-<!-- limae-disable-next-line R4 -->
+<!-- limae-disable-next-line zh-typography-4 -->
 サンプルIT推進部の例
 
 サンプルIT推進部の例
@@ -9,7 +9,7 @@
 你好,世界
 
 <!-- limae-disable-next-line -->
-<!-- limae-disable-next-line R4 -->
+<!-- limae-disable-next-line zh-typography-4 -->
 中文English混排与你好,世界
 
 <!-- limae-disable-next-line -->
@@ -17,5 +17,5 @@
 你好,世界
 
 <!-- limae-disable-next-line -->
-<!-- limae-disable R4 -->
+<!-- limae-disable zh-typography-4 -->
 中文English混排与你好,世界
