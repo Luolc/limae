@@ -53,7 +53,10 @@ DISABLE_VARIABLE = "LIMAE_HOOK_DISABLE"
 MIN_CHARS_VARIABLE = "LIMAE_HOOK_MIN_CHARS"
 RATE_VARIABLE = "LIMAE_HOOK_AB_RATE"
 TIMEOUT_VARIABLE = "LIMAE_HOOK_TIMEOUT"
-STATE_VARIABLE = "LIMAE_HOOK_STATE"
+# Not a setting, and deliberately not in `docs/knowledge/`: the tests
+# need the state to land somewhere they can look at, and nothing else
+# may move it (see `_root`).
+STATE_VARIABLE = "LIMAE_HOOK_STATE_FOR_TESTS"
 
 # Short messages are left alone (ADR-0009 section 二). The starting
 # value is Gvozdev's `CLAUDISH_MIN_CHARS`
@@ -84,6 +87,7 @@ SIBLING_POLL = 0.02
 # The state directory holds assistant replies (the cached batches, and
 # the A/B ledger next to them), so it is this user's alone.
 DIRECTORY_MODE = 0o700
+FILE_MODE = 0o600
 # How long a session's state is kept. It is scratch: the batches of a
 # finished message are deleted as soon as they are assembled, and what
 # is left is the A/B ledger of sessions that have ended.
@@ -118,33 +122,70 @@ def _identifier(value: object) -> str:
   return UNSAFE.sub("_", value)[:NAME_LIMIT]
 
 
-def _root(env: Mapping[str, str]) -> pathlib.Path:
+def _in_work_tree(path: pathlib.Path) -> bool:
+  """Return whether a path is inside a git checkout.
+
+  Args:
+    path: The path to place, existing or not.
+
+  Returns:
+    True when the path or one of its ancestors holds a ``.git`` — a
+    directory in a normal checkout, a file in a worktree.
+  """
+  resolved = path.resolve()
+  return any(
+      (directory / ".git").exists()
+      for directory in (resolved, *resolved.parents)
+  )
+
+
+def _root(env: Mapping[str, str]) -> pathlib.Path | None:
   """Return the directory every session's state lives under.
+
+  What is kept there is the assistant's own replies — the cached
+  batches, and the A/B ledger beside them — which ADR-0009 sections 五
+  and 八 keep to the session and out of any repository. So there is no
+  setting for the location: a knob that moves this directory is a knob
+  that can point it into a working tree, where the next ``git add`` can
+  carry a reply into a public repository. It is the system's scratch
+  directory and a fixed name under it, and a project's own configuration
+  cannot say otherwise.
+
+  What the tests need is an answer to the same question, so the
+  redirection they use is checked the same way everything else is: a
+  path inside a checkout is refused whatever set it.
 
   Args:
     env: The environment of the run.
 
   Returns:
-    The state root, whether or not it exists.
+    The state root, whether or not it exists; None when the only
+    candidate is inside a checkout, which leaves the hook with nowhere
+    to put a reply and therefore nothing to do.
   """
   override = env.get(STATE_VARIABLE)
-  if override:
-    return pathlib.Path(override)
-  return pathlib.Path(env.get("TMPDIR") or "/tmp") / STATE_DIRECTORY
+  root = (
+      pathlib.Path(override)
+      if override
+      else pathlib.Path(env.get("TMPDIR") or "/tmp") / STATE_DIRECTORY
+  )
+  return None if _in_work_tree(root) else root
 
 
-def _session(env: Mapping[str, str], session: str) -> pathlib.Path:
+def _session(root: pathlib.Path, session: str) -> pathlib.Path:
   """Return one session's state directory, creating it.
 
   Args:
-    env: The environment of the run.
+    root: The state root.
     session: The sanitised session id.
 
   Returns:
-    The directory.
+    The directory. Both it and the root are created with their mode, not
+    given it afterwards.
   """
-  directory = _root(env) / session
-  directory.mkdir(parents=True, exist_ok=True, mode=DIRECTORY_MODE)
+  root.mkdir(parents=True, exist_ok=True, mode=DIRECTORY_MODE)
+  directory = root / session
+  directory.mkdir(exist_ok=True, mode=DIRECTORY_MODE)
   return directory
 
 
@@ -192,14 +233,20 @@ def _keep(parts: pathlib.Path, index: int, delta: str) -> None:
   """
   parts.mkdir(parents=True, exist_ok=True, mode=DIRECTORY_MODE)
   name = f"{index:06d}"
-  writing = parts / f"{name}{TEMPORARY_SUFFIX}"
-  _ = writing.write_text(delta, encoding="utf-8")
+  # The mode goes in the create call rather than a chmod after it: a
+  # batch is a piece of the user's reply, and between a default-mode
+  # create and a chmod it is readable by everyone on the machine. The
+  # process id keeps the exclusive create exclusive.
+  writing = parts / f"{name}.{os.getpid()}{TEMPORARY_SUFFIX}"
+  descriptor = os.open(writing, os.O_WRONLY | os.O_CREAT | os.O_EXCL, FILE_MODE)
+  with os.fdopen(descriptor, "w", encoding="utf-8") as f:
+    _ = f.write(delta)
   # Into place in one step: another batch of the same message may be
   # reading this directory right now (see SIBLING_WAIT).
   _ = writing.replace(parts / f"{name}{PART_SUFFIX}")
 
 
-def _assemble(parts: pathlib.Path, batches: int, deadline: float) -> str:
+def _assemble(parts: pathlib.Path, batches: int, deadline: float) -> str | None:
   """Put a message back together from its cached batches.
 
   Args:
@@ -209,14 +256,28 @@ def _assemble(parts: pathlib.Path, batches: int, deadline: float) -> str:
       monotonic clock.
 
   Returns:
-    The whole message, batches in index order; whatever arrived in time
-    when one of them never did.
+    The whole message, batches in index order; None when one of them
+    never arrived. There is no honest rewrite of a message with a hole
+    in it — polishing what did arrive would put a paragraph the user
+    never wrote under a message that says it is theirs — so a missing
+    batch ends the turn the way every other failure does, with the
+    original on screen.
   """
-  paths = sorted(parts.glob(f"*{PART_SUFFIX}"))
-  while len(paths) < batches and time.monotonic() < deadline:
+  wanted = [parts / f"{index:06d}{PART_SUFFIX}" for index in range(batches)]
+  while not all(path.is_file() for path in wanted):
+    if time.monotonic() >= deadline:
+      arrived = sum(path.is_file() for path in wanted)
+      # The host debug-logs a hook's stderr. How many batches were
+      # missing is the whole of what is worth saying; what they held is
+      # the user's own text and stays out of every log.
+      print(
+          f"limae hook: {arrived}/{batches} batches arrived before the"
+          " deadline; showing the original",
+          file=sys.stderr,
+      )
+      return None
     time.sleep(SIBLING_POLL)
-    paths = sorted(parts.glob(f"*{PART_SUFFIX}"))
-  return "".join(path.read_text(encoding="utf-8") for path in paths)
+  return "".join(path.read_text(encoding="utf-8") for path in wanted)
 
 
 def _number(env: Mapping[str, str], variable: str, fallback: float) -> float:
@@ -313,12 +374,13 @@ def _display(payload: Mapping[str, object], env: Mapping[str, str]) -> str:
   session = _identifier(payload.get("session_id"))
   message = _identifier(payload.get("message_id"))
   delta = payload.get("delta")
-  if not session or not message or not isinstance(delta, str):
+  root = _root(env)
+  if not session or not message or not isinstance(delta, str) or root is None:
     return ""
   index = payload.get("index")
   if not isinstance(index, int) or isinstance(index, bool) or index < 0:
     return ""
-  directory = _session(env, session)
+  directory = _session(root, session)
   parts = directory / PARTS_DIRECTORY / message
   _keep(parts, index, delta)
   # `final` is the end-of-message signal whatever the delta holds: the
@@ -329,7 +391,9 @@ def _display(payload: Mapping[str, object], env: Mapping[str, str]) -> str:
   # one says how many there are.
   text = _assemble(parts, index + 1, time.monotonic() + SIBLING_WAIT)
   shutil.rmtree(parts, ignore_errors=True)
-  _prune(_root(env), time.time())
+  _prune(root, time.time())
+  if text is None:
+    return ""
   where = payload.get("cwd")
   block = _block(
       text,
@@ -355,9 +419,10 @@ def _stop(payload: Mapping[str, object], env: Mapping[str, str]) -> str:
     had no A/B trial.
   """
   session = _identifier(payload.get("session_id"))
-  if not session:
+  root = _root(env)
+  if not session or root is None:
     return ""
-  return ab.context(_session(env, session))
+  return ab.context(_session(root, session))
 
 
 def main(argv: Sequence[str]) -> int:

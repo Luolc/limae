@@ -63,7 +63,6 @@ hook 配置写进 `.claude/settings.local.json`。这个文件不入库 (见 `.g
 | `LIMAE_HOOK_MIN_CHARS` | 200 | 低于这个字数的回复不润色 (剥掉围栏代码块后按非空白字符计) |
 | `LIMAE_HOOK_AB_RATE` | 0.1 | 命中 A/B 双跑的概率，0 表示只单跑，1 表示每条都双跑 |
 | `LIMAE_HOOK_TIMEOUT` | 60 | 每个模型调用等多少秒；要小于上面 `settings.local.json` 里的 `timeout` |
-| `LIMAE_HOOK_STATE` | `$TMPDIR/limae-hook` | 会话态目录的根 |
 
 单跑用哪个引擎，走的是 `limae polish` 那套配置 (`limae.toml` 的 `[polish]`、`LIMAE_ENGINE`)；A/B 双跑不看这套，它从 ADR-0008 §五 的七个候选里现抽两个。
 
@@ -83,7 +82,7 @@ hook 配置写进 `.claude/settings.local.json`。这个文件不入库 (见 `.g
 
 **屏幕上不写型号，这是故意的** —— ADR-0008 §五 要的是盲评。对应关系只有两处：会话态台账，和经 `Stop` 回注给模型的那一句 (所以可以直接问 agent「灯塔那轮 A 是谁」)。
 
-台账目录：`$TMPDIR/limae-hook/<session_id>/`，一轮一个 JSON 文件，文件名就是编号。
+台账目录：`$TMPDIR/limae-hook/<session_id>/`，一轮一个 JSON 文件，文件名就是编号。**这个位置没有配置项**，也不接受任何一个项目的配置去改它 —— 台账里是助手回复原文，一旦落进工作树就可能被 `git add` 带走，而本仓是 public 仓；程序另会拒绝任何解析后落在 git 工作树里的状态目录，命中就什么都不写、也不润色。
 
 ```sh
 ls "${TMPDIR:-/tmp}"/limae-hook/*/ab/
@@ -108,8 +107,9 @@ jq -r '.code, (.candidates[] | "\(.label) = \(.engine) \(.model)")' \
 printf '%s' '{"session_id":"probe","transcript_path":"/dev/null","cwd":"'"$PWD"'",
 "hook_event_name":"MessageDisplay","turn_id":"t","message_id":"m","index":0,
 "final":true,"delta":"<把一段两百字以上的中文粘在这里>"}' \
-  | LIMAE_HOOK_STATE=$(mktemp -d) ./.venv/bin/limae hook
+  | TMPDIR=$(mktemp -d) ./.venv/bin/limae hook
 ```
 
 - 什么都不输出：先看这段文字够不够 200 字 (`LIMAE_HOOK_MIN_CHARS`)，再用 `printf '%s' '<同一段文字>' | ./.venv/bin/limae polish -` 单跑一次 —— CLI 那侧失败会把诊断打出来 (ADR-0008 §六 两侧的失败语义本就不同)。
 - 输出了但会话里没效果：多半是 `timeout` 没配 (第一节) 或者会话没重开。
+- stderr 出现 `limae hook: m/n batches arrived`：宿主是并发派发每一批的，这条说明有一批没在 2 秒内落盘。这一轮按原文显示，不会拿残缺的正文去润色 —— 只记片数，不记内容。

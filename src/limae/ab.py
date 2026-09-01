@@ -33,6 +33,7 @@ from collections.abc import Mapping
 import concurrent.futures
 import datetime
 import json
+import os
 import pathlib
 import random
 import typing
@@ -45,6 +46,7 @@ SAMPLE_RATE = 0.1
 
 LEDGER_DIRECTORY = "ab"
 PENDING_FILENAME = "pending.json"
+TEMPORARY_SUFFIX = ".writing"
 # The ledger holds an assistant reply verbatim. Nobody but this user
 # reads it (ADR-0009 section 八).
 FILE_MODE = 0o600
@@ -271,14 +273,20 @@ def record(
 def _write(path: pathlib.Path, entry: dict[str, object]) -> None:
   """Write one JSON file only this user can read.
 
+  The mode is part of the create call, not a chmod after it: between a
+  default-mode create and a chmod, a file holding an assistant reply is
+  readable by everyone on the machine. It is then renamed into place, so
+  the ``Stop`` hook never reads a half-written pending file.
+
   Args:
     path: The file to write.
     entry: What to write.
   """
-  _ = path.write_text(
-      json.dumps(entry, ensure_ascii=False, indent=2), encoding="utf-8"
-  )
-  path.chmod(FILE_MODE)
+  writing = path.with_name(f"{path.name}.{os.getpid()}{TEMPORARY_SUFFIX}")
+  descriptor = os.open(writing, os.O_WRONLY | os.O_CREAT | os.O_EXCL, FILE_MODE)
+  with os.fdopen(descriptor, "w", encoding="utf-8") as f:
+    _ = f.write(json.dumps(entry, ensure_ascii=False, indent=2))
+  _ = writing.replace(path)
 
 
 def context(directory: pathlib.Path) -> str:

@@ -603,7 +603,7 @@ def test_running_the_subcommand_by_hand_says_what_it_wants(
   assert "JSON on stdin" in capsys.readouterr().err
 
 
-def test_a_late_batch_is_waited_for_and_a_missing_one_is_not_forever(
+def test_a_late_batch_is_waited_for_and_a_missing_one_gives_up(
     tmp_path: pathlib.Path,
 ):
   # The host starts one process per batch without waiting for the last
@@ -626,8 +626,120 @@ def test_a_late_batch_is_waited_for_and_a_missing_one_is_not_forever(
     late.join()
   assert assembled == "第一批。第二批。第三批。"
 
-  # A batch that never lands costs the deadline, not the turn: what
-  # arrived is polished, and nothing waits forever.
+  # A batch that never lands ends the turn instead of polishing a
+  # message with a hole in it, and it does not wait forever to do so.
   started = time.monotonic()
-  assert hook._assemble(parts, 4, started + 0.2) == assembled
+  assert hook._assemble(parts, 4, started + 0.2) is None
   assert time.monotonic() - started < hook.SIBLING_WAIT
+
+
+def test_a_message_missing_a_batch_shows_the_original_and_calls_nothing(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  # Batch 1 never arrives; batch 2 is the final one. Polishing what did
+  # arrive would put a rewrite of a truncated message under the user's
+  # name, which is worse than not polishing at all: it reads fine.
+  monkeypatch.setattr(hook, "SIBLING_WAIT", 0.1)
+  gateway(tmp_path, f"cat > /dev/null\necho {POLISHED}")
+  assert (
+      run_hook(
+          display(LONG, index=0, final=False, cwd=tmp_path),
+          tmp_path,
+          monkeypatch,
+          capsys,
+      )
+      is None
+  )
+  assert (
+      run_hook(
+          display(LONG, index=2, final=True, cwd=tmp_path),
+          tmp_path,
+          monkeypatch,
+          capsys,
+      )
+      is None
+  )
+  assert calls(tmp_path) == 0
+
+  # The same two batches with the one in between: polished, once.
+  whole = [
+      run_hook(
+          display(
+              LONG, index=index, final=index == 2, message="whole", cwd=tmp_path
+          ),
+          tmp_path,
+          monkeypatch,
+          capsys,
+      )
+      for index in range(3)
+  ]
+  assert whole[:-1] == [None, None]
+  assert whole[-1] is not None
+  assert calls(tmp_path) == 1
+
+
+def test_state_inside_a_checkout_is_refused_and_nothing_is_written(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  # A reply that lands in a working tree is one `git add` away from a
+  # public repository (ADR-0009 五, 八).
+  gateway(tmp_path, f"cat > /dev/null\necho {POLISHED}")
+  checkout = tmp_path / "repo"
+  (checkout / ".git").mkdir(parents=True)
+  inside = checkout / "notes" / "state"
+  assert (
+      run_hook(
+          display(LONG, cwd=tmp_path),
+          tmp_path,
+          monkeypatch,
+          capsys,
+          **{hook.STATE_VARIABLE: str(inside)},
+      )
+      is None
+  )
+  assert calls(tmp_path) == 0
+  assert not inside.exists()
+  assert [path.name for path in checkout.iterdir()] == [".git"]
+
+  # The same message, with the state somewhere that is nobody's
+  # checkout: polished as usual.
+  assert (
+      run_hook(display(LONG, cwd=tmp_path), tmp_path, monkeypatch, capsys)
+      is not None
+  )
+
+
+def test_nothing_holding_a_reply_is_created_readable_by_others(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  # With the umask wide open, the mode can only come from the call that
+  # created the file — a chmod afterwards would still leave a window in
+  # which the reply was everyone's to read.
+  previous = os.umask(0)
+  try:
+    parts = tmp_path / "parts"
+    parts.mkdir()
+    hook._keep(parts, 0, "一批。")
+    mode = (parts / f"000000{hook.PART_SUFFIX}").stat().st_mode
+    assert mode & 0o777 == hook.FILE_MODE
+
+    candidates(tmp_path, monkeypatch)
+    _ = run_hook(
+        display(LONG, cwd=tmp_path),
+        tmp_path,
+        monkeypatch,
+        capsys,
+        **{hook.RATE_VARIABLE: "1"},
+    )
+    entries = ledger(tmp_path)
+    assert len(entries) == 1
+    assert entries[0].stat().st_mode & 0o777 == ab.FILE_MODE
+    assert state(tmp_path).stat().st_mode & 0o777 == hook.DIRECTORY_MODE
+  finally:
+    _ = os.umask(previous)
