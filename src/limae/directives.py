@@ -1,4 +1,4 @@
-"""Inline directives: the ``lo-md-lint-disable`` family of HTML comments.
+"""Inline directives: the ``limae-disable`` family of HTML comments.
 
 ``spec/rules.md`` section 「行内指令」 is the normative description; this
 module is its Python implementation. A directive is an HTML comment alone
@@ -18,9 +18,11 @@ import re
 # A directive is an HTML comment alone on its line (whitespace aside), the
 # rule ids after its name space- or comma-separated as on the command
 # line. The name must be followed by whitespace or the comment's end, so a
-# misspelled `lo-md-lint-disabled` is a plain comment, not a directive.
+# misspelled `limae-disabled` is a plain comment, not a directive. The
+# pre-rename prefix is another spelling of the same directive, so the two
+# mix freely in one file and drive the one state machine below.
 DIRECTIVE = re.compile(
-    r"^\s*<!--\s*lo-md-lint-(disable-next-line|disable|enable)"
+    r"^\s*<!--\s*(?:limae|lo-md-lint)-(disable-next-line|disable|enable)"
     r"(?:\s+([^>]*?))?\s*-->\s*$"
 )
 ID_SEPARATOR = re.compile(r"[\s,]+")

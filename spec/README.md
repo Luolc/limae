@@ -23,7 +23,7 @@
 | `<case>.in` | 输入的 Markdown 文本 |
 | `<case>.fixed` | 期望的 `--fix` 输出；「应保持不变」的 case 与 `.in` 逐字相同 |
 | `<case>.findings` | 期望的违规列表，每行 `<行号> <规则 id>`，如 `3 R1`；空文件表示无违规 |
-| `<case>.conf` | 可选：这个 case 的配置，内容就是独立配置文件 `lo-md-lint.toml` 的内容 —— 配置键见 `rules.md`「配置」；没有这个文件 = 默认配置 |
+| `<case>.conf` | 可选：这个 case 的配置，内容就是独立配置文件 `limae.toml` 的内容 —— 配置键见 `rules.md`「配置」；没有这个文件 = 默认配置 |
 
 约定：
 
@@ -40,7 +40,7 @@
 
 - **单行 case 按主题聚成一个文件**：一行一个 case，**case 之间用空行隔开** —— 空行让每个 case 各自成块，行内代码的反引号不会跨 case 配对，聚合前后的判定完全一致。当前的主题文件是每条规则至少一个 (`r1-cjk-punct` 到 `r11-fullwidth-punct-space`)，加上 `inline-code-spans`、`url-protection`、`mixed-rules`、`mixed-spacing`、`mixed-punct`。
 - **跨行 case 单独成一个文件**：围栏代码块、跨行的行内代码、行内指令、引用块、表格、列表这些的判定依赖行与行的关系，聚合会改变语义。
-- **忽略文件表达不了**：`.lo-md-lint-ignore` (`rules.md`「忽略文件」) 作用在「哪些文件进入本次运行」这一层，三个 fixture 文件表达不了它，由各实现在自己的测试里覆盖。
+- **忽略文件表达不了**：`.limae-ignore` (`rules.md`「忽略文件」) 作用在「哪些文件进入本次运行」这一层，三个 fixture 文件表达不了它，由各实现在自己的测试里覆盖。
 
 ## runner 的判定
 

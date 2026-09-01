@@ -72,7 +72,7 @@ T1-T2 warning · experimental.
 
 Two escape hatches sit below the configuration: the inline directives of
 :mod:`limae.directives` narrow the enabled set line by line, and the
-``.lo-md-lint-ignore`` file drops whole input files (both in
+``.limae-ignore`` file drops whole input files (both in
 :mod:`limae.config`).
 
 Usage (from the repo root)::

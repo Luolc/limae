@@ -51,9 +51,7 @@ def test_cli_disable_flag_turns_a_rule_off(
 def test_standalone_config_file_turns_a_rule_off(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
-  (tmp_path / "lo-md-lint.toml").write_text(
-      'disable = ["R1"]\n', encoding="utf-8"
-  )
+  (tmp_path / "limae.toml").write_text('disable = ["R1"]\n', encoding="utf-8")
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
   monkeypatch.chdir(tmp_path)
   assert run(["t.md"], monkeypatch) == 0
@@ -63,7 +61,7 @@ def test_pyproject_table_turns_a_rule_off(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
   (tmp_path / "pyproject.toml").write_text(
-      '[tool.lo-md-lint]\ndisable = ["R1"]\n', encoding="utf-8"
+      '[tool.limae]\ndisable = ["R1"]\n', encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
   monkeypatch.chdir(tmp_path)
@@ -85,9 +83,7 @@ def test_cli_enable_turns_a_default_off_rule_on(
 def test_config_enable_key_turns_a_default_off_rule_on(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
-  (tmp_path / "lo-md-lint.toml").write_text(
-      'enable = ["R9"]\n', encoding="utf-8"
-  )
+  (tmp_path / "limae.toml").write_text('enable = ["R9"]\n', encoding="utf-8")
   (tmp_path / "t.md").write_text(
       "中文[链接](https://example.com/) 后文", encoding="utf-8"
   )
@@ -120,9 +116,7 @@ def test_unknown_rule_id_is_a_config_error(
 def test_cli_disable_replaces_the_config_file(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
-  (tmp_path / "lo-md-lint.toml").write_text(
-      'disable = ["R1"]\n', encoding="utf-8"
-  )
+  (tmp_path / "limae.toml").write_text('disable = ["R1"]\n', encoding="utf-8")
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
   monkeypatch.chdir(tmp_path)
   # Wholesale override, not a merge: R3 goes off and R1 comes back on.
@@ -132,11 +126,9 @@ def test_cli_disable_replaces_the_config_file(
 def test_standalone_file_wins_over_pyproject_table(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
-  (tmp_path / "lo-md-lint.toml").write_text(
-      'disable = ["R1"]\n', encoding="utf-8"
-  )
+  (tmp_path / "limae.toml").write_text('disable = ["R1"]\n', encoding="utf-8")
   (tmp_path / "pyproject.toml").write_text(
-      "[tool.lo-md-lint]\ndisable = []\n", encoding="utf-8"
+      "[tool.limae]\ndisable = []\n", encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
   monkeypatch.chdir(tmp_path)
@@ -162,9 +154,7 @@ def test_non_list_disable_is_a_config_error(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ):
-  (tmp_path / "lo-md-lint.toml").write_text(
-      'disable = "R1"\n', encoding="utf-8"
-  )
+  (tmp_path / "limae.toml").write_text('disable = "R1"\n', encoding="utf-8")
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
   monkeypatch.chdir(tmp_path)
   assert run(["t.md"], monkeypatch) == 2
@@ -174,7 +164,7 @@ def test_non_list_disable_is_a_config_error(
 def test_config_skip_zh_units_exempts_a_date(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
-  (tmp_path / "lo-md-lint.toml").write_text(
+  (tmp_path / "limae.toml").write_text(
       'skip_zh_units = "年月日"\n', encoding="utf-8"
   )
   p = tmp_path / "t.md"
@@ -187,7 +177,7 @@ def test_config_skip_zh_units_exempts_a_date(
 def test_cli_flag_drops_the_config_files_skip_zh_units(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
-  (tmp_path / "lo-md-lint.toml").write_text(
+  (tmp_path / "limae.toml").write_text(
       'skip_zh_units = "年"\n', encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("共2011年\n", encoding="utf-8")
@@ -201,7 +191,7 @@ def test_non_string_skip_zh_units_is_a_config_error(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ):
-  (tmp_path / "lo-md-lint.toml").write_text(
+  (tmp_path / "limae.toml").write_text(
       'skip_zh_units = ["年"]\n', encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
@@ -215,7 +205,7 @@ def test_non_cjk_skip_zh_units_is_a_config_error(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ):
-  (tmp_path / "lo-md-lint.toml").write_text(
+  (tmp_path / "limae.toml").write_text(
       'skip_zh_units = "年 月"\n', encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
@@ -229,7 +219,7 @@ def test_severity_key_downgrades_a_rule_to_warning(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ):
-  (tmp_path / "lo-md-lint.toml").write_text(
+  (tmp_path / "limae.toml").write_text(
       'severity = { R1 = "warning" }\n', encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("你好,世界\n", encoding="utf-8")
@@ -244,7 +234,7 @@ def test_severity_key_downgrades_a_rule_to_warning(
 def test_a_warning_rule_is_still_fixed(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
-  (tmp_path / "lo-md-lint.toml").write_text(
+  (tmp_path / "limae.toml").write_text(
       'severity = { R1 = "warning" }\n', encoding="utf-8"
   )
   p = tmp_path / "t.md"
@@ -260,7 +250,7 @@ def test_bad_severity_value_is_a_config_error(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ):
-  (tmp_path / "lo-md-lint.toml").write_text(
+  (tmp_path / "limae.toml").write_text(
       'severity = { R1 = "fatal" }\n', encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
@@ -274,7 +264,7 @@ def test_enable_experimental_joins_the_experimental_rules(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ):
-  (tmp_path / "lo-md-lint.toml").write_text(
+  (tmp_path / "limae.toml").write_text(
       "enable_experimental = true\n", encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("综上所述，这条路走不通。\n", encoding="utf-8")
@@ -289,9 +279,7 @@ def test_experimental_id_in_enable_is_a_config_error(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ):
-  (tmp_path / "lo-md-lint.toml").write_text(
-      'enable = ["A1"]\n', encoding="utf-8"
-  )
+  (tmp_path / "limae.toml").write_text('enable = ["A1"]\n', encoding="utf-8")
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
   monkeypatch.chdir(tmp_path)
   assert run(["t.md"], monkeypatch) == 2
@@ -303,7 +291,7 @@ def test_non_boolean_enable_experimental_is_a_config_error(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ):
-  (tmp_path / "lo-md-lint.toml").write_text(
+  (tmp_path / "limae.toml").write_text(
       'enable_experimental = "true"\n', encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
@@ -318,7 +306,7 @@ def test_unknown_rule_id_in_a_directive_is_an_error(
     capsys: pytest.CaptureFixture[str],
 ):
   p = tmp_path / "t.md"
-  p.write_text("<!-- lo-md-lint-disable R99 -->\n你好,世界\n", encoding="utf-8")
+  p.write_text("<!-- limae-disable R99 -->\n你好,世界\n", encoding="utf-8")
   assert run([str(p)], monkeypatch) == 2
   assert "unknown rule id" in capsys.readouterr().err
 
@@ -327,7 +315,7 @@ def test_ignore_file_skips_an_explicitly_listed_file(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
   (tmp_path / ".git").mkdir()
-  (tmp_path / ".lo-md-lint-ignore").write_text("vendor/\n", encoding="utf-8")
+  (tmp_path / ".limae-ignore").write_text("vendor/\n", encoding="utf-8")
   (tmp_path / "vendor").mkdir()
   p = tmp_path / "vendor" / "t.md"
   p.write_text("你好,世界\n", encoding="utf-8")
@@ -341,7 +329,7 @@ def test_ignore_file_is_found_above_the_cwd(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
   (tmp_path / ".git").mkdir()
-  (tmp_path / ".lo-md-lint-ignore").write_text("*.md\n", encoding="utf-8")
+  (tmp_path / ".limae-ignore").write_text("*.md\n", encoding="utf-8")
   sub = tmp_path / "sub"
   sub.mkdir()
   (sub / "t.md").write_text("你好,世界\n", encoding="utf-8")
@@ -355,9 +343,7 @@ def test_ignore_file_negation_keeps_a_file(
     capsys: pytest.CaptureFixture[str],
 ):
   (tmp_path / ".git").mkdir()
-  (tmp_path / ".lo-md-lint-ignore").write_text(
-      "*.md\n!keep.md\n", encoding="utf-8"
-  )
+  (tmp_path / ".limae-ignore").write_text("*.md\n!keep.md\n", encoding="utf-8")
   (tmp_path / "skip.md").write_text("你好,世界\n", encoding="utf-8")
   (tmp_path / "keep.md").write_text("你好,世界\n", encoding="utf-8")
   monkeypatch.chdir(tmp_path)
@@ -379,3 +365,82 @@ def test_wordlists_load_from_the_packaged_spec_directory():
   assert [t for t in wordlists.terms() if t.wrong == "代币"] == [
       wordlists.Term("代币", "令牌", ("token", "OAuth", "JWT", "鉴权", "认证"))
   ]
+
+
+# The pre-rename names stay recognised through the transition
+# (spec/rules.md 「发现顺序」 and 「忽略文件」).
+def test_legacy_standalone_config_file_is_still_read(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+  (tmp_path / "lo-md-lint.toml").write_text(
+      'disable = ["R1"]\n', encoding="utf-8"
+  )
+  (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
+  monkeypatch.chdir(tmp_path)
+  assert run(["t.md"], monkeypatch) == 0
+
+
+def test_legacy_pyproject_table_is_still_read(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+  (tmp_path / "pyproject.toml").write_text(
+      '[tool.lo-md-lint]\ndisable = ["R1"]\n', encoding="utf-8"
+  )
+  (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
+  monkeypatch.chdir(tmp_path)
+  assert run(["t.md"], monkeypatch) == 0
+
+
+def test_both_standalone_config_names_is_a_config_error(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  (tmp_path / "limae.toml").write_text('disable = ["R1"]\n', encoding="utf-8")
+  (tmp_path / "lo-md-lint.toml").write_text(
+      'disable = ["R3"]\n', encoding="utf-8"
+  )
+  (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
+  monkeypatch.chdir(tmp_path)
+  assert run(["t.md"], monkeypatch) == 2
+  assert "are present" in capsys.readouterr().err
+
+
+def test_both_pyproject_tables_is_a_config_error(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  (tmp_path / "pyproject.toml").write_text(
+      '[tool.limae]\ndisable = ["R1"]\n'
+      '[tool.lo-md-lint]\ndisable = ["R3"]\n',
+      encoding="utf-8",
+  )
+  (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
+  monkeypatch.chdir(tmp_path)
+  assert run(["t.md"], monkeypatch) == 2
+  assert "are present" in capsys.readouterr().err
+
+
+def test_legacy_ignore_file_is_still_read(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+  (tmp_path / ".git").mkdir()
+  (tmp_path / ".lo-md-lint-ignore").write_text("*.md\n", encoding="utf-8")
+  (tmp_path / "t.md").write_text("你好,世界\n", encoding="utf-8")
+  monkeypatch.chdir(tmp_path)
+  assert run(["t.md"], monkeypatch) == 0
+
+
+def test_new_ignore_file_wins_over_the_legacy_one(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+  # Both present is not an error here, unlike two config files: the new
+  # name is used and the leftover old one ignored.
+  (tmp_path / ".git").mkdir()
+  (tmp_path / ".limae-ignore").write_text("skip.md\n", encoding="utf-8")
+  (tmp_path / ".lo-md-lint-ignore").write_text("*.md\n", encoding="utf-8")
+  (tmp_path / "skip.md").write_text("你好,世界\n", encoding="utf-8")
+  (tmp_path / "keep.md").write_text("你好,世界\n", encoding="utf-8")
+  monkeypatch.chdir(tmp_path)
+  assert run(["skip.md", "keep.md"], monkeypatch) == 1

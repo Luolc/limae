@@ -16,5 +16,5 @@
 
 行内代码 `零重复` 与 [说明](零重复.md) 都不报。
 
-<!-- lo-md-lint-disable-next-line A8 -->
+<!-- limae-disable-next-line A8 -->
 这一行的零重复不报。
