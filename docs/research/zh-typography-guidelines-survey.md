@@ -2,7 +2,7 @@
 
 > 来源：Grok research agent 调研，2026-08-31；distill 决策另行进 spec / ADR，本文只是证据。
 
-调研日期：2026-08-31。只读，不改仓库。对照对象是本仓现有规则 R1 (CJK 旁半角标点转全角) / R2 (全角括号转半角) / R3 (半角括号外侧空格)，见 `spec/rules.md`。
+调研日期：2026-08-31。只读，不改仓库。对照对象是本仓现有规则 zh-typography-1 (CJK 旁半角标点转全角) / zh-typography-2 (全角括号转半角) / zh-typography-3 (半角括号外侧空格)，见 `spec/rules.md`。
 
 **观点与事实分开**：带「建议」「宜」的句子是调研结论；规范原文与仓库现状是事实。
 
@@ -61,7 +61,7 @@
 | GB/T 15835《出版物上数字用法》 | 国家标准 | ruanyf 参考链接 | 现行 | 半角数字、千分位、百分号写法 |
 | W3C《中文排版需求》(clreq) | [w3c/clreq](https://github.com/w3c/clreq/) 中文布局任务团 | [TR](https://www.w3.org/TR/clreq/)；本稿 2026-08-04 Group Note Draft | **仍在维护** | 给 UA / 字体 / CSS 的排版需求，不是文案手册。中西间距原则是 **不多于 1/4 em 的字距或空白**，行首行尾不加；点号旁、开括号后、闭括号前的西文不加空白。也承认可用 U+0020，宽度随字体。 |
 
-**观点。** clreq 的「四分空」是印刷/CSS 层，linter 往源码里插 U+0020 是社区对它的工程近似，不是 clreq 原文要求。R1–R3 这种「改 Markdown 源码」的工具，应对齐 sparanoid / 阮一峰 / 掘金这一层，把 clreq 当「为什么看起来要留白」的背景，不要把 1/4 em 写成可执行规则。
+**观点。** clreq 的「四分空」是印刷/CSS 层，linter 往源码里插 U+0020 是社区对它的工程近似，不是 clreq 原文要求。zh-typography-1 到 zh-typography-3 这种「改 Markdown 源码」的工具，应对齐 sparanoid / 阮一峰 / 掘金这一层，把 clreq 当「为什么看起来要留白」的背景，不要把 1/4 em 写成可执行规则。
 
 ### 2.3 厂牌与其它公开规范
 
@@ -87,7 +87,7 @@
 - 中文行文：全角逗号句号顿号分号冒号
 - **括号用半角 `()`，外侧空格、内侧不留**
 
-这与 R2 + R3 一致，与 GB / 阮一峰 / sparanoid 示例里的全角括号 `（）` **相反**，与 zhlint 默认、AutoCorrect `space-bracket`、yikeke「括号内全英文用半角」**同向**。后面 distill 时把 R2/R3 当已拍板的家规，不建议用国标去推翻。
+这与 zh-typography-2 + zh-typography-3 一致，与 GB / 阮一峰 / sparanoid 示例里的全角括号 `（）` **相反**，与 zhlint 默认、AutoCorrect `space-bracket`、yikeke「括号内全英文用半角」**同向**。后面 distill 时把 zh-typography-2/zh-typography-3 当已拍板的家规，不建议用国标去推翻。
 
 ---
 
@@ -110,7 +110,7 @@
 | AutoCorrect | 默认开 `space-word: 1` | [.autocorrectrc.default](https://github.com/huacnlee/autocorrect/blob/main/autocorrect/.autocorrectrc.default) |
 | zhlint | 默认开 `spaceBetweenMixedwidthContent: true` | [README.zh-CN 规则](https://github.com/zhlint-project/zhlint/blob/main/README.zh-CN.md) |
 | pangu.js | 只做这件事 | [README](https://github.com/vinta/pangu.js) |
-| 本仓 R1–R3 | 不提 | — |
+| 本仓 zh-typography-1 到 zh-typography-3 | 不提 | — |
 
 **共识：广泛。** 技术文档社区几乎无异议。产品专名按官方写法例外 (`豆瓣FM`)。
 
@@ -144,7 +144,7 @@
 
 | 来源 | 立场 | 依据 |
 | --- | --- | --- |
-| 本仓 R3 | **要求** (家规) | `spec/rules.md` |
+| 本仓 zh-typography-3 | **要求** (家规) | `spec/rules.md` |
 | yikeke | 括号内**全英文**：半角括号 + 外侧空格 (`数据定义语言 (DDL)`)；括号内有中文：全角、外侧不加 | [中英文混用时标点](https://zh-style-guide.readthedocs.io/zh-cn/latest/%E6%A0%87%E7%82%B9%E7%AC%A6%E5%8F%B7/%E4%B8%AD%E8%8B%B1%E6%96%87%E6%B7%B7%E7%94%A8%E6%97%B6%E6%A0%87%E7%82%B9%E7%94%A8%E6%B3%95.html) |
 | zhlint | 默认 `spaceOutsideHalfwidthBracket: true` | README |
 | AutoCorrect | 默认 `space-bracket: 1` | `.autocorrectrc.default` |
@@ -153,7 +153,7 @@
 | GB/T 15834 | 全角括号、各占一字、外侧无 U+0020 | 标准 5.1.3 |
 | fex-team | 有中文用中文括号；全英文用半角 | markdown.md |
 
-**有分歧，且本仓已经站队。** 国标/阮/sparanoid = 全角无空格；技术工具链与 yikeke 的「全英文括注」= 半角 + 外侧空格。R2+R3 是后者。
+**有分歧，且本仓已经站队。** 国标/阮/sparanoid = 全角无空格；技术工具链与 yikeke 的「全英文括注」= 半角 + 外侧空格。zh-typography-2+zh-typography-3 是后者。
 
 ### 3.5 全角 vs 半角标点 (逗号句号顿号冒号分号问叹)
 
@@ -162,11 +162,11 @@
 | 全体中文规范 | 中文句子用全角 `，。、：；？！` | GB / 阮 / sparanoid / 掘金 / yikeke |
 | 阮一峰 / sparanoid | 整句英文、英文专名内部用半角 | 阮 标点原则 (2)；sparanoid「完整英文整句」 |
 | 阮一峰 | 并列的英文词在中文句子里仍用顿号 `Google、Facebook、腾讯` | 标点 § 顿号 |
-| 本仓 R1 | 只转 `, ; : ? !`，**不转 `.` → `。`**，也不管顿号 | `spec/rules.md` |
+| 本仓 zh-typography-1 | 只转 `, ; : ? !`，**不转 `.` → `。`**，也不管顿号 | `spec/rules.md` |
 | AutoCorrect `fullwidth` | 默认开，CJK 旁标点转全角 | README Features |
 | zhlint `fullwidthPunctuation` | 默认 `，。：；？！“”‘’` | README |
 
-**共识：广泛。** 本仓缺口是句号 `.` 和顿号 (英文逗号并列)。R1 现在放过 `$1,000` 和 `https://example.com:8080`，这个例外所有工具都需要，应保留。
+**共识：广泛。** 本仓缺口是句号 `.` 和顿号 (英文逗号并列)。zh-typography-1 现在放过 `$1,000` 和 `https://example.com:8080`，这个例外所有工具都需要，应保留。
 
 ### 3.6 引号选型 (「」 vs “”)
 
@@ -198,7 +198,7 @@
 
 **有分歧，而且掘金是少数派。** 中文排版传统与国标都是「两字宽、紧贴、中间不断」。掘金那条更像把英文 AP 的 em dash 习惯带进译文。阮一峰的「占一字才加空格」是对字体里 U+2014 往往不够两字宽的工程补丁，不是「源码里插 U+0020」的一般要求。
 
-**观点。** 若做规则：默认关；若开，只处理 `——` (两个 U+2014) / `⸺` (U+2E3A)，不要和 ASCII `-`、en dash `–`、范围号 `～` 混在一起。与 R1 无冲突。与「全角标点旁不加空格」在哲学上冲突 (破折号是全角标号)。
+**观点。** 若做规则：默认关；若开，只处理 `——` (两个 U+2014) / `⸺` (U+2E3A)，不要和 ASCII `-`、en dash `–`、范围号 `～` 混在一起。与 zh-typography-1 无冲突。与「全角标点旁不加空格」在哲学上冲突 (破折号是全角标号)。
 
 ### 3.8 省略号 (……)
 
@@ -233,9 +233,9 @@
 | AutoCorrect | 默认 `space-backticks: 1` | `.autocorrectrc.default` |
 | textlint-rule-zh-space-around-inline-code | 要求行内代码两侧空格 | preset 表 |
 | pangu.js | **明确不要拿它处理 Markdown** | README：「You SHOULD NOT use pangu.js to spacing Markdown documents」issue #127 |
-| 本仓 | 行内代码 span **内部**豁免；定界反引号算正文，所以 `` `code`(x) `` 仍报 R3 | `spec/rules.md` 全局豁免 |
+| 本仓 | 行内代码 span **内部**豁免；定界反引号算正文，所以 `` `code`(x) `` 仍报 zh-typography-3 | `spec/rules.md` 全局豁免 |
 
-**有分歧。** 行内代码两侧空格在工具里是主流默认；链接两侧空格被规范自己标成争议 (Markdown `[文字](url)` 渲染后链接文字与中文是否留白，和源码里 `](` 语法空格是两件事)。本仓 R3 已经处理「反引号与括号」的边界，但不管「中文与 `` `code` `` 之间」。
+**有分歧。** 行内代码两侧空格在工具里是主流默认；链接两侧空格被规范自己标成争议 (Markdown `[文字](url)` 渲染后链接文字与中文是否留白，和源码里 `](` 语法空格是两件事)。本仓 zh-typography-3 已经处理「反引号与括号」的边界，但不管「中文与 `` `code` `` 之间」。
 
 ---
 
@@ -281,13 +281,13 @@ TypeScript，约 1k star，2026-06 仍有提交。规则提炼自 W3C clreq、HT
 
 **设计：** 不是「规则 id + on/off」，而是 **一份 `RuleOptions` 对象**，每个开关是 `true` / `false` / `undefined` (undefined = 不动)。另有 `.zhlintrc`、`.zhlintignore`、`.zhlintcaseignore`。
 
-默认与本仓高度同向：`halfwidthPunctuation: '()'` (全角括号变半角，即 R2)、`spaceOutsideHalfwidthBracket: true` (即 R3)、`fullwidthPunctuation` 含 `，。：；？！` (R1 的超集，还含句号和弯引号)。
+默认与本仓高度同向：`halfwidthPunctuation: '()'` (全角括号变半角，即 zh-typography-2)、`spaceOutsideHalfwidthBracket: true` (即 zh-typography-3)、`fullwidthPunctuation` 含 `，。：；？！` (zh-typography-1 的超集，还含句号和弯引号)。
 
 **值得抄：**
 
 1. `skipZhUnits: '年月日天号时分秒'` —— 数字规则的逃生口。
 2. `skipAbbrs: ['Mr.','Dr.','e.g.',...]` —— 别把缩写的点转成 `。`。
-3. `skipPureWestern: true` —— 整行英文不处理 (R1 已有「两侧都不是 CJK 则不动」)。
+3. `skipPureWestern: true` —— 整行英文不处理 (zh-typography-1 已有「两侧都不是 CJK 则不动」)。
 4. HTML 注释 `<!-- zhlint ignore: ( , ) -->` 与 `<!-- zhlint disabled -->`。
 5. Markdown / Hexo tag 预解析，只格式化可见文本。
 
@@ -314,9 +314,9 @@ Rust 移植 `zhlint-rs` 基本停在 2024-02，不要当活上游。
 | zh-correctly-ordered-pairs | 引号书名号成对 |
 | terminology | 英文术语词表 |
 
-另有 `textlint-rule-zh-half-and-full-width-bracket` (三种模式：一律全角 / 一律半角 / 有中文则全角否则半角) —— 正好覆盖 §3.4 的分歧，可当 R2 的配置模型。
+另有 `textlint-rule-zh-half-and-full-width-bracket` (三种模式：一律全角 / 一律半角 / 有中文则全角否则半角) —— 正好覆盖 §3.4 的分歧，可当 zh-typography-2 的配置模型。
 
-**值得抄：** 一条规则一个包、`--fix` 可标、preset 只是打包。本仓不必做成 textlint 插件，但「括号策略三选一」值得做成 flag，而不是把 R2 写死。
+**值得抄：** 一条规则一个包、`--fix` 可标、preset 只是打包。本仓不必做成 textlint 插件，但「括号策略三选一」值得做成 flag，而不是把 zh-typography-2 写死。
 
 ### 4.5 其它
 
@@ -327,20 +327,20 @@ Rust 移植 `zhlint-rs` 基本停在 2024-02，不要当活上游。
 
 ---
 
-## 5. 对照 R1–R3 的 distill 建议
+## 5. 对照 zh-typography-1 到 zh-typography-3 的 distill 建议
 
-先重复家规事实：本仓已经用 R2+R3 选择了「半角括号 + 外侧空格」，与 AGENTS.md 一致。下面不建议回退这条，除非用户改家规。
+先重复家规事实：本仓已经用 zh-typography-2+zh-typography-3 选择了「半角括号 + 外侧空格」，与 AGENTS.md 一致。下面不建议回退这条，除非用户改家规。
 
 ### 5.1 建议 distill (默认开)
 
-| 候选 | 内容 | 共识 | 与 R1–R3 |
+| 候选 | 内容 | 共识 | 与 zh-typography-1 到 zh-typography-3 |
 | --- | --- | --- | --- |
-| CJK–拉丁空格 | CJK 与 `A-Za-z` 之间补一个半角空格；产品官方写法豁免 (textRules / 词表) | 广泛 | 无冲突。R3 的「word 字符」定义已含 CJK 与 ASCII 字母数字，实现时可复用 |
-| 全角标点旁去空格 | `，。、；：？！` 两侧不要 U+0020 | 广泛 | 无冲突。修复顺序建议放在 R3 之后，免得刚补的括号空格被误删 (全角标点 ≠ 半角括号) |
+| CJK–拉丁空格 | CJK 与 `A-Za-z` 之间补一个半角空格；产品官方写法豁免 (textRules / 词表) | 广泛 | 无冲突。zh-typography-3 的「word 字符」定义已含 CJK 与 ASCII 字母数字，实现时可复用 |
+| 全角标点旁去空格 | `，。、；：？！` 两侧不要 U+0020 | 广泛 | 无冲突。修复顺序建议放在 zh-typography-3 之后，免得刚补的括号空格被误删 (全角标点 ≠ 半角括号) |
 | 半角数字 | `０-９` → `0-9` (设计稿海报例外，linter 可不管) | 广泛 | 无冲突 |
-| 英文单位前空格 | `16GB` → `16 GB`；`%` `°` 紧贴数字 | 广泛 (带例外) | 无冲突。`$1,000` 现有 R1 豁免应继续 |
-| 行内代码两侧空格 | 中文与 `` `code` `` 之间补空格；围栏块仍整块豁免 | 工具主流默认；规范层 sparanoid 把「链接」标争议、没单独写代码 | 与全局豁免兼容：豁免的是 span **内部**，定界符外侧正是该管的。和 R3 对 `` `code`(x) `` 的处理同方向 |
-| R1 补句号 | CJK 旁的 `.` → `。`，继续豁免 `e.g.` `Dr.` `1.2.3` URL | 广泛 (R1 现在漏了句号) | R1 扩展，不是新哲学。必须带 `skipAbbrs` |
+| 英文单位前空格 | `16GB` → `16 GB`；`%` `°` 紧贴数字 | 广泛 (带例外) | 无冲突。`$1,000` 现有 zh-typography-1 豁免应继续 |
+| 行内代码两侧空格 | 中文与 `` `code` `` 之间补空格；围栏块仍整块豁免 | 工具主流默认；规范层 sparanoid 把「链接」标争议、没单独写代码 | 与全局豁免兼容：豁免的是 span **内部**，定界符外侧正是该管的。和 zh-typography-3 对 `` `code`(x) `` 的处理同方向 |
+| zh-typography-1 补句号 | CJK 旁的 `.` → `。`，继续豁免 `e.g.` `Dr.` `1.2.3` URL | 广泛 (zh-typography-1 现在漏了句号) | zh-typography-1 扩展，不是新哲学。必须带 `skipAbbrs` |
 
 ### 5.2 建议默认关 (实现可做，flag 默认 off)
 
@@ -363,9 +363,9 @@ Rust 移植 `zhlint-rs` 基本停在 2024-02，不要当活上游。
 - 建议：做成独立 flag，**默认关**。若用户认掘金家规，再打开。打开时只认 `——` / `⸺`，并且与「全角标点旁去空格」互斥 (开破折号空格就不要去它旁边的空格)。
 - 不要把「两个 hyphen `--`」自动变成破折号 —— 那是输入法/编辑器的事，Markdown 里 `--` 经常是 HTML 注释或 option。
 
-**2. 括号策略要不要做成三档，而不是写死 R2。**
+**2. 括号策略要不要做成三档，而不是写死 zh-typography-2。**
 
-textlint-rule-zh-half-and-full-width-bracket 的三档：一律半角 (当前 R2) / 一律全角 (国标、阮、sparanoid) / 有中文全角、纯英文半角 (yikeke、FEX)。家规目前是第一档。flag 化之后，默认仍可保持 R2 开，但给「要对齐国标」的用户一条退路。R2 关时 R3 也应一起关，否则全角括号没有外侧空格规则、半角又不管了。
+textlint-rule-zh-half-and-full-width-bracket 的三档：一律半角 (当前 zh-typography-2) / 一律全角 (国标、阮、sparanoid) / 有中文全角、纯英文半角 (yikeke、FEX)。家规目前是第一档。flag 化之后，默认仍可保持 zh-typography-2 开，但给「要对齐国标」的用户一条退路。zh-typography-2 关时 zh-typography-3 也应一起关，否则全角括号没有外侧空格规则、半角又不管了。
 
 **3. 数字与中文空格 + 中文单位例外。**
 
@@ -373,7 +373,7 @@ textlint-rule-zh-half-and-full-width-bracket 的三档：一律半角 (当前 R2
 
 **4. 顿号 vs 英文逗号。**
 
-阮一峰要求中文句子里并列英文词用 `、` 不是 `,`。R1 现在会把 `Google, Facebook` 在 CJK 旁边的逗号转成 `，` (全角逗号)，**不是**顿号。要不要再转成顿号是语义问题 (并列 vs 句内停顿)，机器很难稳。建议先不做。
+阮一峰要求中文句子里并列英文词用 `、` 不是 `,`。zh-typography-1 现在会把 `Google, Facebook` 在 CJK 旁边的逗号转成 `，` (全角逗号)，**不是**顿号。要不要再转成顿号是语义问题 (并列 vs 句内停顿)，机器很难稳。建议先不做。
 
 ### 5.4 建议不做
 
@@ -393,7 +393,7 @@ textlint-rule-zh-half-and-full-width-bracket 的三档：一律半角 (当前 R2
 - 每条 `off | error | warning` (或本仓简化成 off/on，warning 以后再加)
 - 项目配置 `[tool.lo-md-lint]` / 独立 toml
 - 行内 disable 注释
-- 字符串级豁免 (`豆瓣FM`、`401(k)` 已经在 R3)
+- 字符串级豁免 (`豆瓣FM`、`401(k)` 已经在 zh-typography-3)
 - Markdown 感知：围栏块、行内代码 —— 本仓已有，保持
 
 从 zhlint 只抄例外列表 (`skipZhUnits`、`skipAbbrs`)，不抄它那份巨大的 boolean options 对象 —— 和「规则 id 稳定不复用」的本仓模型不合。
@@ -417,7 +417,7 @@ textlint-rule-zh-half-and-full-width-bracket 的三档：一律半角 (当前 R2
 3. **全角数字转半角** (默认开)
 4. **数字与 ASCII 单位之间空格，`%` `°` 除外** (默认开)
 5. **行内代码与中文之间空格** (默认开)
-6. **R1 补 CJK 旁句号 `.` → `。`，带缩写豁免** (默认开，算 R1 修完而不是新哲学)
+6. **zh-typography-1 补 CJK 旁句号 `.` → `。`，带缩写豁免** (默认开，算 zh-typography-1 修完而不是新哲学)
 
 ### 建议不做 (默认不做，也不先做 flag)
 
@@ -431,7 +431,7 @@ textlint-rule-zh-half-and-full-width-bracket 的三档：一律半角 (当前 R2
 ### 待用户拍板
 
 1. **破折号 `——` 两侧空格**：掘金要求、国标反对。建议独立 flag、默认关。这是 brief 里最需要一句话裁决的项。
-2. **括号策略三档** vs 维持死 R2 (一律半角)。家规已选半角；flag 化时要不要给国标党退路。
+2. **括号策略三档** vs 维持死 zh-typography-2 (一律半角)。家规已选半角；flag 化时要不要给国标党退路。
 3. **数字与汉字之间空格** (含「年月日」例外)：默认关还是 warning。
 4. **引号「」 vs “”**：统一转换还是不管。
 5. **链接两侧空格**：规范自己标争议。

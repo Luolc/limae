@@ -2,7 +2,7 @@
 
 > 来源：Grok research agent 调研，2026-08-31；distill 决策另行进 spec / ADR，本文只是证据。产品身份、热度、Deng spec 的 philosophy 清单已见 `docs/research/claudish-and-ai-slop-survey.md` §1，本文不重复考证，只补源码与机制。
 
-调研日期：2026-08-31。只读，不改两个第三方仓，也不改本仓 `spec/`、`src/`、`tests/`。对照对象是本仓两段式边界 (`docs/adr/0005-agent-native-positioning.md` §四 / §六)、润色独立于 lint (`docs/adr/0006-rule-grading-fixability-severity-experimental.md` §四) 与现行规则 (`spec/rules.md` 的 R1–R11、A1–A8、T1–T2)。
+调研日期：2026-08-31。只读，不改两个第三方仓，也不改本仓 `spec/`、`src/`、`tests/`。对照对象是本仓两段式边界 (`docs/adr/0005-agent-native-positioning.md` §四 / §六)、润色独立于 lint (`docs/adr/0006-rule-grading-fixability-severity-experimental.md` §四) 与现行规则 (`spec/rules.md` 的 `zh-typography` 一族、zh-tell-1–zh-tell-5、zh-word-1–zh-word-2)。
 
 **观点与事实分开**：带「建议」「宜」「不要」的句子是调研结论；源码行为、本仓规范原文是事实。
 
@@ -24,9 +24,9 @@
 - Gvozdev：显示层或旁路文件、fail-open、prompt 很短、**代码围栏几乎只靠 prompt**，YAML frontmatter 是唯一真正机械保护的结构。
 - Deng：两份可复制 spec + 本地 PAW function；词典是给人读的 field guide，**运行时不进 prompt**；明确禁止机械换词。
 
-中文不能直接套 Deng 的英文 Claudish spec。中文要处理的是翻译腔、量词、全角标点与术语对照；这些里只有标点 / 空格 / 带锚点的选词已经在 R 家族与 T1，剩下的才是润色。
+中文不能直接套 Deng 的英文 Claudish spec。中文要处理的是翻译腔、量词、全角标点与术语对照；这些里只有标点 / 空格 / 带锚点的选词已经在 `zh-typography` 一族与 zh-word-1，剩下的才是润色。
 
-**与 R1–R11 的顺序：先润色，后 lint。** 先 `--fix` 再润色，模型会把全角标点与 CJK 空格改回去；先润色再 `--fix`，排版家规能把模型的标点病修好，且几乎不碰语感。人审的对象是「润色 + 排版 fix」之后的旁路文件，不是模型的生输出。
+**与 `zh-typography` 一族 的顺序：先润色，后 lint。** 先 `--fix` 再润色，模型会把全角标点与 CJK 空格改回去；先润色再 `--fix`，排版家规能把模型的标点病修好，且几乎不碰语感。人审的对象是「润色 + 排版 fix」之后的旁路文件，不是模型的生输出。
 
 原型建议：做成 **可选的 agent skill (主路径) + 独立批跑入口 (次路径)**，产物默认旁路文件；不要做成 `lo-md-lint` 的 CI 子命令，也不要把 LLM 链进 `--fix`。结构不变量用本仓已有的全局豁免解析器做确定性检查，黄金集测保护器，不测模型散文。
 
@@ -221,7 +221,7 @@ README 说程序下载一次后本地跑，不要传 `max_tokens`，PAW 在 EOS 
 
 网站 vendoring 一份 commit-pinned 的 `entries.json`，不在访客浏览器里现拉 GitHub (`dictionary/README.md:34`)。
 
-与本仓 `spec/wordlists/` 的差别：Deng 词典是 **释义 + 例句的 field guide**；本仓 T1 是 `wrong` / `right` / `anchors` 的可执行替换 (当前 3 条)，A 家族是禁词 / 句式表。Deng 的 30 条 **不能**当 T1 来跑 —— spec 自己禁止机械替换，且多数词 (如 `canonical`、`drift`) 在技术文档里是合法用语 (`specs/claudish-to-english.md:178`；本仓 A7 只收了 `load-bearing` 一条，理由写在 `spec/rules.md` 的 A7)。
+与本仓 `spec/wordlists/` 的差别：Deng 词典是 **释义 + 例句的 field guide**；本仓 zh-word-1 是 `wrong` / `right` / `anchors` 的可执行替换 (当前 3 条)，`zh-tell` 与 `en-tell` 两族是禁词 / 句式表。Deng 的 30 条 **不能**当 zh-word-1 来跑 —— spec 自己禁止机械替换，且多数词 (如 `canonical`、`drift`) 在技术文档里是合法用语 (`specs/claudish-to-english.md:178`；本仓 en-tell-3 只收了 `load-bearing` 一条，理由写在 `spec/rules.md` 的 en-tell-3)。
 
 ### 2.4 输入输出粒度
 
@@ -274,10 +274,10 @@ Deng 的两份 spec、30 条词典、7 条 specimen 全部是英文。Claudish �
 
 本仓已经落地、且与润色相邻的确定性规则 (`spec/rules.md`「每条规则的三轴取值」)：
 
-- R1–R11：fixable · error · stable，管标点宽度与空格。
-- A1–A8：non-fixable · warning · experimental，管套话 / 句式 / 黑话 / 聊天残留 / 英文 tell / 「零 + 名词」。
-- T1：fixable · warning · experimental，3 条带锚点的 `wrong = right`。
-- T2：non-fixable · warning · experimental，「秘密」误用。
+- `zh-typography` 一族：fixable · error · stable，管标点宽度与空格。
+- `zh-tell` 与 `en-tell` 两族：non-fixable · warning · experimental，管套话 / 句式 / 黑话 / 聊天残留 / 英文 tell / 「零 + 名词」。
+- zh-word-1：fixable · warning · experimental，3 条带锚点的 `wrong = right`。
+- zh-word-2：non-fixable · warning · experimental，「秘密」误用。
 
 ADR-0006 §四：LLM 润色是独立一条线，不以 claudish 检测为前提，也不从 warning 计数触发。ADR-0006 §五：规则不分语言，英文 tell 出现在中文文档里同样报。
 
@@ -287,29 +287,29 @@ ADR-0006 §四：LLM 润色是独立一条线，不以 claudish 检测为前提�
 
 直接拿 Deng 正向 spec 当中文 prompt，会漏掉这些：
 
-1. **术语中英对照。** `secret` → 「密钥」而不是「秘密」，`cache` → 「缓存」而不是「快取」，是 ADR-0005 §四写出的动机。T1 已经能确定性修 3 组；润色 prompt 应要求「英文标识符保持原词，中文只用本仓 T 家族的人话」，不要让模型另造「门控 / 一等公民」。没有唯一替换的词 (T2 的「秘密」) 只许标、不许模型自行选三个候选之一写死 —— 那是人审。
-2. **全角标点与中英空格。** 英文模型 (以及 Gvozdev 默认的 Gemma) 会输出 CJK 旁的半角逗号、括号贴汉字、漏掉 R4 空格。Gvozdev / Deng 的 prompt 都没提 GB/T 标点。这不是语义问题，不该靠模型记家规。
+1. **术语中英对照。** `secret` → 「密钥」而不是「秘密」，`cache` → 「缓存」而不是「快取」，是 ADR-0005 §四写出的动机。zh-word-1 已经能确定性修 3 组；润色 prompt 应要求「英文标识符保持原词，中文只用本仓 T 家族的人话」，不要让模型另造「门控 / 一等公民」。没有唯一替换的词 (zh-word-2 的「秘密」) 只许标、不许模型自行选三个候选之一写死 —— 那是人审。
+2. **全角标点与中英空格。** 英文模型 (以及 Gvozdev 默认的 Gemma) 会输出 CJK 旁的半角逗号、括号贴汉字、漏掉 zh-typography-4 空格。Gvozdev / Deng 的 prompt 都没提 GB/T 标点。这不是语义问题，不该靠模型记家规。
 3. **量词与语序。** 「正在飞」、翻译腔的 `He gave me a smile` → 「他给了我一个微笑」，是既有调研 §2.2 / §2.3 的中文层。Deng 的「降抽象、拆 not X but Y」对这类几乎无用；要写进中文润色 spec 的是「删翻译腔、补量词、恢复中文语序」，并配合成例句 (ACME / Foo)，不要配真实业务句。
 4. **中英两套指纹不要混进一张禁词表。** 既有调研 §2.4 与 ADR-0006 §五已经定了：共享句式 (否定平行、三段式)，词表各管各的。润色 prompt 也应两段：英文 Claudish 用 Deng 正向 spec；中文用一套更短的中文条款 (套话、黑话、翻译腔)，不要把 `load-bearing` 的释义翻译成中文禁词。
 
 Gvozdev 的「跟输入同一语言」对中文 **机制上可用**，质量取决于模型。默认 `gemma4:26b-mlx` 按 README 自己的话不宜当中文润色器。中文原型应点名一个能写中文的模型，或复用已经在写这篇文档的 agent 会话；具体哪一档在本机上够用，**未核实**。
 
-### 4.3 与 R1–R11 的先后顺序 (判断)
+### 4.3 与 `zh-typography` 一族 的先后顺序 (判断)
 
 先把两条会出事的流水线写清楚，再给建议。
 
 **先 `--fix` 再润色会出什么问题**
 
-- R1 刚把 `你好,世界` 收成 `你好，世界`，英文中心的润色模型很容易把逗号改回半角。Gvozdev / Deng 的 prompt 都不提全角，没有机制阻止这件事。
-- R3 / R4 / R7 / R8 / R11 补的空格同样会被「更短、更日常」吃掉。
-- T1 若已把「秘钥」换成「密钥」，润色仍可能再写成「秘密」或「秘钥」 —— 模型没有锚点约束。
+- zh-typography-1 刚把 `你好,世界` 收成 `你好，世界`，英文中心的润色模型很容易把逗号改回半角。Gvozdev / Deng 的 prompt 都不提全角，没有机制阻止这件事。
+- zh-typography-3 / zh-typography-4 / zh-typography-7 / zh-typography-8 / zh-typography-11 补的空格同样会被「更短、更日常」吃掉。
+- zh-word-1 若已把「秘钥」换成「密钥」，润色仍可能再写成「秘密」或「秘钥」 —— 模型没有锚点约束。
 - `--fix` 还可能改掉润色想保留的原文误译，让人审看不到「模型原来写错了什么」。先 fix 等于毁掉蒸馏 pair 的 before。
 
 **先润色再 `--fix` 会出什么问题**
 
-- R1–R11 的 `--fix` 改的是标点宽度与空格，**几乎不改选词和句式**，所以不破坏 Deng 意义上的语感 (哪几个命题、怎么压缩)。这是家规落地，不是「把人话改回腔」。
-- T1 的 `--fix` **会改词**。若润色故意在无锚点行里写了「代币」(钱的意思)，T1 因无锚点不动；若同行出现了 `token`，T1 会改成「令牌」。这是 T1 的既有契约，不是润色引入的新风险；experimental 默认关，原型可以先只跑 R 家族。
-- A 家族全是 non-fixable，`--fix` 碰不到套话。套话要么润色删掉，要么留下当 warning。
+- `zh-typography` 一族 的 `--fix` 改的是标点宽度与空格，**几乎不改选词和句式**，所以不破坏 Deng 意义上的语感 (哪几个命题、怎么压缩)。这是家规落地，不是「把人话改回腔」。
+- zh-word-1 的 `--fix` **会改词**。若润色故意在无锚点行里写了「代币」(钱的意思)，zh-word-1 因无锚点不动；若同行出现了 `token`，zh-word-1 会改成「令牌」。这是 zh-word-1 的既有契约，不是润色引入的新风险；experimental 默认关，原型可以先只跑 R 家族。
+- `zh-tell` 与 `en-tell` 两族全是 non-fixable，`--fix` 碰不到套话。套话要么润色删掉，要么留下当 warning。
 - Deng 允许减句、Gvozdev 的 `tldr` 允许减半并丢掉围栏。`--fix` 不增删行 (`spec/rules.md`「处理单位」)，所以 **减句是润色自己的事，lint 既修不回来，也不该修**。结构不变量检查要拦的是围栏 / 链接被改坏，不是句数。
 - 若人审的是模型生输出、写回后再 `--fix`，人看到的和入库的不一致。所以人审应发生在 `--fix` 之后。
 
@@ -320,11 +320,11 @@ Gvozdev 的「跟输入同一语言」对中文 **机制上可用**，质量取�
 1. (可选) `lo-md-lint` **check** 原文，A/T findings 当作润色 prompt 的 hint。这是 ADR-0006 §四允许的「使用方式」，不是「warning 累积才润色」。没有 findings 也可以润色。
 2. LLM 润色 → 旁路文件，**不覆盖正本**。
 3. **确定性**结构不变量检查 (围栏、行内代码、destination / URL、表格骨架、frontmatter)。失败则丢弃这次润色，fail-open 回原文。
-4. 对旁路文件跑 `lo-md-lint --fix` (默认 R1–R11；T1 仅当 `enable_experimental` 已开)。再 `check` 一次当验收。
+4. 对旁路文件跑 `lo-md-lint --fix` (默认 `zh-typography` 一族；zh-word-1 仅当 `enable_experimental` 已开)。再 `check` 一次当验收。
 5. 人对照「原文 vs (润色 + 排版 fix) 后的旁路」，接受后才写回。
 6. 被接受的 pair 才进入 heuristic learning；被 `--fix` 改过标点的 after 仍算同一 pair 的 after，before 必须是润色前的原文。
 
-**不要**先 `--fix` 再润色，也 **不要**指望润色 prompt 自己遵守 R1–R11。排版是确定性段的工作；语义压缩才是模型的工作。BitsAI-Fix 的「补丁再 lint」既有调研 §3.3 已有工业先例，方向与这条一致。
+**不要**先 `--fix` 再润色，也 **不要**指望润色 prompt 自己遵守 `zh-typography` 一族。排版是确定性段的工作；语义压缩才是模型的工作。BitsAI-Fix 的「补丁再 lint」既有调研 §3.3 已有工业先例，方向与这条一致。
 
 ---
 
@@ -364,7 +364,7 @@ tracker 已有的「LLM 润色原型：Deng spec 当 prompt、旁路文件、不
 Prompt 组织建议分层，抄两侧各自擅长的，不要混成一份 200 行英文 spec 直接喂中文：
 
 1. **合同段** (短、稳定，相当于 Gvozdev 默认 prompt)：只输出改写；保留事实 / 数字 / 路径；围栏、行内代码、链接 destination、表格骨架不动；不是对文档的「回答」。
-2. **中文语义段** (本仓要新写的，短)：删翻译腔与套话、补量词、术语跟 T 家族走、不要造 Deng 词典里那些英文隐喻的中文直译。
+2. **中文语义段** (本仓要新写的，短)：删翻译腔与套话、补量词、术语跟 `zh-word` 一族走、不要造 Deng 词典里那些英文隐喻的中文直译。
 3. **英文 Claudish 段**：Deng 正向 spec 可整份当附录，只在输入含英文行文时启用；不要把 30 条词典贴进 prompt (spec 禁止机械换词，而且会教模型「看到 `canonical` 就删」)。
 4. **人称 / 文类锚定** (Gvozdev `rewrite.sh:320` 那一层)：文档不是助手对用户说话，「我」不是模型。
 5. (可选) 本次 `check` 的 A/T findings，当 hint 不当必改清单。
@@ -417,7 +417,7 @@ ADR-0005 §六要的是：pair 只 **提议**规则，人审后进 `spec/`，新
 每条被接受的润色留下：
 
 - before：润色前的原文 (未经 `--fix` 预处理)
-- after：人审接受的文本 (已经过结构检查与 R 家族 `--fix`)
+- after：人审接受的文本 (已经过结构检查与 `zh-typography` 一族的 `--fix`)
 - 可选：模型生输出 (人改之前)，用来看人改了什么
 - 元数据：日期、模型名、用了哪一版 prompt、是否开过 experimental。**不要**写路径里的真实业务名；fixture / 语料只用 ACME / Foo (`AGENTS.md`「隐私边界」)
 
@@ -425,9 +425,9 @@ ADR-0005 §六要的是：pair 只 **提议**规则，人审后进 `spec/`，新
 
 | pair 里反复出现的编辑 | 可以提议成 | 不能提议成 |
 | --- | --- | --- |
-| 同一 `wrong` 在同类锚点旁被换成同一 `right` | T1 词表加一行 | 无锚点的全局替换 |
-| 同一中文套话 / 黑话被删 | A1 / A3 词表加一行 | 「读着别扭」这种不可判句 |
-| 同一英文 tell 被删 | A5 / A7 词表加一行 | Deng 词典里的合法技术词 |
+| 同一 `wrong` 在同类锚点旁被换成同一 `right` | zh-word-1 词表加一行 | 无锚点的全局替换 |
+| 同一中文套话 / 黑话被删 | zh-tell-1 / zh-tell-3 词表加一行 | 「读着别扭」这种不可判句 |
+| 同一英文 tell 被删 | en-tell-1 / en-tell-3 词表加一行 | Deng 词典里的合法技术词 |
 | 多句压成一句、隐喻被拆开 | 无 (留在润色 spec) | 任何 findings 规则 —— 黄金集写不稳 (既有调研 §6) |
 
 接口形状：润色侧 **只产出 pair**；提议规则是另一条 agent 任务，读 pair、写词表补丁 + 新 fixture 草案，跑全量黄金集，回归失败就丢这条提议。不要在润色进程里改 `spec/wordlists/`。这与翁家翌 HL 的「策略可读、可回归、可删」同构，也与 ADR-0007「词表是规范、加一条词就是改规范」同构。
@@ -436,9 +436,9 @@ ADR-0005 §六要的是：pair 只 **提议**规则，人审后进 `spec/`，新
 
 ### 5.6 第一期范围 (给后续 ADR 的边界)
 
-做：skill 驱动、旁路 `.plain.md`、机械保护不变量、润色后 R 家族 `--fix`、人审后写回、留下 pair。
+做：skill 驱动、旁路 `.plain.md`、机械保护不变量、润色后跑 `zh-typography` 一族的 `--fix`、人审后写回、留下 pair。
 
-不做：CI required check、warning 计数触发、overwrite 默认开、把 Deng 词典当 T1、在 linter 里内置 oauth / 云厂商 SDK、用 `.fixed` 锁散文。
+不做：CI required check、warning 计数触发、overwrite 默认开、把 Deng 词典当 zh-word-1、在 linter 里内置 oauth / 云厂商 SDK、用 `.fixed` 锁散文。
 
 ---
 
@@ -447,14 +447,14 @@ ADR-0005 §六要的是：pair 只 **提议**规则，人审后进 `spec/`，新
 既有调研 §7.3 的七条仍然成立。下面只补 **润色这条线** 的增量；不重复「不要嵌 Gvozdev / Deng 当依赖」「不要 LLM 当 CI 判定器」原文，只把它们在润色场景下写具体。
 
 1. **不要把润色接进 `lo-md-lint --fix`。** `--fix` 的契约是逐行、唯一、不动点 (`spec/rules.md`「处理单位」)。语义压缩减句、非确定，接进去会拆掉黄金集。ADR-0006 已经把润色从 warning 触发上解开，不要从 fix 路径再耦回去。
-2. **不要先 `--fix` 再润色。** 理由见 §4.3：模型会把 R1 的全角标点改回去，也毁掉 HL 需要的 before。
+2. **不要先 `--fix` 再润色。** 理由见 §4.3：模型会把 zh-typography-1 的全角标点改回去，也毁掉 HL 需要的 before。
 3. **不要默认 overwrite 正本。** Gvozdev 自己把 overwrite 标成弱模型会毁文档 (`README.md:410`)，且没有人审闸。本仓 ADR-0005 §四已经要求旁路 + 人审后写回。
 4. **不要只靠 prompt 保护围栏 / 行内代码 / 链接。** Gvozdev 对围栏就是这样，还被 `tldr` 反过来要求删除。本仓有豁免解析器，应机械剥离。
-5. **不要把 Deng 的 `entries.json` 当可执行词表灌进 T1 或 A7。** 正向 spec 禁止机械换词；30 条里多数是合法技术用语；本仓 A7 已经用「造得出无修辞技术句就不收」筛过一轮 (`spec/rules.md` 的 A7)。词典的用法是给人读、给润色 spec 当例子，不是 `wrong = right`。
+5. **不要把 Deng 的 `entries.json` 当可执行词表灌进 zh-word-1 或 en-tell-3。** 正向 spec 禁止机械换词；30 条里多数是合法技术用语；本仓 en-tell-3 已经用「造得出无修辞技术句就不收」筛过一轮 (`spec/rules.md` 的 en-tell-3)。词典的用法是给人读、给润色 spec 当例子，不是 `wrong = right`。
 6. **不要用 Gvozdev 的 `tldr` / `5y` / `caveman` 当文档润色默认档。** `tldr` 省略围栏；`caveman` 删冠词、改时态，会改事实表面。文档润色要的是 Deng 那种 paraphrase，不是风格戏仿。
 7. **不要抄 `CLAUDISH_ANTHROPIC_AUTH=oauth`。** 非官方、订阅凭证、本仓 public。Gvozdev 自己每会话警告一次 (`providers.sh:422`)。
 8. **不要把润色做成 MessageDisplay 式的显示层插件。** 本仓的对象是仓库里的 Markdown 正本，不是 Claude Code 的屏幕。显示层改写解决不了 `docs/` 入库。
-9. **不要用 `.in` / `.fixed` 去锁模型散文，也不要为了迁就润色放宽「不增删行」。** 那是 R 家族的契约；润色另测不变量。
+9. **不要用 `.in` / `.fixed` 去锁模型散文，也不要为了迁就润色放宽「不增删行」。** 那是 `zh-typography` 一族的契约；润色另测不变量。
 10. **不要从未经人审的模型输出蒸馏规则。** HL 的反馈是人接受的 after；把生输出当 after，等于把一次幻觉写进 `spec/wordlists/`。
 11. **不要为中文另做语言探测再切 prompt 包。** ADR-0006 §五：规则不分语言。润色 prompt 可以「中英两段都写上，模型按看到的文字用」，不要按文件路径猜语言。
 12. **不要在原型里接 PAW / 私有 extra-index。** Deng 的价值是 spec 文本，不是 `paw.function("e469f61ccab2699fbd51")` 这条运行时依赖。function id 与 spec 是否一致无法从源码核实。

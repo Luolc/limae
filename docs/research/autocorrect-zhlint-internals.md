@@ -187,14 +187,14 @@ remark 认 CommonMark / GFM 的 \`\`\` 与 `~~~`。围栏代码不是 paragraph�
 | --- | --- | --- | --- |
 | MD 切分 | pest PEG，不是 CommonMark | remark-parse + GFM + frontmatter (mdast) | 正则：围栏行、CommonMark 等长反引号、最简 `](` / 裸 URL (`zh_format.py` 的 `_is_fence` / `_code_spans` / `URL_DESTINATION`) |
 | 代码块 | \`\`\` 按语言**递归 format**；无 `~~~` | 不成 block，缝里原样，\`\`\` / `~~~` 都跳 | 围栏行与内容整行豁免，\`\`\` 与 `~~~` 都认 |
-| 行内代码 | 单 \` 定界，内容不改；`space-backticks` 在 MD 里几乎无效 | RAW token，`spaceOutsideCode` 管外侧 | 等长反引号串，内部豁免，R7 管外侧 |
+| 行内代码 | 单 \` 定界，内容不改；`space-backticks` 在 MD 里几乎无效 | RAW token，`spaceOutsideCode` 管外侧 | 等长反引号串，内部豁免，zh-typography-7 管外侧 |
 | 链接 | 锚文字改、href 原子 | HYPER：`[` + 锚文字 + `](url)`，destination 不改 | destination 与裸 URL 全局豁免 |
 | 图片 | alt 当 link_string 会改 | 整段 RAW，alt 也不改 | 未单独建模；alt 落在行文里会走规则 |
 | HTML | 标签不改、inner_text 改；注释当正文改 | 块级 HTML 在缝里；inline html 为 RAW | 无 HTML 豁免 |
 | front matter | `---` 块内普通值会改，`tags:` 特例 | yaml 节点整块跳过 | 规范未提，按行文处理 |
 | 写回 | pair 拼接；parse 失败回原文 | 按 offset 嵌块 (`replaceBlocks`) | 逐行 `split("\n")` / `join`，**不增删行**是规范 (`spec/rules.md`「处理单位」) |
 | 位置 | pest `line_col`；lint 报整行 old/new | 源码 offset → 行 / 列；按 token 部件 | 行号 + 规则 id，无列号 |
-| 规则单元 | 具名 `fn(&str) -> Cow<str>`，两张静态表 | `Handler` 闭包 + `Options` 三态布尔 | 稳定 id R1–R11，规范正本在 `spec/rules.md` |
+| 规则单元 | 具名 `fn(&str) -> Cow<str>`，两张静态表 | `Handler` 闭包 + `Options` 三态布尔 | 稳定 id zh-typography-1 到 zh-typography-11，规范正本在 `spec/rules.md` |
 | 顺序 | `RULES` 然后 `AFTER_RULES`，实现细节 | `generateHandlers` 数组，先改再还原特例 | 「修复顺序」是契约，各实现必须一致 |
 | 幂等 | 单遍，无 fixpoint，无测试 | 单遍 + 还原，无 `run(run(x))` 测试 | `--fix` 循环到不动点；runner 断言 `fix(fixed) == fixed` |
 | 只报不修 | Warning：lint 跑、format 不跑 | 无；`undefined` = 不报不改。CLI 不写盘只是不保存 | check 与 fix 同一启用集；tracker 有 non-fixable / warning backlog |
@@ -213,22 +213,22 @@ remark 认 CommonMark / GFM 的 \`\`\` 与 `~~~`。围栏代码不是 paragraph�
 
 1. **「抽出可见文本 → 改 → 按原偏移嵌回」** (zhlint 的 block + `replaceBlocks`)，而不是 AutoCorrect 那种「按 pair 树遍历、终端节点依次 `push`」。理由：本仓契约是语法结构不动、行数不变；嵌回只替换 mdast 认定的 paragraph / heading / table-cell，围栏、列表标记、yaml 自然留在缝里。AutoCorrect 的拼接是成功 parse 后的树遍历副作用，parse 失败则整份回原文；那份 Markdown 文法已经不是 CommonMark (无 `~~~`、单反引号、注释当正文、代码块递归 format)。Rust 若换 parser，应对齐 zhlint 这条写回策略，而不是对齐 pest 那份文法。
 2. **Parse 失败则整份原文返回** (AutoCorrect `FormatResult::error`)。理由：排版 linter 改坏源码的代价高于漏报；本仓现在正则路径很少会「解析失败」，一旦上真实 parser，这条是必要的安全网。
-3. **行内 disable 用文档序状态机，且能带规则 id** (AutoCorrect `Toggle`)。理由：tracker 要的逃生口就是「单点误报不必动配置」。zhlint 的整文件 `disabled` 太粗；它的片段 ignore 圈的是字而不是规则，关不掉「这一段只跳过 R4」。状态机比「只作用于注释所在行」更能盖住围栏前的一段，也比源码区间标记省掉配对闭合。建议注释语法跟本仓规则 id (`R4`) 对齐，不要引入 `space-word` 这种外部分名。
+3. **行内 disable 用文档序状态机，且能带规则 id** (AutoCorrect `Toggle`)。理由：tracker 要的逃生口就是「单点误报不必动配置」。zhlint 的整文件 `disabled` 太粗；它的片段 ignore 圈的是字而不是规则，关不掉「这一段只跳过 zh-typography-4」。状态机比「只作用于注释所在行」更能盖住围栏前的一段，也比源码区间标记省掉配对闭合。建议注释语法跟本仓规则 id (`zh-typography-4`) 对齐，不要引入 `space-word` 这种外部分名。
 4. **忽略文件用 gitignore 语法、显式传入的路径也过滤** (两侧 CLI 都是如此)。理由：与「我写在命令行上就一定要检」相反，两侧都选择了 ignore 赢，避免 CI 脚本 `git ls-files '*.md'` 把生成物又送回来。Rust 侧直接用 `ignore` crate 即可 (AutoCorrect 已验证)。要不要像 AutoCorrect 那样**默认叠加 `.gitignore`**，宜单独拍板：叠加省一份名单，但会让「源码在 gitignore 里但仍想 lint」的生成文档消失；zhlint 只读自己的 ignore 文件，更可预测。无论选哪头，显式路径与忽略文件的关系必须写进规范，两侧源码都没有「强制检」开关。
 5. **等长占位保住偏移** (zhlint 给 Hexo / VuePress 的 `@`.repeat(length))。理由：本仓若永远只做 CommonMark，现在不必做；一旦要豁免某种「看起来像正文、其实是指令」的结构，先占位再 parse 比把方言写进文法便宜。
 6. **lint 报告带列号 / 偏移** (AutoCorrect `c`，zhlint `index`)。理由：现在规范只要求行号 + 规则 id，黄金集也按这个比。Rust 终态若要对标 LSP (ADR-0002 / tracker)，内部保留列或 byte offset 是便宜的，对外 fixture 不必改。不要学 AutoCorrect 把一条上的多规则揉成整行 `old`/`new` —— 本仓 `.findings` 已经是「同一行同一规则可出现多次」。
-7. **特例用「先改再还原」只适合选项极多、规则共享同一 token 流的时候** (zhlint 的 `skipZhUnits` / `skipAbbrs` / linebreak)。本仓已经把 `skip_zh_units` 写进 R5 判定、缩写表写进 R1，**不必再抄还原 pass**。值得抄的是这个观察：空格规则与「不要动换行」冲突时，zhlint 用强制还原换行保住行数 (`case-linebreak`)；本仓因为根本不在 token 的 `spaceAfter` 里改 `\n`，没有这个问题，但若 Rust 换 token 流，这一条要一起带走。
+7. **特例用「先改再还原」只适合选项极多、规则共享同一 token 流的时候** (zhlint 的 `skipZhUnits` / `skipAbbrs` / linebreak)。本仓已经把 `skip_zh_units` 写进 zh-typography-5 判定、缩写表写进 zh-typography-1，**不必再抄还原 pass**。值得抄的是这个观察：空格规则与「不要动换行」冲突时，zhlint 用强制还原换行保住行数 (`case-linebreak`)；本仓因为根本不在 token 的 `spaceAfter` 里改 `\n`，没有这个问题，但若 Rust 换 token 流，这一条要一起带走。
 
 ### 4.2 不要抄
 
 1. **不要抄 AutoCorrect 的 Markdown pest 文法。** 它不是 CommonMark：不认 `~~~`、行内代码不是等长反引号串、会 format HTML 注释、会递归 format 围栏内容、front matter 普通值会改、图片 alt 会改。这些每一条都直接违反本仓「全局豁免」第 1–3 款 (围栏整块、行内代码内部、destination / URL)。`context.codeblock` 默认开，与本仓默认相反。既有调研 §4.1 第 6 条「按文件类型 AST 只扫字符串和注释」对代码语言成立，对 Markdown **不成立**，源码级应以此处为准。
-2. **不要抄 `space-backticks` 那种「规则假定反引号还在同一段文本里」的实现。** Markdown 一切 token，规则就打空；配置默认开造成「以为在工作」。本仓 R7 显式按 span 定界串的外侧判定，这个模型要保住。
-3. **不要抄 zhlint 那份巨大的 boolean `Options`。** 既有调研已说与「规则 id 稳定不复用」不合。源码还确认：`undefined` / `true` / `false` 三态、先改再还原、消息字符串与 handler 一一对应，迁移成本高，且没有本仓需要的「关 R3、其它保持」这种启用集运算。
+2. **不要抄 `space-backticks` 那种「规则假定反引号还在同一段文本里」的实现。** Markdown 一切 token，规则就打空；配置默认开造成「以为在工作」。本仓 zh-typography-7 显式按 span 定界串的外侧判定，这个模型要保住。
+3. **不要抄 zhlint 那份巨大的 boolean `Options`。** 既有调研已说与「规则 id 稳定不复用」不合。源码还确认：`undefined` / `true` / `false` 三态、先改再还原、消息字符串与 handler 一一对应，迁移成本高，且没有本仓需要的「关 zh-typography-3、其它保持」这种启用集运算。
 4. **不要抄 AutoCorrect 的 Warning = 只报不修，当作默认严重级别模型。** 机制本身 (lint 跑、fix 跳过) 干净，但本仓当前契约是启用集内 check 与 fix 同行为。tracker 的 non-fixable 若落地，宜做成规则属性 (ruff 的 fixable)，不要做成配置里的 0/1/2 与规则表缠在一起。也不要抄 `textRules` 的 `contains` 覆盖 —— 子串命中就整段还原，调试时看不出是哪条规则让步，和「未知 id 必须报错」的本仓配置哲学相反。
-5. **不要抄「单遍 fix、靠作者保证幂等」。** 本仓已经因为「R2 换出的半角括号会改变链接 destination 豁免范围」而把不动点写进规范 (`spec/rules.md`「处理单位」；`zh_format.py` `fix_text` 的 `while True`)。AutoCorrect / zhlint 都没有这条，也没有测试。Rust 实现必须继续对着 `spec/fixtures` 跑三条断言，而不是对着它们的单遍模型降格。
+5. **不要抄「单遍 fix、靠作者保证幂等」。** 本仓已经因为「zh-typography-2 换出的半角括号会改变链接 destination 豁免范围」而把不动点写进规范 (`spec/rules.md`「处理单位」；`zh_format.py` `fix_text` 的 `while True`)。AutoCorrect / zhlint 都没有这条，也没有测试。Rust 实现必须继续对着 `spec/fixtures` 跑三条断言，而不是对着它们的单遍模型降格。
 6. **不要抄 SDK 冒烟当黄金集。** AutoCorrect 多语言绑定各写 `Hello你好.`，真正的 Markdown 行为只在 Rust 测试里。本仓 ADR-0001 的 `spec/fixtures/` 才是该抄的共享方式；Rust 终态加绑定的话，绑定测试保持冒烟即可，不要再复制一份 fixture。
 7. **不要抄 zhlint 整文件 `disabled` 当主逃生口，也不要把 case ignore 当作 disable 规则的替代。** 片段 ignore 适合「这一串 `( , )` 是 API 签名」这种真·原文如此；它按文本搜索所有出现，容易误伤。本仓若做，应是 disable 注释的补充，不是主机制。
-8. **不要抄「英文段落把全角标点收成半角」** (AutoCorrect `halfwidth-punctuation` + CJK block 临时关)。本仓 R1 是 CJK 旁半角 → 全角，反向转换不在默认集；家规括号方向已与 zhlint 默认同向 (既有调研 §2.4)，不要为了对齐 AutoCorrect 再加一条未进 spec 的反向规则。
+8. **不要抄「英文段落把全角标点收成半角」** (AutoCorrect `halfwidth-punctuation` + CJK block 临时关)。本仓 zh-typography-1 是 CJK 旁半角 → 全角，反向转换不在默认集；家规括号方向已与 zhlint 默认同向 (既有调研 §2.4)，不要为了对齐 AutoCorrect 再加一条未进 spec 的反向规则。
 
 ### 4.3 对既有调研的校准 (源码改了 README 印象的地方)
 
@@ -236,7 +236,7 @@ remark 认 CommonMark / GFM 的 \`\`\` 与 `~~~`。围栏代码不是 paragraph�
 
 - AutoCorrect 在 Markdown 里**会改代码块** (默认)，不是「只扫可见文本」。
 - AutoCorrect `space-backticks` 默认开，但 Markdown 路径几乎不生效。
-- zhlint `skipZhUnits` 不是「判定时跳过」，是「插完再还原，且只还原原文没有空格的边界」。本仓 R5 的 `skip_zh_units` 是判定豁免，语义更干净，保持。
+- zhlint `skipZhUnits` 不是「判定时跳过」，是「插完再还原，且只还原原文没有空格的边界」。本仓 zh-typography-5 的 `skip_zh_units` 是判定豁免，语义更干净，保持。
 - 两侧 CLI 对**显式文件**都应用 ignore，README 不一定写清。写本仓规范时要写死。
 
 **未核实：** AutoCorrect `WalkBuilder` 在「路径是 walker 根且同时被 gitignore」时，是根节点仍发出再被 `Ignorer` 丢掉，还是 walker 根本不发出 —— 源码两种过滤都在，本文按「最终不处理」描述，未单步跑 CLI 证实哪一层先生效。zhlint `replaceBlocks` 在 heading 节点 offset 是否包含 `#` 标记：mdast 通常包含，字符 parser 会看到 `#`；`example-units.md` 几乎没有 ATX 标题，heading 标记会不会被空格规则改写，本文未用 vitest 实测。
