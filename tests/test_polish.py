@@ -214,7 +214,7 @@ def test_select_skips_an_engine_that_exits_zero_without_answering(
 
 
 def test_the_cache_never_outranks_the_host_marker(tmp_path: pathlib.Path):
-  # What is cached is each engine's probe result, not which engine was
+  # What is cached is each engine's own answer, not which engine was
   # chosen: the ordering of ADR-0008 三 runs again every time, so the
   # session the user is in now still comes first (step 2).
   env = environment(tmp_path)
@@ -270,9 +270,10 @@ def write_cache(
 def test_a_remembered_failure_expires_sooner_than_a_remembered_success(
     tmp_path: pathlib.Path,
 ):
-  # The two directions are not symmetric: a stale failure makes the
-  # whole feature unusable and lands on the user who has just logged in,
-  # so it is forgotten first.
+  # The two directions are not symmetric: a remembered failure is only
+  # ever unlearned by the TTL running out, while a remembered success is
+  # re-checked by the next real call (see the test below), so the
+  # failure needs the shorter TTL of the two.
   env = environment(tmp_path)
   bin_dir = pathlib.Path(env["PATH"].split(":")[0])
   stub(bin_dir, "claude", f"cat > /dev/null\necho {engines.PROBE_MARKER}")
@@ -289,6 +290,35 @@ def test_a_remembered_failure_expires_sooner_than_a_remembered_success(
   stub(bin_dir, "claude", "exit 1")
   _ = write_cache(env, {"claude": (engines.OK, older_than_a_failure_lives)})
   assert engines.select(env) == "claude"
+
+
+def test_a_failed_real_call_expires_the_remembered_success(
+    tmp_path: pathlib.Path,
+):
+  # A remembered OK claims the engine will answer, and every real call
+  # tests that claim. When one fails, the entry is corrected on the
+  # spot: the next run neither trusts the OK nor pays for a fresh probe,
+  # it moves on to the next engine instead of failing the same way for
+  # the rest of CACHE_TTL.
+  runs = tmp_path / "runs"
+  env = environment(tmp_path)
+  bin_dir = pathlib.Path(env["PATH"].split(":")[0])
+  stub(bin_dir, "claude", f"echo run >> {runs}\ncat > /dev/null\nexit 1")
+  stub(
+      bin_dir,
+      "codex",
+      f'cat > /dev/null\nshift 8\necho {engines.PROBE_MARKER} > "$1"',
+  )
+  _ = write_cache(env, {"claude": (engines.OK, 60), "codex": (engines.OK, 60)})
+  assert engines.select(env) == "claude"
+
+  with pytest.raises(engines.EngineError):
+    _ = engines.polish("claude", "", SPEC, TEXT, env)
+
+  assert engines.select(env) == "codex"
+  # Once, for the polish call: the cached failure means claude is not
+  # probed again either.
+  assert runs.read_text(encoding="utf-8").count("\n") == 1
 
 
 def test_a_missing_binary_is_never_written_to_the_cache(
@@ -324,7 +354,10 @@ def test_a_remembered_diagnosis_says_its_age_and_how_to_retry(
   with pytest.raises(engines.EngineError) as caught:
     engines.select(env)
   message = str(caught.value)
-  assert f"claude: {engines.UNAUTHORIZED} (probed 2 minute(s) ago)" in message
+  assert (
+      f"claude: {engines.UNAUTHORIZED} (last checked 2 minute(s) ago)"
+      in message
+  )
   # The user who has just logged in must be able to get out of it.
   assert "--engine" in message
   assert str(path) in message
