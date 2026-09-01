@@ -53,7 +53,10 @@ def test_claude_template_puts_the_spec_in_a_file_and_prose_on_stdin(
       "--model",
       "sonnet",
   ]
-  assert invocation.stdin == TEXT
+  # The spec has its own channel here, but the prose still needs the
+  # boundary: without it the payload is structurally a person's turn,
+  # and this engine answers it instead of rewriting it.
+  assert invocation.stdin == f"{engines.PAYLOAD_SEPARATOR}\n{TEXT}"
   assert invocation.output is None
   # Privacy boundary: a preset never runs in the caller's directory, so
   # the repository around the user is not context the engine can read.
@@ -81,7 +84,7 @@ def test_codex_template_prepends_the_spec_and_reads_an_answer_file(
   ]
   # No system channel: the spec leads, the prose follows the separator.
   assert invocation.stdin.startswith(SPEC)
-  assert invocation.stdin.endswith(f"{engines.CODEX_SEPARATOR}\n{TEXT}")
+  assert invocation.stdin.endswith(f"{engines.PAYLOAD_SEPARATOR}\n{TEXT}")
   assert invocation.output == output
   assert invocation.cwd == tmp_path
 

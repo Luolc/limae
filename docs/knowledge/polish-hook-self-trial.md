@@ -106,7 +106,9 @@ jq -r '.code, (.candidates[] | "\(.label) = \(.engine) \(.model)")' \
 tail "${TMPDIR:-/tmp}"/limae-hook/*/diagnostics.jsonl
 ```
 
-一行一次失败，四个字段：
+**这个文件不存在，说明这个会话还没失败过** —— shell 会报 `no matches found` 或 `No such file`，那不是命令打错了。屏幕上没润色又没有这个文件，先回去看第三节的阈值：多半是消息没到 200 字，那不算失败，所以不记。
+
+有的话，一行一次失败，四个字段：
 
 | 字段 | 是什么 |
 | --- | --- |
