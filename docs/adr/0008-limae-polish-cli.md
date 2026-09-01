@@ -20,21 +20,23 @@ ADR-0005 §四把 LLM 语义润色确认为未来特性并划了两段式边界�
 
 工具名、binary、包名、crate 名统一为 **`limae`**。取自贺拉斯 (Horace) 的 *limae labor*「锉刀之功」 —— 反复打磨文字，正是这三个子命令的共同隐喻。
 
-**占用核实** (2026-09-01)：crates.io 明确回 `crate limae does not exist`，PyPI 与 npm 均 404，GitHub 仓名 `Luolc/limae` 可用；GitHub 用户名 `limae` 已被占用，这只影响将来是否能起同名组织，不影响仓名与包名。
+**占用核实**，决策时点 (2026-09-01) 的核实结果 —— 它是选这个名字的依据，不随后续迁移改写：crates.io 明确回 `crate limae does not exist`，PyPI 与 npm 均 404，GitHub 仓名 `Luolc/limae` 可用；GitHub 用户名 `limae` 已被占用，这只影响将来是否能起同名组织，不影响仓名与包名。
 
 **避让**：与重点参考对象 AutoCorrect、zhlint 没有字面或语义撞车；名字里不含 `lint`、`correct`、`md`，不把天花板钉死在「Markdown 的 linter」上 —— `polish` 一旦成立，这个工具就不只是 linter 了。
 
-**迁移范围** (本 ADR 只列清单，不执行)：
+**迁移范围**，同时是一份对账表 —— 除 GitHub 仓名外本 ADR 都只列清单、不执行：
 
-| 面 | 今天 | 更名后 |
-| --- | --- | --- |
-| 仓名 | `lo-md-lint` | `limae` |
-| Python 包 | `lo_md_lint` | `limae` |
-| 命令名 | `lo-md-lint` | `limae` |
-| pre-commit hook id | `lo-md-lint` | `limae` |
-| 配置表 / 文件 | `[tool.lo-md-lint]`、`lo-md-lint.toml` | `[tool.limae]`、`limae.toml` |
-| 行内指令前缀 | `lo-md-lint-disable` 等 | `limae-disable` 等 |
-| 忽略文件 | `.lo-md-lint-ignore` | `.limae-ignore` |
+| 面 | 今天 | 更名后 | 状态 |
+| --- | --- | --- | --- |
+| GitHub 仓名 | `lo-md-lint` | `limae` | **已完成** (2026-09-01) |
+| Python 包 | `lo_md_lint` | `limae` | 待做 |
+| 命令名 | `lo-md-lint` | `limae` | 待做 |
+| pre-commit hook id | `lo-md-lint` | `limae` | 待做 |
+| 配置表 / 文件 | `[tool.lo-md-lint]`、`lo-md-lint.toml` | `[tool.limae]`、`limae.toml` | 待做 |
+| 行内指令前缀 | `lo-md-lint-disable` 等 | `limae-disable` 等 | 待做 |
+| 忽略文件 | `.lo-md-lint-ignore` | `.limae-ignore` | 待做 |
+
+GitHub 仓库改名已于 2026-09-01 由 orchestra 在本 ADR 合并前执行完毕：`Luolc/lo-md-lint` → `Luolc/limae`，旧 URL 由 GitHub 301 永久重定向，本地 origin 已同步。**本地目录改名与消费仓迁移仍未做** —— 前者等所有 agent 收工再做，后者由 butler 另派任务。
 
 **过渡期保留旧名别名**：命令、配置表与文件名、hook id、行内指令前缀、忽略文件都要在一段时间内新旧两可，消费仓 (`machine-setup` / `wealth-management` / `butler`) 各出一个小 PR 跟进。旧别名什么时候移除由后续任务定，本 ADR 只要求「有过渡期」，不定期限。
 
@@ -144,7 +146,7 @@ command = []        # engine = "custom" 时的完整命令，支持占位符
 
 ## 后果
 
-- **更名是一次跨仓迁移**，范围就是 §一 那张表加消费仓的三个小 PR；过渡期内新旧名并存，旧名的移除另起任务。本 ADR 不改任何一处实际引用，仓名、包名、命令名、配置键在本次提交后仍是 `lo-md-lint` / `lo_md_lint`。
+- **更名是一次跨仓迁移**，范围就是 §一 那张表加消费仓的三个小 PR；过渡期内新旧名并存，旧名的移除另起任务。GitHub 仓名已先行改完 (§一 的对账行)，其余各面在本次提交后仍是 `lo-md-lint` / `lo_md_lint` —— 本 ADR 不改包名、命令名、配置键的任何一处实际引用。
 - **`README.md`「定位与愿景」的名字与子命令描述在更名落地时再改**，本 ADR 不动它 —— 现在改会让文档描述一个还不存在的命令。
 - `spec/rules.md` 本次不变。将来 `--fix` 改叫 `format` 时，规范里的「修复」措辞与 `--fix` 字样要一并过一遍，那是落地任务的事。
 - ADR-0005 §四的形态判断 (产物是旁路文件) 被 §七 修正为原地改；§四的其余边界 (两段式、人审、不进 required check、不拿模型当 CI 判定器) 全部保留，0005 不就地改写。
