@@ -3,7 +3,7 @@ import sys
 
 import pytest
 
-from lo_md_lint import wordlists, zh_format
+from limae import wordlists, zh_format
 
 
 # The rule behaviour itself lives in the language-agnostic golden set; see
@@ -16,13 +16,13 @@ def test_cli_reports_then_fixes(
 ):
   p = tmp_path / "t.md"
   p.write_text("你好,世界", encoding="utf-8")
-  monkeypatch.setattr(sys, "argv", ["lo-md-lint", str(p)])
+  monkeypatch.setattr(sys, "argv", ["limae", str(p)])
   assert zh_format.main() == 1
   assert (
       f"{p}:1: error: [R1 halfwidth punct next to CJK]"
       in capsys.readouterr().out
   )
-  monkeypatch.setattr(sys, "argv", ["lo-md-lint", "--fix", str(p)])
+  monkeypatch.setattr(sys, "argv", ["limae", "--fix", str(p)])
   assert zh_format.main() == 0
   assert p.read_text(encoding="utf-8") == "你好，世界"
 
@@ -35,7 +35,7 @@ def test_tracked_markdown_lists_md_files():
 
 
 def run(argv: list[str], monkeypatch: pytest.MonkeyPatch) -> int:
-  monkeypatch.setattr(sys, "argv", ["lo-md-lint", *argv])
+  monkeypatch.setattr(sys, "argv", ["limae", *argv])
   return zh_format.main()
 
 
@@ -368,7 +368,7 @@ def test_ignore_file_negation_keeps_a_file(
 
 
 def test_wordlists_load_from_the_packaged_spec_directory():
-  # src/lo_md_lint/wordlists is a symlink to spec/wordlists; the phrases
+  # src/limae/wordlists is a symlink to spec/wordlists; the phrases
   # and terms must be readable through the installed package either way.
   assert "综上所述" in wordlists.phrases("A1")
   assert "testament" in wordlists.phrases("A5")

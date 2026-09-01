@@ -47,7 +47,7 @@ Rules:
     entry covers.
 
 The A and T families read their wordlists from ``spec/wordlists/`` through
-:mod:`lo_md_lint.wordlists`; the wordlist rules (A1 / A3 / A4 / A5 / A7)
+:mod:`limae.wordlists`; the wordlist rules (A1 / A3 / A4 / A5 / A7)
 report at most one violation per line, the sentence-shape rules (A2 / A6),
 A8, T1 and T2 one per occurrence. A8 and T2 read allowlists instead —
 wordlists of the opposite polarity, where a hit means no violation.
@@ -59,7 +59,7 @@ destinations, raw URLs and quote spans whose content holds kana (a
 verbatim Japanese quotation).
 
 Every rule except R9 is enabled by default; ``--disable`` / ``--enable``
-and the toml config found by :mod:`lo_md_lint.config` turn rules off and
+and the toml config found by :mod:`limae.config` turn rules off and
 on. A disabled rule is neither reported nor fixed. The config's
 ``skip_zh_units`` key additionally tunes R5.
 
@@ -71,14 +71,14 @@ into the enabled set: R1-R11 are fixable · error · stable, A1-A8 and
 T1-T2 warning · experimental.
 
 Two escape hatches sit below the configuration: the inline directives of
-:mod:`lo_md_lint.directives` narrow the enabled set line by line, and the
+:mod:`limae.directives` narrow the enabled set line by line, and the
 ``.lo-md-lint-ignore`` file drops whole input files (both in
-:mod:`lo_md_lint.config`).
+:mod:`limae.config`).
 
 Usage (from the repo root)::
 
-  uv run lo-md-lint [--fix] [--disable R1,R3] FILE...
-  uv run lo-md-lint --all [--fix]
+  uv run limae [--fix] [--disable R1,R3] FILE...
+  uv run limae --all [--fix]
 
 Exit code 0 = clean or warnings only, 1 = at least one error-level
 violation, 2 = bad configuration or bad inline directive
@@ -93,7 +93,7 @@ import subprocess
 import sys
 import typing
 
-from lo_md_lint import config, directives, wordlists
+from limae import config, directives, wordlists
 
 CJK = "一-鿿"
 WORD = f"A-Za-z0-9{CJK}"
@@ -1017,7 +1017,7 @@ def fix_text(
 
   Fenced code blocks and inline code spans are left untouched (code keeps
   half-width punctuation), and the inline directives of
-  :mod:`lo_md_lint.directives` narrow the enabled set line by line; an
+  :mod:`limae.directives` narrow the enabled set line by line; an
   unknown rule id in one raises ``directives.DirectiveError``.
 
   Args:
@@ -1109,7 +1109,7 @@ def check_text(
 ) -> list[Finding]:
   """Check Markdown text and return its violations in reading order.
 
-  The inline directives of :mod:`lo_md_lint.directives` narrow the enabled
+  The inline directives of :mod:`limae.directives` narrow the enabled
   set line by line; an unknown rule id in one raises
   ``directives.DirectiveError``.
 

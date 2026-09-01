@@ -17,7 +17,7 @@
 布局与 ruff 仓相同：每种语言的实现都以仓根为项目根，源码进各自的子目录；规范与 fixture 独立于任何实现。
 
 - **规则规范与黄金 fixture 语言无关、所有实现共用**，放仓根 `spec/` (规范 `spec/rules.md`，黄金集 `spec/fixtures/`)；不放进任何单一实现的私有目录 (`src/`、`tests/`、`crates/`)。位置与理由见 `docs/adr/0001-standalone-repo-spec-first-shared-fixtures.md`。
-- **Python 参考实现 (reference implementation) 在仓根**：`pyproject.toml`、`src/lo_md_lint/`、`tests/`；包 `lo_md_lint`，命令 `lo-md-lint`；用 uv 管理，锁文件 `uv.lock` 全仓唯一。放仓根而不是 `python/` 子目录，是因为 pre-commit `language: python` 与 `uvx --from git+…` 都把仓根当作可安装的 Python 项目。
+- **Python 参考实现 (reference implementation) 在仓根**：`pyproject.toml`、`src/limae/`、`tests/`；包 `limae`，命令 `limae` (过渡期保留 `lo-md-lint` 别名)；用 uv 管理，锁文件 `uv.lock` 全仓唯一。放仓根而不是 `python/` 子目录，是因为 pre-commit `language: python` 与 `uvx --from git+…` 都把仓根当作可安装的 Python 项目。
 - **将来其它语言实现同样以仓根为项目根**：如 Rust 在仓根放 `Cargo.toml`，crate 源码在 `crates/` 之类的子目录；各用自己语言的原生机制，都对着同一套 `spec/` 跑。
 - **内容类 Markdown 在 `docs/`**：`docs/adr/` (决策)、`docs/knowledge/` (手册)、`docs/research/` (调研)、`docs/incidents/` (事故记录)，按全局守则「决策记录」三分。
 - 项目级 skill 正本在 `.agents/skills/<name>/`，`.claude/skills/<name>` 逐 skill 软链，见 `.agents/skills/README.md`。
@@ -40,6 +40,6 @@ LGTM 后从评论取 approved SHA，确认本地 tip 与之相同 (`git rev-pars
 
 ## 多 agent 协作 (本仓实例)
 
-- orchestra 简称 `mdlint`：常驻 `mdlint-orchestra` / `mdlint-shell`；任务对、research 与将来的仓级 skill (如 `mdlint-pr-review`) 一律用这个前缀。仓名 `lo-md-lint` 与包名 / 命令名不受此影响。
+- orchestra 简称 `mdlint`：常驻 `mdlint-orchestra` / `mdlint-shell`；任务对、research 与将来的仓级 skill (如 `mdlint-pr-review`) 一律用这个前缀。仓名与包名 / 命令名不受此影响。
 - tracker 在 `docs/tracker.md`，由 orchestra 在合入后记账；依赖锁文件是 `uv.lock` (与仓根 `pyproject.toml`)。
 - 审查标准 = 用户级 `pr-review` skill (`~/.agents/skills/pr-review`，machine-setup 分发)，触碰 Python 时叠加用户级 `python-review`；本仓暂无仓级 `mdlint-pr-review` / `mdlint-python-review`，需要加严时再建，仓级只写增量。不指向任何其它仓库的文件。

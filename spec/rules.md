@@ -1,4 +1,4 @@
-# lo-md-lint 规则规范
+# limae 规则规范
 
 本文件是规则的正本 (normative)，语言无关：任何实现 (implementation) 都按这里的判定与修复行为工作，并以 `spec/fixtures/` 的黄金集 (golden fixtures) 验收。规范是上游 —— 实现与规范不一致时先改规范、再改实现 (ADR-0001)。
 
