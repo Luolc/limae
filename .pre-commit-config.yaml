@@ -5,11 +5,19 @@ repos:
   # content, not the history — history is what has already got away, and a
   # scan of it passes the token that is being committed right now.
   # `--redact` keeps a hit's own value out of the terminal and out of any
-  # session log, which is the same rule the scan enforces.
+  # session log, which is the same rule the scan enforces. It is spelled
+  # out in `args` even though this rev's own entry already carries it:
+  # the flag is what keeps a credential out of the output, and a
+  # non-negotiable property should be visible in this repository's own
+  # configuration rather than inherited from whatever entry a given tag
+  # happens to ship. (pre-commit appends `args` to the entry, so the
+  # entry's own `--staged` still stands — see AGENTS.md on bumping the
+  # rev.)
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:
       - id: gitleaks
+        args: ["--redact", "--no-banner", "."]
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.7
     hooks:
