@@ -143,6 +143,8 @@ max-doc-length = 80
 # CLI entry points: stdout is the user-facing output contract.
 "src/limae/zh_format.py" = ["T201"]
 "src/limae/polish.py" = ["T201"]
+# The hook's stdout is the JSON the host reads.
+"src/limae/hook.py" = ["T201"]
 
 [tool.ruff.format]
 # Disable ruff formatting. Use pyink in this project.

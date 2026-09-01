@@ -845,8 +845,10 @@ def _ago(age: float) -> str:
 def select(env: Mapping[str, str]) -> str:
   """Find an engine to polish with (ADR-0008 section 三 steps 2 to 6).
 
-  The ordering is recomputed every time; only the answer of step 5 is
-  ever served from the cache (:func:`_cached`). A diagnosis that came
+  The ordering is recomputed every time; only each engine's observed
+  state is served from the cache (:func:`_cached`), standing in for the
+  probe of step 5 whether it was a probe or a failed real call that last
+  set it. A diagnosis that came
   from the cache says so and says how to retry now, because the user who
   needs it most is the one who has just logged in.
 

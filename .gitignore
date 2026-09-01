@@ -4,3 +4,6 @@ __pycache__/
 dist/
 .pytest_cache/
 .ruff_cache/
+# Claude Code's per-checkout settings, where the polish hook is turned on
+# for this repository's own sessions (ADR-0009 section 七).
+.claude/settings.local.json
