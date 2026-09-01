@@ -1,0 +1,115 @@
+# 手册：在本仓开关 polish 的 hook，与怎么看 A/B 台账
+
+本文是操作手册，不是决策记录 —— 挂哪个 hook、为什么按批缓存、A/B 怎么呈现、为什么先在本仓自试，正本都在 `docs/adr/0009-polish-hook-contract.md`，本文不重复。
+
+一句话：`limae hook` 把 Claude Code 每条助手回复的**显示**交给一个模型重写一次，屏幕之外什么都不变 —— transcript 与模型自己看到的内容都是原文。任何一步出问题都直接显示原文 (fail-open)。
+
+## 一、怎么开
+
+hook 配置写进 `.claude/settings.local.json`。这个文件不入库 (见 `.gitignore`)，只影响在本仓开的会话。
+
+```json
+{
+  "hooks": {
+    "MessageDisplay": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.venv/bin/limae\" hook",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.venv/bin/limae\" hook",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+三处不能省：
+
+- **`timeout` 必须给，而且要大于模型一次调用的时间**。`MessageDisplay` 事件在宿主里的默认超时是 10 秒 (2026-09-01 在 Claude Code `2.1.257` 的二进制里核到：每个 hook 取 `timeout * 1000`，没写才用事件的默认值，`MessageDisplay` 那个默认值是 `1e4`)。不给 `timeout`，模型永远赶不上，每条回复都白跑一次。
+- **两个事件用同一条命令**：进程按 stdin 里的 `hook_event_name` 自己分流，不需要参数。
+- **走 `.venv/bin/limae` 而不是 `uv run limae`**：这条命令每批新行都要起一次进程 (一条回复约十次)，本机实测前者约 150 ms、后者约 190 ms。没有 `.venv` 就先 `uv sync`。
+
+改完**重开一个会话**才生效。
+
+## 二、怎么关
+
+按影响面从小到大：
+
+1. **只关本次**：把 `LIMAE_HOOK_DISABLE=1` 加进 `.claude/settings.local.json` 的 `env` 表 (或在启动 agent 的环境里设)，进程一进来就退出，一个模型都不调。
+2. **关掉这台机器上的本仓**：删掉上面那段 `hooks`，重开会话。
+3. **彻底**：删掉 `.claude/settings.local.json`。
+
+## 三、旋钮
+
+都是环境变量 —— hook 拿得到的就是会话的环境。写错值 (不是数字) 一律回落到默认值，不会因此打断显示。
+
+| 变量 | 默认 | 管什么 |
+| --- | --- | --- |
+| `LIMAE_HOOK_DISABLE` | 空 | 非空即全关 |
+| `LIMAE_HOOK_MIN_CHARS` | 200 | 低于这个字数的回复不润色 (剥掉围栏代码块后按非空白字符计) |
+| `LIMAE_HOOK_AB_RATE` | 0.1 | 命中 A/B 双跑的概率，0 表示只单跑，1 表示每条都双跑 |
+| `LIMAE_HOOK_TIMEOUT` | 60 | 每个模型调用等多少秒；要小于上面 `settings.local.json` 里的 `timeout` |
+| `LIMAE_HOOK_STATE` | `$TMPDIR/limae-hook` | 会话态目录的根 |
+
+单跑用哪个引擎，走的是 `limae polish` 那套配置 (`limae.toml` 的 `[polish]`、`LIMAE_ENGINE`)；A/B 双跑不看这套，它从 ADR-0008 §五 的七个候选里现抽两个。
+
+## 四、A/B 台账在哪、怎么看
+
+命中 A/B 的那一轮，屏幕上原文之后多出两栏：
+
+```text
+[A/B 灯塔] 原文如上，以下是两个候选：
+
+── A ──
+……
+
+── B ──
+……
+```
+
+**屏幕上不写型号，这是故意的** —— ADR-0008 §五 要的是盲评。对应关系只有两处：会话态台账，和经 `Stop` 回注给模型的那一句 (所以可以直接问 agent「灯塔那轮 A 是谁」)。
+
+台账目录：`$TMPDIR/limae-hook/<session_id>/`，一轮一个 JSON 文件，文件名就是编号。
+
+```sh
+ls "${TMPDIR:-/tmp}"/limae-hook/*/ab/
+jq -r '.code, (.candidates[] | "\(.label) = \(.engine) \(.model)")' \
+  "${TMPDIR:-/tmp}"/limae-hook/*/ab/灯塔.json
+```
+
+一份台账里有：编号、UTC 时间、回复原文、两个候选各自的 label / 引擎 / 型号 / 改写全文。
+
+**保留期**：整个目录是会话态的 —— 文件权限 0600、目录 0700，重启即随 `$TMPDIR` 一起没；此外 hook 每次处理完一条消息会顺手删掉超过 24 小时没动过的会话目录。要长期留证据就自己把文件拷出来，**但它含助手回复原文，不进本仓库、不经 agent 间通道传递** (ADR-0009 §五、§八)。
+
+## 五、怎么给反馈
+
+用编号说话：「灯塔那轮 B 更像人话」。编号是双字中文名词，语音转写不容易错行；同一会话内不重复 (词表 48 个，用完就不再抽 A/B)。agent 手里有编号到型号的对应关系，会把判断记到该记的地方 —— 这批判断就是 ADR-0008 §五 定默认型号的依据。
+
+## 六、出问题了怎么查
+
+**症状永远是「没润色」**，因为任何失败都退回原文，不会报错、不会卡住。所以排查要主动去问：
+
+```sh
+# 手工喂一条最终批进去，看它输不输出 displayContent。
+printf '%s' '{"session_id":"probe","transcript_path":"/dev/null","cwd":"'"$PWD"'",
+"hook_event_name":"MessageDisplay","turn_id":"t","message_id":"m","index":0,
+"final":true,"delta":"<把一段两百字以上的中文粘在这里>"}' \
+  | LIMAE_HOOK_STATE=$(mktemp -d) ./.venv/bin/limae hook
+```
+
+- 什么都不输出：先看这段文字够不够 200 字 (`LIMAE_HOOK_MIN_CHARS`)，再用 `printf '%s' '<同一段文字>' | ./.venv/bin/limae polish -` 单跑一次 —— CLI 那侧失败会把诊断打出来 (ADR-0008 §六 两侧的失败语义本就不同)。
+- 输出了但会话里没效果：多半是 `timeout` 没配 (第一节) 或者会话没重开。
