@@ -24,7 +24,7 @@ backlog 的正本，由 `limae-orchestra` 在合入后记账 (全局守则「多
 ## claudish 调研产出 (`docs/research/claudish-and-ai-slop-survey.md`)
 
 - **文档级密度规则**：破折号 / 粗体 / 列表化行文的密度判定是文档级的，`.findings` 的「行号 + 规则 id」形制装不下；要先给规范加文档级 finding 的形制，再收这批 (ADR-0007 §三)。
-- **英文 tells 词表**：English-to-English 的实验规则 (`load-bearing` 过量、否定平行的英文形态等)，沿用 A 家族与 `spec/wordlists/` 形制；规则不分语言，出现在哪管到哪 (ADR-0006 §五)。
+- **英文 tells 词表**：English-to-English 的实验规则 (`load-bearing` 过量、否定平行的英文形态等)，沿用 tell 家族 (`zh-tell` / `en-tell`) 与 `spec/wordlists/` 形制；规则不分语言，出现在哪管到哪 (ADR-0006 §五)。
 - **P0 `polish` 的 hook 形态与 A/B 采集**：核心已落地 (PR #37)，只欠 hook 那一半 (ADR-0008 §十)。具体 hook 合同 (挂哪个事件、A/B 怎么标号与回流、台账放哪) 是 2026-09-01 与用户定的新决定，尚无正本 —— 先出一份 ADR 记它，再照着实现。
 - **`polish` prompt 的 evolve**：两份 spec 已落地 (PR #37)，但还是起步版；按 ADR-0008 §九 走 alpha-evolve (演化式迭代)，靠 P0 那个 hook 的 A/B 反馈驱动，并带上 §五 记的那条社区证据对 prompt 措辞的影响。
 - **引擎实测随版本复核**：`docs/research/polish-engine-cli-behavior.md` 记的三家 CLI (command-line interface) 实测行为带实测日期，CLI 升级或换型号时按该文档的人工验收步骤重跑，通过才进预设表 (ADR-0008 §四)。

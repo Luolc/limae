@@ -452,11 +452,11 @@ class RuleGrade(typing.NamedTuple):
   experimental: bool
 
 
-# Every rule id of spec/rules.md with its three axes: the R family (中文
-# 排版) is fixable · error · stable, the A family (AI 腔, Chinese and
-# English alike) and T family (术语选词) are warning · experimental, so
-# they stay out of the enabled set until `enable_experimental` joins them
-# in.
+# Every rule id of spec/rules.md with its three axes: the zh-typography
+# family (中文排版) is fixable · error · stable, the zh-tell / en-tell
+# families (AI 腔) and the zh-word family (中文用词) are warning ·
+# experimental, so they stay out of the enabled set until
+# `enable_experimental` joins them in.
 GRADES: dict[str, RuleGrade] = {
     "zh-typography-1": RuleGrade(True, config.ERROR, False),
     "zh-typography-2": RuleGrade(True, config.ERROR, False),
