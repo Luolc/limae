@@ -6,12 +6,22 @@
 # 不收广告腔 (in the heart of、nestled、boasts)：技术文档里几乎不出现，
 # 收了也验不到 (docs/research/claudish-and-ai-slop-survey.md §7.3)。
 #
-# 2026-08-31 的 dogfood 删掉两条 (理由见 ADR-0007 §五的同类记法)：
-#   harness / harnesses / harnessed / harnessing —— 114 份语料上命中 97
-#     处，全部指 agent 的 harness (Claude Code / Codex / Grok) 这个实词，
-#     与「harness the power of」的修辞用法同形，逐行判据分不开。
-#   showcase / showcases / showcasing —— 命中 2 处，都是产品页面的专名
-#     (Client Showcase)。
+# 收词判据只有一条：**在技术文档里没有别的正当含义**。有日常正当用法的
+# 词一律不收 —— 逐行判据分不开「修辞用法」与「实词用法」，而 A5 是单点
+# tell、假阳性本来就高 (调研 §2.4)。拿不准就不收：experimental 阶段宁可
+# 词表短、真阳性密度高，也不要用户第一次打开就看到一屏误报。
+#
+# 2026-08-31 按这条判据删掉的词 (括号里是它们的正当含义)：
+#   harness / harnesses / harnessed / harnessing —— agent 的 harness
+#     (Claude Code / Codex / Grok)；114 份语料上命中 97 处，全是实词。
+#   showcase / showcases / showcasing —— 产品页面的专名 (Client
+#     Showcase)；命中 2 处。
+#   realm / realms —— Keycloak / Kerberos / HTTP 认证的 realm。
+#   robust / robustly / robustness —— 工程上「健壮」的标准形容词。
+#   leverage / leverages / leveraged / leveraging —— 金融的杠杆 (名词)；
+#     动词的修辞用法与它同形，逐行分不开。
+#   unpack / unpacks / unpacked / unpacking —— 解包 (归档、元组)。
+#   underscore (单数) —— `_` 这个字符的名字；只留下面的动词屈折形。
 
 delve
 delves
@@ -19,11 +29,8 @@ delved
 delving
 tapestry
 tapestries
-realm
-realms
 seamless
 seamlessly
-underscore
 underscores
 underscored
 underscoring
@@ -33,17 +40,6 @@ fostered
 fostering
 testament
 pivotal
-robust
-robustly
-robustness
-leverage
-leverages
-leveraged
-leveraging
-unpack
-unpacks
-unpacked
-unpacking
 myriad
 intricate
 intricacies

@@ -61,9 +61,9 @@ A1 / A3 / A4 / A5 / A7 / T1 的判定依赖词表 (wordlist)。词表与规则�
 词表分两种匹配语义，按词表所属的规则定，两种都不把条目当正则：
 
 - **中文词表 (A1 / A3 / A4) 匹配字面子串 (literal substring)**：每一条按原文逐字匹配，不做分词、不做繁简或大小写折叠 (T1 的锚点是唯一的例外，见 T1)。命中的那几个字符就是违规的位置。
-- **英文词表 (A5 / A7) 匹配整词 (whole word)、大小写不敏感**：一条只有在命中处两端都不是 `A-Za-z0-9_` 时才算数 —— `realm` 不命中 `realms`、也不命中 `max_realm`；连字符不是边界字符，所以 `load-bearing` 在 `non-load-bearing` 里算命中 (连字符压缩本身就是要管的形态)。**不做词干还原 (stemming)**：要管的屈折形在词表里逐条写全 (`delve` / `delves` / `delving`)。
+- **英文词表 (A5 / A7) 匹配整词 (whole word)、大小写不敏感**：一条只有在命中处两端都不是 `A-Za-z0-9_` 时才算数 —— `pivotal` 不命中 `pivotally`、也不命中 `is_pivotal`；连字符不是边界字符，所以 `load-bearing` 在 `non-load-bearing` 里算命中 (连字符压缩本身就是要管的形态)。**不做词干还原 (stemming)**：要管的屈折形在词表里逐条写全 (`delve` / `delves` / `delving`)。
 - **长的先匹配**：一条是另一条的子串时，参与匹配的顺序按长度降序，同一处只算一次命中。
-- **全局豁免照常适用**：落在围栏代码块、行内代码、链接 destination / 裸 URL、含假名引用 span 里的文字不报也不改。英文词表尤其吃这一条 —— `realm`、`drift`、`spine` 这类词在标识符、路径与 URL 里极常见，它们落在行内代码或 URL 里就不是行文。
+- **全局豁免照常适用**：落在围栏代码块、行内代码、链接 destination / 裸 URL、含假名引用 span 里的文字不报也不改。英文词表尤其吃这一条 —— 英文词在标识符、路径与 URL 里极常见，它们落在行内代码或 URL 里就不是行文。
 - **词表为空** (整份文件只有注释与空行) 的规则永不报违规。
 
 ### 修复顺序
@@ -150,7 +150,7 @@ enable_experimental = true
 - **没有对应的 CLI flag，也没有逐条打开的办法**：experimental 规则 id 出现在 `enable` 键或命令行 `--enable` 上都是配置错误。命令行上出现 `--disable` / `--enable` 时配置文件整体不生效，这个键随之回到 `false` (见「来源与优先级」)，所以命令行上打不开任何 experimental 规则。
 - experimental 规则 id 出现在 `disable` 或 `severity` 里是合法的：这个键打开时生效，关闭时是空操作 —— 与「列出默认启用的规则是允许的空操作」同理。
 - 值不是布尔是配置错误。
-- 当前的 experimental 规则是 A1、A2、A3、A4、T1 (见「规则属性」的实验规则清单)。
+- 当前的 experimental 规则是 A1、A2、A3、A4、A5、A6、A7、T1 (见「规则属性」的实验规则清单)。
 
 ### 严重度的键：`severity`
 
@@ -160,7 +160,7 @@ enable_experimental = true
 severity = { R8 = "warning" }
 ```
 
-- **类型**：一张 toml 表；不写等价于空表，即每条规则都用规范给它的默认严重度 (R1–R11 是 `error`，A1–A4 与 T1 是 `warning`)。
+- **类型**：一张 toml 表；不写等价于空表，即每条规则都用规范给它的默认严重度 (R1–R11 是 `error`，A1–A7 与 T1 是 `warning`)。
 - **只影响报告与退出码，不影响修复**：降成 `warning` 的 fixable 规则 `--fix` 照样修。
 - 对不在启用集里的规则写严重度是空操作 —— 关掉的规则本来就不报。
 - 值不是表、键是未知规则 id、值不是 `"error"` / `"warning"`，三者都是配置错误。
@@ -566,17 +566,17 @@ $1,000           → 不变
 
 属性：non-fixable · warning · experimental
 
-- **判定**：一行内出现 `spec/wordlists/A5.txt` 里的任一条 —— 通用 LLM 文风的高频英文词，如 `delve`、`tapestry`、`realm`、`seamless`、`underscore`。词表格式与匹配语义见「词表」：整词、大小写不敏感。
+- **判定**：一行内出现 `spec/wordlists/A5.txt` 里的任一条 —— 通用 LLM 文风的高频英文词，如 `delve`、`tapestry`、`seamless`、`underscores`、`pivotal`。词表格式与匹配语义见「词表」：整词、大小写不敏感。
 - **一行只报一处**，与 A1 同理。
 - **规则不分语言** (ADR-0006 §五)：英文 tell 是 English-to-English 的，出现在中文文档里同样报，不做语言探测。
-- **词表只收在技术文档里没有正当技术含义的词**：`harness` (agent 的 harness)、`showcase` (产品页面的专名) 都是实词，2026-08-31 的 dogfood 上全是误报，不收 —— 理由记在 `A5.txt` 的注释里。
+- **词表只收在技术文档里没有别的正当含义的词**，与 A3 同一条判据：`harness` (agent 的 harness)、`realm` (Keycloak / Kerberos 的 realm)、`robust`、`leverage` (金融的杠杆)、`unpack` 都有日常正当用法，逐行判据分不开修辞用法与实词用法，一律不收。拿不准就不收 —— 单点 tell 的假阳性本来就高 (调研 §2.4)，experimental 阶段宁可词表短。删掉的词与理由逐条记在 `A5.txt` 的注释里。
 - **不修复**：这类词该换成什么取决于它实际想说什么。
 
 ```text
-We delve into the realm of seamless rollouts.  → A5 (命中三条，只报一处)
-The `delve` in `realm` is code, not prose.     → 不变 (行内代码豁免)
+We delve into a seamless, pivotal shift.      → A5 (命中三条，只报一处)
+The `delve` in `tapestry` is code, not prose.  → 不变 (行内代码豁免)
 See https://example.com/delve/ for details.    → 不变 (裸 URL 豁免)
-The realm_id column of the table.              → 不变 (整词匹配，`_` 是边界字符)
+The is_pivotal column of the table.            → 不变 (整词匹配，`_` 是边界字符)
 ```
 
 ## A6：英文否定平行
@@ -602,16 +602,16 @@ Not only fast but also correct.              → 不变 (not only … but also �
 
 属性：non-fixable · warning · experimental
 
-- **判定**：一行内出现 `spec/wordlists/A7.txt` 里的任一条 —— coding agent 文档的指纹，如 `load-bearing`、`gated on`、`spine`、`blast radius`。词表格式与匹配语义与 A5 相同，见「词表」。
+- **判定**：一行内出现 `spec/wordlists/A7.txt` 里的任一条 —— coding agent 文档的指纹，如 `load-bearing`、`gated on`、`approval-gated`、`the key distinction`。词表格式与匹配语义与 A5 相同，见「词表」。
 - **一行只报一处**，与 A1 同理。
 - **与 A5 分成两条**：A5 是通用 LLM 文风的指纹，A7 是 coding agent 文档的指纹 (`docs/research/claudish-and-ai-slop-survey.md` §2.1 B)。两支的误报来源不同，分开用户才能只关掉其中一支。
-- **词表只收没有别的正当技术含义的词**：`verdict` (PR 审查流程里的那个产物)、`fail-closed` (安全工程的标准术语) 在 dogfood 上全是误报，不收 —— 理由记在 `A7.txt` 的注释里。
+- **词表只收没有别的正当含义的词**，判据与 A5 相同：`verdict` (PR 审查流程里的那个产物)、`fail-closed`、`blast radius` (都是安全 / SRE 的标准术语)、`drift` (configuration drift)、`landed`、`cleanly`、`spine` 都有日常正当用法，不收。剩下的多是多词短语与连字符压缩 —— 它们没有日常技术义，是这批里判得最准的形态。删掉的词与理由逐条记在 `A7.txt` 的注释里。
 - **不修复**：与 A5 同理。
 
 ```text
-This constraint is load-bearing.        → A7
-The release is gated on approval.       → A7
-Set `drift` in the `spine` table.       → 不变 (行内代码豁免)
+This constraint is load-bearing.           → A7
+The release is gated on approval.          → A7
+Read the `load-bearing` flag from config.  → 不变 (行内代码豁免)
 ```
 
 ## T1：术语选词

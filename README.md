@@ -83,12 +83,12 @@ enable_experimental = true
 | A2 | 否定平行：「不是 … 而是 …」 | 否 |
 | A3 | 互联网黑话：赋能、抓手、赛道…… | 否 |
 | A4 | 聊天残留：希望这对你有帮助…… | 否 |
-| A5 | 英文 AI 词汇：`delve`、`tapestry`、`realm`、`seamless`…… | 否 |
+| A5 | 英文 AI 词汇：`delve`、`tapestry`、`seamless`、`pivotal`…… | 否 |
 | A6 | 英文否定平行：`not just X, but Y`、`it's not X, it's Y` | 否 |
-| A7 | Claudish 专用词：`load-bearing`、`gated on`、`spine`…… | 否 |
+| A7 | Claudish 专用词：`load-bearing`、`gated on`、`approval-gated`…… | 否 |
 | T1 | 术语选词：`token` 语境里的「代币」→「令牌」 | 是 |
 
-判定用的词表在 `spec/wordlists/`，是规范的一部分：加一条词只改那里，不动任何实现。中文词表按字面子串匹配，英文词表 (A5 / A7) 按整词、大小写不敏感 —— 落在行内代码、链接与 URL 里的词照全局豁免不报，`realm`、`drift` 这类词在标识符与路径里太常见。T1 只在同一行出现语境锚点 (`token` / `OAuth` / `cache` 这类) 时才报、才改 —— 讲钱的语境里的「代币」不动。
+判定用的词表在 `spec/wordlists/`，是规范的一部分：加一条词只改那里，不动任何实现。中文词表按字面子串匹配，英文词表 (A5 / A7) 按整词、大小写不敏感 —— 落在行内代码、链接与 URL 里的词照全局豁免不报 —— 英文词在标识符与路径里太常见。英文词表只收在技术文档里没有别的正当含义的词，`realm`、`robust`、`drift` 这类有日常用法的词不收。T1 只在同一行出现语境锚点 (`token` / `OAuth` / `cache` 这类) 时才报、才改 —— 讲钱的语境里的「代币」不动。
 
 ```toml
 enable_experimental = true

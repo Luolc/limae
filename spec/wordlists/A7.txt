@@ -7,11 +7,21 @@
 # high-signal 词，加 archiewood/claudeisms 与 louisabraham/load-bearing
 # 两份语料里的头部词 (调研 §1.4)。
 #
-# 2026-08-31 的 dogfood 删掉两条：
-#   verdict —— 114 份语料上命中 36 处，全部是 PR 审查流程里的那个产物
-#     (`Verdict: LGTM`)，是本地约定的实词，不是舞台强调。
-#   fail-closed —— 命中 3 处，都是安全工程的标准术语 (检查失败即拒)，
-#     不是 Claudish 修辞。
+# 收词判据与 A5 同一条：在技术文档里没有别的正当含义才收。剩下的多是
+# 多词短语与连字符压缩 —— 它们没有日常技术义，正是这批里判得最准的形态。
+#
+# 2026-08-31 按这条判据删掉的词 (括号里是它们的正当含义)：
+#   verdict —— PR 审查流程里的那个产物 (`Verdict: LGTM`)；114 份语料上
+#     命中 36 处，全是实词。
+#   fail-closed —— 安全工程的标准术语 (检查失败即拒)；命中 3 处。
+#   drift —— configuration drift / 时钟漂移。
+#   landed —— 「patch landed」是开源社区的日常说法。
+#   cleanly —— 「exits cleanly」是日常说法。
+#   spine —— spine-leaf 网络拓扑。
+#   surfaced / surfacing / surface the —— 「问题浮现」「把错误抛给用户」
+#     都是日常动词用法。
+#   shape the —— 日常动词用法。
+#   blast radius / blast-radius —— SRE 的标准术语 (改动的影响范围)。
 
 load-bearing
 gated on
@@ -21,15 +31,6 @@ quality-gated
 hard gate
 hard stop
 hard boundary
-spine
-drift
-landed
-surfaced
-surfacing
-surface the
-shape the
-blast radius
-blast-radius
 belt-and-suspenders
 smoking gun
 the key distinction
@@ -38,4 +39,3 @@ the honest take
 the honest answer
 the cleanest way
 that distinction matters
-cleanly
