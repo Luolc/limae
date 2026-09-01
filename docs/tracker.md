@@ -1,6 +1,6 @@
 # Tracker
 
-backlog 的正本，由 `mdlint-orchestra` 在合入后记账 (全局守则「多 agent 协作」)。规则语义的正本在 `spec/rules.md`，这里只记还没做的事与一句话去向；证据链在 `docs/research/`。
+backlog 的正本，由 `limae-orchestra` 在合入后记账 (全局守则「多 agent 协作」)。规则语义的正本在 `spec/rules.md`，这里只记还没做的事与一句话去向；证据链在 `docs/research/`。
 
 ## 规则与配置
 
