@@ -3,7 +3,12 @@ import tomllib
 
 import pytest
 
-from lo_md_lint.zh_format import check_text, DEFAULT_RULES, fix_text
+from lo_md_lint.zh_format import (
+    check_text,
+    DEFAULT_RULES,
+    EXPERIMENTAL_RULES,
+    fix_text,
+)
 
 FIXTURES = pathlib.Path(__file__).resolve().parents[1] / "spec" / "fixtures"
 CASES = sorted(p.stem for p in FIXTURES.glob("*.in"))
@@ -18,7 +23,12 @@ def settings(case: str) -> tuple[frozenset[str], str]:
   if not conf.exists():
     return DEFAULT_RULES, ""
   table = tomllib.loads(read(case, ".conf"))
-  enabled = (DEFAULT_RULES | frozenset(table.get("enable", []))) - frozenset(
+  # `severity` is deliberately ignored: it changes neither the findings
+  # nor the fix (spec/README.md).
+  base = DEFAULT_RULES
+  if table.get("enable_experimental"):
+    base = base | EXPERIMENTAL_RULES
+  enabled = (base | frozenset(table.get("enable", []))) - frozenset(
       table.get("disable", [])
   )
   return enabled, table.get("skip_zh_units", "")

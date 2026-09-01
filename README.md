@@ -7,13 +7,13 @@ Markdown linter，从中文技术写作的排版规则起步。
 - **规则先于实现**：每条规则是一段语言无关的规范 (specification)，写在 `spec/rules.md`，有一个稳定的 id、可以逐条关掉；中文排版规则 (中英文之间空格、数字与中文之间空格、半角括号外空格、全角标点……) 是默认规则集，之后加英文规则。
 - **多实现、一套黄金 fixture (golden fixtures)**：黄金集在 `spec/fixtures/`，Python 版是参考实现 (reference implementation)，任何后续实现都对着同一套「输入 / 期望输出」跑，通过即合规。
 - **对标 ruff 之于 Python**：长期大概率以 Rust 为主实现 —— 一个 Rust 写的 Markdown lint，可被 Python / Node 生态经 pre-commit、包管理器等集成，也能直接当命令行工具用。
-- **配置走 toml**：独立配置文件 `lo-md-lint.toml` 或 `pyproject.toml` 的 `[tool.lo-md-lint]` 表，两者同构，用 `disable` / `enable` 两个键逐条开关规则；绝大多数规则默认启用，个别默认关闭的规则在规范条目里标明。开关之外还有调整单条规则判定的键，当前是 R5 的 `skip_zh_units` (中文计量单位豁免，默认不豁免)。
+- **配置走 toml**：独立配置文件 `lo-md-lint.toml` 或 `pyproject.toml` 的 `[tool.lo-md-lint]` 表，两者同构，用 `disable` / `enable` 两个键逐条开关规则；绝大多数规则默认启用，个别默认关闭的规则在规范条目里标明。每条规则另有可修复性 / 严重度 / 成熟度三个正交属性 (ADR-0006)，`severity` 覆盖单条规则的严重度、`enable_experimental` 一次纳入全部 experimental 规则。开关之外还有调整单条规则判定的键，当前是 R5 的 `skip_zh_units` (中文计量单位豁免，默认不豁免)。
 
 决策记录在 `docs/adr/`；agent 守则在 `AGENTS.md`。
 
 ## 现状
 
-Python 参考实现已就位，规则集是中文排版一套：宽度转换 (R1 CJK 旁的半角标点含句号、R2 全角括号、R10 全角数字)、空格 (R3 半角括号外侧、R4 CJK–拉丁字母、R5 CJK–数字、R6 数字–单位、R7 行内代码定界符、R8 破折号两侧、R11 全角标点旁去空格、R9 链接前，默认关)。每条都可单独开关 (ADR-0003 / ADR-0004)。逃生口两个：行内指令按行 × 规则就地关掉，`.lo-md-lint-ignore` 把整份文件排除在输入之外。`spec/` 已建起来：规则规范在 `spec/rules.md`，黄金 fixture 在 `spec/fixtures/`，格式与 runner 的判定见 `spec/README.md`；Python 的薄 runner 是 `tests/test_fixtures.py`。
+Python 参考实现已就位，规则集是中文排版一套：宽度转换 (R1 CJK 旁的半角标点含句号、R2 全角括号、R10 全角数字)、空格 (R3 半角括号外侧、R4 CJK–拉丁字母、R5 CJK–数字、R6 数字–单位、R7 行内代码定界符、R8 破折号两侧、R11 全角标点旁去空格、R9 链接前，默认关)。每条都可单独开关 (ADR-0003 / ADR-0004)，并按可修复性 / 严重度 / 成熟度三轴标注 (ADR-0006，当前全是 fixable · error · stable)。逃生口两个：行内指令按行 × 规则就地关掉，`.lo-md-lint-ignore` 把整份文件排除在输入之外。`spec/` 已建起来：规则规范在 `spec/rules.md`，黄金 fixture 在 `spec/fixtures/`，格式与 runner 的判定见 `spec/README.md`；Python 的薄 runner 是 `tests/test_fixtures.py`。
 
 ## 使用
 
@@ -38,7 +38,7 @@ uvx --from git+https://github.com/Luolc/lo-md-lint@<tag> lo-md-lint <file>...
 
 ### 开关某条规则
 
-启用集 = (默认集 ∪ `enable`) − `disable`，不写配置就是默认行为。配置模型的正本是 `spec/rules.md`「配置」，这里只举例。
+启用集 = ((默认集 ∪ experimental 集) ∪ `enable`) − `disable`，experimental 集只在 `enable_experimental = true` 时并入；不写配置就是默认行为。配置模型的正本是 `spec/rules.md`「配置」，这里只举例。
 
 `pyproject.toml` 里 (Python 项目)：
 
@@ -59,6 +59,18 @@ enable = ["R9"]
 
 ```toml
 skip_zh_units = "年月日天号时分秒"
+```
+
+`severity` 把单条规则降成 `warning`：照常进报告、`--fix` 照常修，只是不再让退出码变成非零 (默认每条规则都是 `error`)。
+
+```toml
+severity = { R8 = "warning" }
+```
+
+`enable_experimental = true` 一次纳入全部 experimental 规则 —— 误报率还没验够、默认不进启用集的那些；纳入之后可以用 `disable` 逐条关、用 `severity` 逐条覆盖。当前规则集里没有 experimental 规则，所以这个键今天是空操作。
+
+```toml
+enable_experimental = true
 ```
 
 临时在命令行上开关，整体覆盖配置文件：

@@ -18,7 +18,10 @@ def test_cli_reports_then_fixes(
   p.write_text("你好,世界", encoding="utf-8")
   monkeypatch.setattr(sys, "argv", ["lo-md-lint", str(p)])
   assert zh_format.main() == 1
-  assert f"{p}:1: [R1 halfwidth punct next to CJK]" in capsys.readouterr().out
+  assert (
+      f"{p}:1: error: [R1 halfwidth punct next to CJK]"
+      in capsys.readouterr().out
+  )
   monkeypatch.setattr(sys, "argv", ["lo-md-lint", "--fix", str(p)])
   assert zh_format.main() == 0
   assert p.read_text(encoding="utf-8") == "你好，世界"
@@ -219,6 +222,95 @@ def test_non_cjk_skip_zh_units_is_a_config_error(
   monkeypatch.chdir(tmp_path)
   assert run(["t.md"], monkeypatch) == 2
   assert "must be a string of CJK characters" in capsys.readouterr().err
+
+
+def test_severity_key_downgrades_a_rule_to_warning(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  (tmp_path / "lo-md-lint.toml").write_text(
+      'severity = { R1 = "warning" }\n', encoding="utf-8"
+  )
+  (tmp_path / "t.md").write_text("你好,世界\n", encoding="utf-8")
+  monkeypatch.chdir(tmp_path)
+  # Reported and told apart from an error, but the run still passes.
+  assert run(["t.md"], monkeypatch) == 0
+  out = capsys.readouterr().out
+  assert "t.md:1: warning: [R1" in out
+  assert "0 error(s), 1 warning(s)" in out
+
+
+def test_a_warning_rule_is_still_fixed(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+  (tmp_path / "lo-md-lint.toml").write_text(
+      'severity = { R1 = "warning" }\n', encoding="utf-8"
+  )
+  p = tmp_path / "t.md"
+  p.write_text("你好,世界\n", encoding="utf-8")
+  monkeypatch.chdir(tmp_path)
+  # Severity drives the exit code, never the fix.
+  assert run(["--fix", "t.md"], monkeypatch) == 0
+  assert p.read_text(encoding="utf-8") == "你好，世界\n"
+
+
+def test_bad_severity_value_is_a_config_error(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  (tmp_path / "lo-md-lint.toml").write_text(
+      'severity = { R1 = "fatal" }\n', encoding="utf-8"
+  )
+  (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
+  monkeypatch.chdir(tmp_path)
+  assert run(["t.md"], monkeypatch) == 2
+  assert "must be 'error' or 'warning'" in capsys.readouterr().err
+
+
+def test_enable_experimental_joins_the_experimental_rules(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+  # No rule is experimental today; pretend R9 is, to exercise the key.
+  monkeypatch.setattr(zh_format, "EXPERIMENTAL_RULES", frozenset({"R9"}))
+  (tmp_path / "lo-md-lint.toml").write_text(
+      "enable_experimental = true\n", encoding="utf-8"
+  )
+  p = tmp_path / "t.md"
+  p.write_text("前文[链接](https://example.com/)\n", encoding="utf-8")
+  monkeypatch.chdir(tmp_path)
+  assert run(["--fix", "t.md"], monkeypatch) == 0
+  assert p.read_text(encoding="utf-8") == "前文 [链接](https://example.com/)\n"
+
+
+def test_experimental_id_in_enable_is_a_config_error(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  monkeypatch.setattr(zh_format, "EXPERIMENTAL_RULES", frozenset({"R9"}))
+  (tmp_path / "lo-md-lint.toml").write_text(
+      'enable = ["R9"]\n', encoding="utf-8"
+  )
+  (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
+  monkeypatch.chdir(tmp_path)
+  assert run(["t.md"], monkeypatch) == 2
+  assert "cannot be enabled one by one" in capsys.readouterr().err
+
+
+def test_non_boolean_enable_experimental_is_a_config_error(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  (tmp_path / "lo-md-lint.toml").write_text(
+      'enable_experimental = "true"\n', encoding="utf-8"
+  )
+  (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
+  monkeypatch.chdir(tmp_path)
+  assert run(["t.md"], monkeypatch) == 2
+  assert "must be a boolean" in capsys.readouterr().err
 
 
 def test_unknown_rule_id_in_a_directive_is_an_error(
