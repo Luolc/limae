@@ -129,6 +129,32 @@ NO_CREDENTIALS = "no credentials found"
 UNREACHABLE = "network unreachable"
 FAILED = "ran but failed"
 
+# The states above say what to tell a person and drive the `auto` cache.
+# These say how the run actually ended, which is a finer question: a
+# timeout and an unreachable network are one state but two different
+# things to look at, and so are a non-zero exit and an empty answer.
+# Nothing here carries anything the engine printed.
+NO_ENGINE = "no-engine"
+NOT_INSTALLED = "not-installed"
+TIMED_OUT = "timeout"
+UNREACHABLE_REASON = "unreachable"
+REJECTED = "unauthorized"
+NONZERO_EXIT = "exit"
+EMPTY_ANSWER = "empty"
+UNREADABLE_ANSWER = "unreadable"
+OTHER = "other"
+REASONS = (
+    NO_ENGINE,
+    NOT_INSTALLED,
+    TIMED_OUT,
+    UNREACHABLE_REASON,
+    REJECTED,
+    NONZERO_EXIT,
+    EMPTY_ANSWER,
+    UNREADABLE_ANSWER,
+    OTHER,
+)
+
 NEXT_STEP = {
     MISSING: "install the CLI, or name another engine with --engine",
     UNAUTHORIZED: "log in to that CLI again",
@@ -150,7 +176,27 @@ _UNREACHABLE_SIGN = re.compile(
 
 
 class EngineError(Exception):
-  """One engine invocation failed, or no engine could be found."""
+  """One engine invocation failed, or no engine could be found.
+
+  Attributes:
+    reason: Which way it failed, as one of :data:`REASONS`. The message
+      is for a person and names the next step; this is for a caller that
+      has to tell the failures apart — the hook's diagnostics record it
+      so that "no polish appeared" can be answered without guessing
+      (``docs/adr/0009-polish-hook-contract.md`` section 六).
+  """
+
+  reason: str
+
+  def __init__(self, message: str, reason: str = OTHER) -> None:
+    """Build the error.
+
+    Args:
+      message: What to tell a person, naming the next step.
+      reason: One of :data:`REASONS`.
+    """
+    super().__init__(message)
+    self.reason = reason
 
 
 class Preset(typing.NamedTuple):
@@ -602,7 +648,7 @@ def _classify(output: str) -> str:
 
 def _run(
     invocation: Invocation, env: Mapping[str, str], timeout: float
-) -> tuple[str, str]:
+) -> tuple[str, str, str]:
   """Run one expanded command.
 
   Args:
@@ -611,8 +657,9 @@ def _run(
     timeout: Seconds to wait before giving up.
 
   Returns:
-    The state (``OK`` or a diagnosis) and, when it is ``OK``, the
-    engine's answer.
+    The state (``OK`` or a diagnosis), the engine's answer when the
+    state is ``OK``, and the reason the run ended that way — one of
+    :data:`REASONS`, which tells apart the failures a state merges.
   """
   try:
     # S603: the argv is this module's own template, or the command the
@@ -628,19 +675,27 @@ def _run(
         check=False,
     )
   except subprocess.TimeoutExpired:
-    return UNREACHABLE, ""
+    # One state, two reasons: waiting too long and finding no route are
+    # the same thing to tell a person and different things to look at.
+    return UNREACHABLE, "", TIMED_OUT
   except OSError:
-    return MISSING, ""
+    return MISSING, "", NOT_INSTALLED
   if done.returncode != 0:
-    return _classify(f"{done.stdout}\n{done.stderr}"), ""
+    state = _classify(f"{done.stdout}\n{done.stderr}")
+    reason = REJECTED if state == UNAUTHORIZED else NONZERO_EXIT
+    if state == UNREACHABLE:
+      reason = UNREACHABLE_REASON
+    return state, "", reason
   if invocation.output is not None:
     try:
       answer = invocation.output.read_text(encoding="utf-8")
     except OSError:
-      return FAILED, ""
+      return FAILED, "", UNREADABLE_ANSWER
   else:
     answer = done.stdout
-  return (OK, answer) if answer.strip() else (FAILED, "")
+  if not answer.strip():
+    return FAILED, "", EMPTY_ANSWER
+  return OK, answer, OK
 
 
 def polish(
@@ -673,7 +728,9 @@ def polish(
   with tempfile.TemporaryDirectory() as directory:
     workdir = pathlib.Path(directory)
     invocation = expand(engine, model, spec, text, workdir, command)
-    state, answer = _run(invocation, _child_env(engine, env, workdir), timeout)
+    state, answer, reason = _run(
+        invocation, _child_env(engine, env, workdir), timeout
+    )
   if state != OK:
     # This call is the check that keeps a cached OK honest (see
     # CACHE_TTL): an engine that has just failed for real is not still
@@ -684,7 +741,7 @@ def polish(
     # down.
     if engine in PRESETS and state != MISSING:
       _remember(engine, state, env, time.time())
-    raise EngineError(f"engine {engine}: {state} — {NEXT_STEP[state]}")
+    raise EngineError(f"engine {engine}: {state} — {NEXT_STEP[state]}", reason)
   return answer.strip() + "\n"
 
 
@@ -708,7 +765,7 @@ def probe(engine: str, env: Mapping[str, str]) -> str:
   with tempfile.TemporaryDirectory() as directory:
     workdir = pathlib.Path(directory)
     invocation = expand(engine, "", PROBE_SPEC, PROBE_INPUT, workdir)
-    state, answer = _run(
+    state, answer, _ = _run(
         invocation, _child_env(engine, env, workdir), PROBE_TIMEOUT
     )
     if state == OK and PROBE_MARKER not in answer.upper():
@@ -899,4 +956,4 @@ def select(env: Mapping[str, str]) -> str:
         " right now, name the engine with --engine, or delete"
         f" {_cache_file(env)}"
     )
-  raise EngineError("\n".join(message))
+  raise EngineError("\n".join(message), NO_ENGINE)

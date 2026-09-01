@@ -172,11 +172,18 @@ def draw(
 
 def run(
     trial: Trial, text: str, env: Mapping[str, str], timeout: float
-) -> tuple[str, str] | None:
+) -> tuple[tuple[str, str] | None, str]:
   """Run both candidates over the same text.
 
   The two run at once: one after the other would put two model calls
   between the user and their own message.
+
+  The answers come back normalised, because two places need the same
+  string: what goes on screen and what goes in the ledger. Stripping in
+  the renderer alone made the ledger's copy a different text from the
+  displayed one by a trailing newline, which is one fact with two
+  versions of itself — enough to make a later comparison of the two
+  disagree for no reason.
 
   Args:
     trial: The trial to run.
@@ -185,8 +192,9 @@ def run(
     timeout: Seconds to wait for each candidate.
 
   Returns:
-    The two rewrites, A first; None when either candidate failed, which
-    leaves the turn showing the original text (ADR-0009 section 六).
+    The two rewrites, A first, and an empty string; or None and the
+    reason the first failing candidate gave, which leaves the turn
+    showing the original text (ADR-0009 section 六).
   """
   spec = polish.assemble(text)
   with concurrent.futures.ThreadPoolExecutor(max_workers=len(LABELS)) as run_:
@@ -199,13 +207,13 @@ def run(
     answers: list[str] = []
     for future in running:
       try:
-        answers.append(future.result())
-      except engines.EngineError:
-        return None
-  return answers[0], answers[1]
+        answers.append(future.result().strip())
+      except engines.EngineError as e:
+        return None, e.reason
+  return (answers[0], answers[1]), ""
 
 
-def render(trial: Trial, answers: tuple[str, str]) -> str:
+def render(trial: Trial, shown: tuple[str, str]) -> str:
   """Lay out one trial for the screen.
 
   The original is not repeated here: it is the text that has just
@@ -214,14 +222,15 @@ def render(trial: Trial, answers: tuple[str, str]) -> str:
 
   Args:
     trial: The trial being shown.
-    answers: The two rewrites, A first.
+    shown: The two rewrites as they will appear, A first, already
+      normalised by :func:`run` and fixed by the hook.
 
   Returns:
     The block to display after the message.
   """
   columns = "\n\n".join(
-      f"── {label} ──\n{answer.strip()}"
-      for label, answer in zip(LABELS, answers, strict=True)
+      f"── {label} ──\n{answer}"
+      for label, answer in zip(LABELS, shown, strict=True)
   )
   return f"[A/B {trial.code}] 原文如上，以下是两个候选：\n\n{columns}\n"
 
@@ -231,6 +240,7 @@ def record(
     trial: Trial,
     original: str,
     answers: tuple[str, str],
+    shown: tuple[str, str],
     now: float,
 ) -> None:
   """Write one trial to the session's ledger.
@@ -239,18 +249,33 @@ def record(
   will be decided on, and the pending file the ``Stop`` hook reads to
   tell the model what just happened (:func:`context`).
 
+  Both versions of each candidate are kept, because they answer
+  different questions. ``text`` is what the model wrote, which is what
+  section 五 compares — fold the deterministic fixes into it and a model
+  that keeps dropping a space beside an inline code span becomes
+  indistinguishable from one that never does, which is a selection
+  signal erased. ``displayed`` is what the reader saw, without which no
+  later reading of the ledger can reproduce the screen.
+
   Args:
     directory: The session-state directory.
     trial: The trial that ran.
     original: The assistant message as it was written.
-    answers: The two rewrites, A first.
+    answers: The two rewrites as the models wrote them, A first.
+    shown: The same two after the deterministic fixes, A first.
     now: The current time, in seconds since the epoch.
   """
   at = datetime.datetime.fromtimestamp(now, datetime.UTC).isoformat()
   candidates = [
-      {"label": label, "engine": c.engine, "model": c.model, "text": answer}
-      for label, c, answer in zip(
-          LABELS, (trial.a, trial.b), answers, strict=True
+      {
+          "label": label,
+          "engine": c.engine,
+          "model": c.model,
+          "text": answer,
+          "displayed": display,
+      }
+      for label, c, answer, display in zip(
+          LABELS, (trial.a, trial.b), answers, shown, strict=True
       )
   ]
   ledger = directory / LEDGER_DIRECTORY
