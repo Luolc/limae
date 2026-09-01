@@ -25,8 +25,9 @@ backlog 的正本，由 `limae-orchestra` 在合入后记账 (全局守则「多
 
 - **文档级密度规则**：破折号 / 粗体 / 列表化行文的密度判定是文档级的，`.findings` 的「行号 + 规则 id」形制装不下；要先给规范加文档级 finding 的形制，再收这批 (ADR-0007 §三)。
 - **英文 tells 词表**：English-to-English 的实验规则 (`load-bearing` 过量、否定平行的英文形态等)，沿用 A 家族与 `spec/wordlists/` 形制；规则不分语言，出现在哪管到哪 (ADR-0006 §五)。
-- **P0 `polish` 的 hook 形态与 A/B 采集**：先做 hook 里对一次输出的润色 (局部文本、不写盘、无跨文件问题)，按概率同时给出改前 / 改后供人评，反馈回流用于迭代 prompt (ADR-0008 §十)。
-- **`polish` 的 prompt 三层结构**：general spec (英文) 加每语言一份用该语言写的 distilled spec；中文那份先从 Deng 的 spec 翻译起步再自行 evolve (ADR-0008 §九)。
+- **P0 `polish` 的 hook 形态与 A/B 采集**：核心已落地 (PR #37 —— `limae polish -` 的 stdin 入口、ADR-0008 §三 的引擎模型、两份 prompt spec)；剩下 hook 那一半 —— `MessageDisplay` 按流式分批缓存到最后一批再整段改写、按概率给出改前 / 改后供人评、`Stop` 的 `additionalContext` 把编号与所用型号送回会话上下文 (`displayContent` 只改屏幕、不进模型上下文，二进制 schema 原话「what the model sees are untouched」)，A/B 全文落会话态目录、不进仓库。模块边界在 brief 阶段就拆好：`engines.py` 已 744 行，hook 与 A/B 不往里堆。
+- **`polish` prompt 的 evolve**：两份 spec 已落地 (PR #37 —— `spec/polish/general.md` 与 `spec/polish/zh.md`，输入含 CJK 才叠中文层)，但内容还是起步版；按 ADR-0008 §九 走 alpha-evolve，靠 P0 那个 hook 的 A/B 反馈迭代。一条现成的输入：社区证据说 5.6 默认已经更短、套话更少，prompt 里再强调「简洁」会过头 (§五)。
+- **引擎实测随版本复核**：`docs/research/polish-engine-cli-behavior.md` 记的是 2026-09-01 三家 CLI 的实测行为 (grok 要 `--verbatim`、临时目录挡住仓库外泄与人格回潮、codex 无 system 通道、luna 的 minimal effort 被 400 拒)。CLI 升级或换型号时按该文档 §六 的人工四步验收重跑，通过才进预设表 (ADR-0008 §四)。
 - **结构不变量保护器**：改写前后逐字比对围栏、行内代码、链接目标与锚点、标题行、表格结构，变了就判不合格；另配语义层的模型裁判 smoke test，永不进 CI (ADR-0008 §八)。
 - **`polish` 默认模型由 A/B 决定**：ADR-0008 §五只记候选与判据，暂定 terra / sonnet / grok-4.6；用自家语料做 10–20 条盲对照后再定，降到便宜档必须有自家证据。
 - **`limae` 三个子命令的实现**：`check` / `format` / `polish` 的命令行分层 (ADR-0008 §二)，今天的 `limae [--fix]` 在过渡期继续可用。
