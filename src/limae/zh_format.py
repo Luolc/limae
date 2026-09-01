@@ -5,52 +5,56 @@
 module is the Python reference implementation of both.
 
 Rules:
-  R1: No half-width , ; : ? ! adjacent to a CJK character.
-  R2: No full-width parentheses; use half-width ( ) instead.
-  R3: Half-width parens need an outside space when adjacent to a word
-    character, a closing paren, a bold marker, or an inline-code backtick.
-    Parens inside an English token (``word(s)``, ``401(k)``) and Markdown
-    link syntax ``](...)`` are exempt.
-  R4: A space at every boundary between a CJK character and an ASCII
-    letter, both directions.
-  R5: A space at every boundary between a CJK character and an ASCII
-    digit, both directions; 年月日 are exempt only where the
+  zh-typography-1: No half-width , ; : ? ! adjacent to a CJK character.
+  zh-typography-2: No full-width parentheses; use half-width ( ) instead.
+  zh-typography-3: Half-width parens need an outside space when adjacent
+    to a word character, a closing paren, a bold marker, or an
+    inline-code backtick. Parens inside an English token (``word(s)``,
+    ``401(k)``) and Markdown link syntax ``](...)`` are exempt.
+  zh-typography-4: A space at every boundary between a CJK character and
+    an ASCII letter, both directions.
+  zh-typography-5: A space at every boundary between a CJK character and
+    an ASCII digit, both directions; 年月日 are exempt only where the
     ``skip_zh_units`` config key lists them.
-  R6: A space between a number and a listed ASCII unit (``16GB``); ``%``
-    and ``°`` stay tight, letter-prefixed tokens (hex) are exempt.
-  R7: A space between a CJK character and the delimiter run of an inline
-    code span; unpaired backticks are plain text and exempt.
-  R8: A space on each side of a dash — exactly two U+2014 or one U+2E3A —
-    next to a non-space, non-dash character.
-  R9 (default off): A space between a CJK character and the opening ``[``
-    of an inline link.
-  R10: No full-width digits; use half-width 0-9 instead.
-  R11: No spaces next to full-width punctuation (，。、；：？！); spaces
-    next to a dash stay (R8 owns those).
-  A1 (experimental): A formulaic Chinese phrase listed in the wordlist.
-  A2 (experimental): The negative-parallel 不是 … 而是 … within 20
+  zh-typography-6: A space between a number and a listed ASCII unit
+    (``16GB``); ``%`` and ``°`` stay tight, letter-prefixed tokens (hex)
+    are exempt.
+  zh-typography-7: A space between a CJK character and the delimiter run
+    of an inline code span; unpaired backticks are plain text and exempt.
+  zh-typography-8: A space on each side of a dash — exactly two U+2014 or
+    one U+2E3A — next to a non-space, non-dash character.
+  zh-typography-9 (default off): A space between a CJK character and the
+    opening ``[`` of an inline link.
+  zh-typography-10: No full-width digits; use half-width 0-9 instead.
+  zh-typography-11: No spaces next to full-width punctuation
+    (，。、；：？！); spaces next to a dash stay (zh-typography-8 owns
+    those).
+  zh-tell-1 (experimental): A formulaic Chinese phrase listed in the wordlist.
+  zh-tell-2 (experimental): The negative-parallel 不是 … 而是 … within 20
     characters.
-  A3 (experimental): A corporate buzzword listed in the wordlist.
-  A4 (experimental): Chat residue listed in the wordlist.
-  A5 (experimental): An English AI-vocabulary word listed in the
+  zh-tell-3 (experimental): A corporate buzzword listed in the wordlist.
+  zh-tell-4 (experimental): Chat residue listed in the wordlist.
+  en-tell-1 (experimental): An English AI-vocabulary word listed in the
     wordlist, matched as a whole word, case-insensitively.
-  A6 (experimental): English negative parallelism — ``not just X, but
+  en-tell-2 (experimental): English negative parallelism — ``not just X, but
     Y`` or a negated copula answered by an affirmative one — within 40
     characters.
-  A7 (experimental): A Claudish register word listed in the wordlist,
-    matched the same way as A5.
-  A8 (experimental): A 零 + noun coinage — a 2-5 character Chinese run
+  en-tell-3 (experimental): A Claudish register word listed in the wordlist,
+    matched the same way as en-tell-1.
+  zh-tell-5 (experimental): A 零 + noun coinage — a 2-5 character Chinese run
     opening with 零 that no allowlist entry covers.
-  T1 (experimental): A wrong term listed in the wordlist, on a line
+  zh-word-1 (experimental): A wrong term listed in the wordlist, on a line
     carrying one of that entry's context anchors.
-  T2 (experimental): 秘密 used as a category term, which no allowlist
+  zh-word-2 (experimental): 秘密 used as a category term, which no allowlist
     entry covers.
 
-The A and T families read their wordlists from ``spec/wordlists/`` through
-:mod:`limae.wordlists`; the wordlist rules (A1 / A3 / A4 / A5 / A7)
-report at most one violation per line, the sentence-shape rules (A2 / A6),
-A8, T1 and T2 one per occurrence. A8 and T2 read allowlists instead —
-wordlists of the opposite polarity, where a hit means no violation.
+The tell and word families read their wordlists from
+``spec/wordlists/`` through :mod:`limae.wordlists`; the wordlist rules
+(zh-tell-1 / zh-tell-3 / zh-tell-4 / en-tell-1 / en-tell-3) report at
+most one violation per line, the sentence-shape rules (zh-tell-2 /
+en-tell-2), zh-tell-5, zh-word-1 and zh-word-2 one per occurrence.
+zh-tell-5 and zh-word-2 read allowlists instead — wordlists of the
+opposite polarity, where a hit means no violation.
 
 Fenced code blocks and inline code spans (CommonMark backtick runs, which
 may cross line breaks inside a paragraph but not block boundaries) are
@@ -58,17 +62,17 @@ exempt from every rule and never rewritten by ``--fix``, and so are link
 destinations, raw URLs and quote spans whose content holds kana (a
 verbatim Japanese quotation).
 
-Every rule except R9 is enabled by default; ``--disable`` / ``--enable``
-and the toml config found by :mod:`limae.config` turn rules off and
-on. A disabled rule is neither reported nor fixed. The config's
-``skip_zh_units`` key additionally tunes R5.
+Every rule except zh-typography-9 is enabled by default; ``--disable`` /
+``--enable`` and the toml config found by :mod:`limae.config` turn rules
+off and on. A disabled rule is neither reported nor fixed. The config's
+``skip_zh_units`` key additionally tunes zh-typography-5.
 
 ``GRADES`` carries the three orthogonal axes of ``spec/rules.md`` section
 「规则属性」 — fixability, default severity, maturity — one entry per rule
 and nowhere else. The ``severity`` config key overrides the default
 severity per rule, ``enable_experimental`` joins the experimental rules
-into the enabled set: R1-R11 are fixable · error · stable, A1-A8 and
-T1-T2 warning · experimental.
+into the enabled set: the zh-typography family is fixable · error ·
+stable, the zh-tell / en-tell / zh-word families warning · experimental.
 
 Two escape hatches sit below the configuration: the inline directives of
 :mod:`limae.directives` narrow the enabled set line by line, and the
@@ -77,7 +81,7 @@ Two escape hatches sit below the configuration: the inline directives of
 
 Usage (from the repo root)::
 
-  uv run limae [--fix] [--disable R1,R3] FILE...
+  uv run limae [--fix] [--disable zh-typography-1,zh-typography-3] FILE...
   uv run limae --all [--fix]
 
 Exit code 0 = clean or warnings only, 1 = at least one error-level
@@ -99,10 +103,10 @@ CJK = "一-鿿"
 WORD = f"A-Za-z0-9{CJK}"
 PUNCT_MAP = {",": "，", ";": "；", ":": "：", "?": "？", "!": "！"}
 
-# R1's full-stop extension: a `.` next to CJK becomes `。` unless it is
-# glued to an ASCII letter/digit (extensions, domains, versions), part of
-# a `...` run, or one of these abbreviations' dots (spec's normative
-# list). An occurrence must not be preceded by an ASCII letter.
+# zh-typography-1's full-stop extension: a `.` next to CJK becomes `。` unless
+# it is glued to an ASCII letter/digit (extensions, domains, versions), part of
+# a `...` run, or one of these abbreviations' dots (spec's normative list). An
+# occurrence must not be preceded by an ASCII letter.
 ABBREVIATIONS = (
     "e.g.", "i.e.", "etc.", "cf.", "vs.",
     "Mr.", "Mrs.", "Ms.", "Dr.", "Prof.", "St.",
@@ -114,18 +118,21 @@ ABBREV = re.compile(
     )
     + ")"
 )
-R1_DOT = re.compile(f"(?<=[{CJK}])\\.(?![A-Za-z0-9.])|(?<!\\.)\\.(?=[{CJK}])")
+ZH_TYPOGRAPHY_1_DOT = re.compile(
+    f"(?<=[{CJK}])\\.(?![A-Za-z0-9.])|(?<!\\.)\\.(?=[{CJK}])"
+)
 CJK_CHAR = re.compile(f"[{CJK}]")
 
-# A "(" inside an English token, e.g. credential(s), word(s), 401(k), f(x):
-# the paren belongs to the token, not to prose — exempt from R3 spacing on the
-# left. Lookaround so neighbouring tokens can overlap, as in f(g(x)).
+# A "(" inside an English token, e.g. credential(s), word(s), 401(k), f(x): the
+# paren belongs to the token, not to prose — exempt from zh-typography-3
+# spacing on the left. Lookaround so neighbouring tokens can overlap, as in
+# f(g(x)).
 ENGLISH_TOKEN_PAREN = re.compile(r"(?<=[A-Za-z0-9])\((?=[A-Za-z0-9])")
 BACKTICK_RUN = re.compile("`+")
 
-# ASCII unit tokens that follow a number (R6). Case-sensitive; the spec's
-# normative list. Single-letter units are too ambiguous to include. Sorted
-# longest-first so no unit shadows a longer one in the alternation.
+# ASCII unit tokens that follow a number (zh-typography-6). Case-sensitive; the
+# spec's normative list. Single-letter units are too ambiguous to include.
+# Sorted longest-first so no unit shadows a longer one in the alternation.
 UNITS = (
     "KB", "MB", "GB", "TB", "PB", "KiB", "MiB", "GiB", "TiB", "PiB",
     "bps", "kbps", "Mbps", "Gbps", "Tbps",
@@ -136,39 +143,42 @@ UNITS = (
 )  # fmt: skip
 _UNIT_ALT = "|".join(sorted(UNITS, key=len, reverse=True))
 
-# R4 / R5: zero-width boundaries between CJK and ASCII letters / digits.
+# zh-typography-4 / zh-typography-5: zero-width boundaries between CJK and
+# ASCII letters / digits.
 CJK_LATIN_BOUNDARY = re.compile(
     f"(?<=[{CJK}])(?=[A-Za-z])|(?<=[A-Za-z])(?=[{CJK}])"
 )
 CJK_DIGIT_BOUNDARY = re.compile(f"(?<=[{CJK}])(?=[0-9])|(?<=[0-9])(?=[{CJK}])")
-# R5's `skip_zh_units` exemption: a digit run, `.` / `,` separated segments
-# included (1.5, 1,000), directly followed by a listed measure word exempts
-# both of its own boundaries.
+# zh-typography-5's `skip_zh_units` exemption: a digit run, `.` / `,` separated
+# segments included (1.5, 1,000), directly followed by a listed measure word
+# exempts both of its own boundaries.
 NUMBER_RUN = re.compile("[0-9]+(?:[.,][0-9]+)*")
-# R6: the digit run must not continue an English token (0x1F, hex strings)
-# and the unit must end the token (2FA, 16GBx are not number-plus-unit).
+# zh-typography-6: the digit run must not continue an English token (0x1F, hex
+# strings) and the unit must end the token (2FA, 16GBx are not
+# number-plus-unit).
 NUMBER_UNIT = re.compile(
     f"(?<![A-Za-z0-9])([0-9]+)({_UNIT_ALT})(?![A-Za-z0-9])"
 )
-# R7: a backtick run next to CJK is only a violation when it is the
-# delimiter of an inline code span; check_text verifies the run's position
+# zh-typography-7: a backtick run next to CJK is only a violation when it is
+# the delimiter of an inline code span; check_text verifies the run's position
 # against the spans, _fix_line knows the delimiters structurally.
-R7_OPEN = re.compile(f"(?<=[{CJK}])`+")
-R7_CLOSE = re.compile(f"`+(?=[{CJK}])")
-R7_OPEN_EDGE = re.compile(f"(?<=[{CJK}])(`+)$")
-R7_CLOSE_EDGE = re.compile(f"^(`+)(?=[{CJK}])")
-# R8: exactly two U+2014 (`——`) or one U+2E3A; a neighbouring dash is a
-# malformed dash, not a spacing problem, so it does not trigger. The check
-# patterns consume the dash and its triggering neighbour so that a dash
-# inside — or right at the edge of — an exempt range is excluded by
-# ``_exempt``; the fix patterns are the zero-width boundaries themselves,
-# which per prose fragment amounts to the same set.
+ZH_TYPOGRAPHY_7_OPEN = re.compile(f"(?<=[{CJK}])`+")
+ZH_TYPOGRAPHY_7_CLOSE = re.compile(f"`+(?=[{CJK}])")
+ZH_TYPOGRAPHY_7_OPEN_EDGE = re.compile(f"(?<=[{CJK}])(`+)$")
+ZH_TYPOGRAPHY_7_CLOSE_EDGE = re.compile(f"^(`+)(?=[{CJK}])")
+# zh-typography-8: exactly two U+2014 (`——`) or one U+2E3A; a neighbouring dash
+# is a malformed dash, not a spacing problem, so it does not trigger. The check
+# patterns consume the dash and its triggering neighbour so that a dash inside
+# — or right at the edge of — an exempt range is excluded by ``_exempt``; the
+# fix patterns are the zero-width boundaries themselves, which per prose
+# fragment amounts to the same set.
 DASH_LEFT = re.compile("[^\\s—⸺](?:——(?!—)|⸺)")
 DASH_RIGHT = re.compile("(?:(?<!—)——|⸺)[^\\s—⸺]")
 DASH_LEFT_FIX = re.compile("(?<=[^\\s—⸺])(?=——(?!—)|⸺)")
 DASH_RIGHT_FIX = re.compile("(?:(?<=——)(?<!———)|(?<=⸺))(?=[^\\s—⸺])")
-# R9: CJK directly before an inline link, matched with its `[text](` opener
-# so a link whose text holds a code span falls under the span exemption.
+# zh-typography-9: CJK directly before an inline link, matched with its
+# `[text](` opener so a link whose text holds a code span falls under the span
+# exemption.
 LINK_AFTER_CJK = re.compile(f"(?<=[{CJK}])\\[[^\\]]*\\]\\(")
 LINK_AFTER_CJK_FIX = re.compile(f"(?<=[{CJK}])(?=\\[[^\\]]*\\]\\()")
 
@@ -187,14 +197,14 @@ TRAILING_PUNCT = ")]}>,.;:!?"
 QUOTE_PAIRS = {"「": "」", "『": "』", "《": "》"}
 KANA = re.compile("[\u3040-\u30ff]")
 
-# R10: full-width digits.
+# zh-typography-10: full-width digits.
 FULLWIDTH_DIGIT = re.compile("[０-９]")
 HALFWIDTH_DIGITS = str.maketrans("０１２３４５６７８９", "0123456789")
-# R11: a space run with a full-width punctuation mark on one end and a
-# visible character on the other (a dash is R8's territory, a `|` is
-# table-cell padding). Both end characters are consumed so
-# that contact with an exempt range suppresses the finding, consistent
-# with the fragment-local fix.
+# zh-typography-11: a space run with a full-width punctuation mark on one end
+# and a visible character on the other (a dash is zh-typography-8's territory,
+# a `|` is table-cell padding). Both end characters are consumed so that
+# contact with an exempt range suppresses the finding, consistent with the
+# fragment-local fix.
 FW_PUNCT = "，。、；：？！"
 SPACE_BEFORE_FW = re.compile(f"[^\\s—⸺|] +[{FW_PUNCT}]")
 SPACE_AFTER_FW = re.compile(f"[{FW_PUNCT}] +[^\\s—⸺|]")
@@ -215,10 +225,11 @@ BLOCK_START = re.compile(
 QUOTE_LINE = re.compile(r"^ {0,3}>")
 
 
-# The word boundary of the English wordlists (A5 / A7): a listed entry is
-# only a hit as a whole word. `-` is deliberately not a boundary character
-# — hyphen compression is itself Claudish, so `non-load-bearing` counts —
-# while `_` is, so a snake_case identifier outside a code span does not.
+# The word boundary of the English wordlists (en-tell-1 / en-tell-3): a listed
+# entry is only a hit as a whole word. `-` is deliberately not a boundary
+# character — hyphen compression is itself Claudish, so `non-load-bearing`
+# counts — while `_` is, so a snake_case identifier outside a code span does
+# not.
 EN_LEFT = "(?<![A-Za-z0-9_])"
 EN_RIGHT = "(?![A-Za-z0-9_])"
 NEVER = "(?!)"
@@ -268,12 +279,12 @@ def _word_pattern(rule: str) -> re.Pattern[str]:
   return re.compile(f"{EN_LEFT}(?:{alternation}){EN_RIGHT}", re.IGNORECASE)
 
 
-# A2: 不是 … 而是 …, at most 20 characters apart, punctuation included.
+# zh-tell-2: 不是 … 而是 …, at most 20 characters apart, punctuation included.
 # The progressive 不仅 … 更 … is normal Chinese prose and not collected.
 NEGATIVE_PARALLEL = re.compile("不是.{0,20}?而是")
-# A6: the two English negative-parallel shapes, at most 40 characters
+# en-tell-2: the two English negative-parallel shapes, at most 40 characters
 # apart. `not only … but also …` is ordinary formal English and not
-# collected, the same call A2 makes about the progressive 不仅 … 更 ….
+# collected, the same call zh-tell-2 makes about the progressive 不仅 … 更 ….
 APOSTROPHE = "['\u2019]"
 NEGATED_COPULA = (
     f"(?:(?:it|that){APOSTROPHE}s|they{APOSTROPHE}re|is|are|was|were)"
@@ -292,29 +303,33 @@ NEGATIVE_PARALLEL_EN = re.compile(
     f".{{0,40}}?{EN_LEFT}(?:{AFFIRMED_COPULA}){EN_RIGHT}",
     re.IGNORECASE,
 )
-# A8: one candidate per 零. The candidate string runs from that 零 to the
+# zh-tell-5: one candidate per 零. The candidate string runs from that 零 to the
 # end of its CJK run and is judged in `_is_coinage`, not by the pattern —
 # a fixed-width window would truncate 零额外请求 into 零额外请 and judge a
 # word nobody wrote (spec 「匹配单位」).
 ZERO = re.compile("零")
 CJK_RUN = re.compile(f"[{CJK}]*")
-A8_MIN_LENGTH = 2  # a lone 零 is not a coinage
-A8_MAX_LENGTH = 5  # longer runs are sentences written without punctuation
-# T2: 秘密 as a category term; no anchor, unlike T1.
+ZH_TELL_5_MIN_LENGTH = 2  # a lone 零 is not a coinage
+ZH_TELL_5_MAX_LENGTH = (
+    5  # longer runs are sentences written without punctuation
+)
+# zh-word-2: 秘密 as a category term; no anchor, unlike zh-word-1.
 SECRET = re.compile("秘密")
-# The allowlists of A8 and T2, of the opposite polarity to every other
-# wordlist: an entry covering the hit means no violation.
+# The allowlists of zh-tell-5 and zh-word-2, of the opposite polarity to every
+# other wordlist: an entry covering the hit means no violation.
 ALLOWED: dict[str, tuple[str, ...]] = {
-    "A8": wordlists.phrases("A8-allow"),
-    "T2": wordlists.phrases("T2-allow"),
+    "zh-tell-5": wordlists.phrases("zh-tell-5-allow"),
+    "zh-word-2": wordlists.phrases("zh-word-2-allow"),
 }
 
-# The wordlist rules fire at most once per line: listed words come in
-# clusters and one finding per occurrence would just flood the report.
-# The sentence-shape rules (A2 / A6) report every match — each shape is
-# its own violation.
-ONCE_PER_LINE = frozenset({"A1", "A3", "A4", "A5", "A7"})
-# T1: one pattern per wordlist entry, so the findings of one line stay
+# The wordlist rules fire at most once per line: listed words come in clusters
+# and one finding per occurrence would just flood the report. The
+# sentence-shape rules (zh-tell-2 / en-tell-2) report every match — each shape
+# is its own violation.
+ONCE_PER_LINE = frozenset(
+    {"zh-tell-1", "zh-tell-3", "zh-tell-4", "en-tell-1", "en-tell-3"}
+)
+# zh-word-1: one pattern per wordlist entry, so the findings of one line stay
 # ordered by position and each maps to its own fix.
 TERMS: tuple[wordlists.Term, ...] = wordlists.terms()
 TERM_PATTERNS: dict[re.Pattern[str], wordlists.Term] = {
@@ -324,47 +339,95 @@ TERM_PATTERNS: dict[re.Pattern[str], wordlists.Term] = {
 # (rule id from spec/rules.md, human-readable name, detection pattern).
 CHECKS = [
     (
-        "R1",
-        "R1 halfwidth punct next to CJK",
+        "zh-typography-1",
+        "zh-typography-1 halfwidth punct next to CJK",
         re.compile(f"[{CJK}][,;:?!]|[,;:?!][{CJK}]"),
     ),
-    ("R1", "R1 halfwidth period next to CJK", R1_DOT),
-    ("R2", "R2 fullwidth paren", re.compile("[（）]")),
     (
-        "R3",
-        "R3 no space before (",
+        "zh-typography-1",
+        "zh-typography-1 halfwidth period next to CJK",
+        ZH_TYPOGRAPHY_1_DOT,
+    ),
+    (
+        "zh-typography-2",
+        "zh-typography-2 fullwidth paren",
+        re.compile("[（）]"),
+    ),
+    (
+        "zh-typography-3",
+        "zh-typography-3 no space before (",
         re.compile(f"(?:[{WORD}]|\\*\\*|`|\\))\\("),
     ),
     (
-        "R3",
-        "R3 no space after )",
+        "zh-typography-3",
+        "zh-typography-3 no space after )",
         re.compile(f"\\)(?:[{WORD}]|\\*\\*[{WORD}]|`)"),
     ),
-    ("R4", "R4 no space between CJK and Latin", CJK_LATIN_BOUNDARY),
-    ("R5", "R5 no space between CJK and digit", CJK_DIGIT_BOUNDARY),
-    ("R6", "R6 no space between number and unit", NUMBER_UNIT),
-    ("R7", "R7 no space before inline code", R7_OPEN),
-    ("R7", "R7 no space after inline code", R7_CLOSE),
-    ("R8", "R8 no space before dash", DASH_LEFT),
-    ("R8", "R8 no space after dash", DASH_RIGHT),
-    ("R9", "R9 no space between CJK and link", LINK_AFTER_CJK),
-    ("R10", "R10 fullwidth digit", FULLWIDTH_DIGIT),
-    ("R11", "R11 space before fullwidth punct", SPACE_BEFORE_FW),
-    ("R11", "R11 space after fullwidth punct", SPACE_AFTER_FW),
-    ("A1", "A1 formulaic phrase", _phrase_pattern("A1")),
-    ("A2", "A2 negative parallelism", NEGATIVE_PARALLEL),
-    ("A3", "A3 corporate buzzword", _phrase_pattern("A3")),
-    ("A4", "A4 chat residue", _phrase_pattern("A4")),
-    ("A5", "A5 English AI vocabulary", _word_pattern("A5")),
-    ("A6", "A6 English negative parallelism", NOT_JUST_BUT),
-    ("A6", "A6 English negative parallelism", NEGATIVE_PARALLEL_EN),
-    ("A7", "A7 Claudish register", _word_pattern("A7")),
-    ("A8", "A8 zero-noun coinage", ZERO),
+    (
+        "zh-typography-4",
+        "zh-typography-4 no space between CJK and Latin",
+        CJK_LATIN_BOUNDARY,
+    ),
+    (
+        "zh-typography-5",
+        "zh-typography-5 no space between CJK and digit",
+        CJK_DIGIT_BOUNDARY,
+    ),
+    (
+        "zh-typography-6",
+        "zh-typography-6 no space between number and unit",
+        NUMBER_UNIT,
+    ),
+    (
+        "zh-typography-7",
+        "zh-typography-7 no space before inline code",
+        ZH_TYPOGRAPHY_7_OPEN,
+    ),
+    (
+        "zh-typography-7",
+        "zh-typography-7 no space after inline code",
+        ZH_TYPOGRAPHY_7_CLOSE,
+    ),
+    ("zh-typography-8", "zh-typography-8 no space before dash", DASH_LEFT),
+    ("zh-typography-8", "zh-typography-8 no space after dash", DASH_RIGHT),
+    (
+        "zh-typography-9",
+        "zh-typography-9 no space between CJK and link",
+        LINK_AFTER_CJK,
+    ),
+    ("zh-typography-10", "zh-typography-10 fullwidth digit", FULLWIDTH_DIGIT),
+    (
+        "zh-typography-11",
+        "zh-typography-11 space before fullwidth punct",
+        SPACE_BEFORE_FW,
+    ),
+    (
+        "zh-typography-11",
+        "zh-typography-11 space after fullwidth punct",
+        SPACE_AFTER_FW,
+    ),
+    ("zh-tell-1", "zh-tell-1 formulaic phrase", _phrase_pattern("zh-tell-1")),
+    ("zh-tell-2", "zh-tell-2 negative parallelism", NEGATIVE_PARALLEL),
+    ("zh-tell-3", "zh-tell-3 corporate buzzword", _phrase_pattern("zh-tell-3")),
+    ("zh-tell-4", "zh-tell-4 chat residue", _phrase_pattern("zh-tell-4")),
+    (
+        "en-tell-1",
+        "en-tell-1 English AI vocabulary",
+        _word_pattern("en-tell-1"),
+    ),
+    ("en-tell-2", "en-tell-2 English negative parallelism", NOT_JUST_BUT),
+    (
+        "en-tell-2",
+        "en-tell-2 English negative parallelism",
+        NEGATIVE_PARALLEL_EN,
+    ),
+    ("en-tell-3", "en-tell-3 Claudish register", _word_pattern("en-tell-3")),
+    ("zh-tell-5", "zh-tell-5 zero-noun coinage", ZERO),
     *(
-        ("T1", f"T1 term {term.wrong} -> {term.right}", pattern)
+        ("zh-word-1", f"zh-word-1 term {term.wrong} -> {term.right}", pattern)
         for pattern, term in TERM_PATTERNS.items()
     ),
-    ("T2", "T2 misused 秘密", SECRET),
+    ("zh-word-2", "zh-word-2 misused 秘密", SECRET),
 ]
 
 
@@ -395,34 +458,34 @@ class RuleGrade(typing.NamedTuple):
 # they stay out of the enabled set until `enable_experimental` joins them
 # in.
 GRADES: dict[str, RuleGrade] = {
-    "R1": RuleGrade(True, config.ERROR, False),
-    "R2": RuleGrade(True, config.ERROR, False),
-    "R3": RuleGrade(True, config.ERROR, False),
-    "R4": RuleGrade(True, config.ERROR, False),
-    "R5": RuleGrade(True, config.ERROR, False),
-    "R6": RuleGrade(True, config.ERROR, False),
-    "R7": RuleGrade(True, config.ERROR, False),
-    "R8": RuleGrade(True, config.ERROR, False),
-    "R9": RuleGrade(True, config.ERROR, False),
-    "R10": RuleGrade(True, config.ERROR, False),
-    "R11": RuleGrade(True, config.ERROR, False),
-    "A1": RuleGrade(False, config.WARNING, True),
-    "A2": RuleGrade(False, config.WARNING, True),
-    "A3": RuleGrade(False, config.WARNING, True),
-    "A4": RuleGrade(False, config.WARNING, True),
-    "A5": RuleGrade(False, config.WARNING, True),
-    "A6": RuleGrade(False, config.WARNING, True),
-    "A7": RuleGrade(False, config.WARNING, True),
-    "A8": RuleGrade(False, config.WARNING, True),
-    "T1": RuleGrade(True, config.WARNING, True),
-    "T2": RuleGrade(False, config.WARNING, True),
+    "zh-typography-1": RuleGrade(True, config.ERROR, False),
+    "zh-typography-2": RuleGrade(True, config.ERROR, False),
+    "zh-typography-3": RuleGrade(True, config.ERROR, False),
+    "zh-typography-4": RuleGrade(True, config.ERROR, False),
+    "zh-typography-5": RuleGrade(True, config.ERROR, False),
+    "zh-typography-6": RuleGrade(True, config.ERROR, False),
+    "zh-typography-7": RuleGrade(True, config.ERROR, False),
+    "zh-typography-8": RuleGrade(True, config.ERROR, False),
+    "zh-typography-9": RuleGrade(True, config.ERROR, False),
+    "zh-typography-10": RuleGrade(True, config.ERROR, False),
+    "zh-typography-11": RuleGrade(True, config.ERROR, False),
+    "zh-tell-1": RuleGrade(False, config.WARNING, True),
+    "zh-tell-2": RuleGrade(False, config.WARNING, True),
+    "zh-tell-3": RuleGrade(False, config.WARNING, True),
+    "zh-tell-4": RuleGrade(False, config.WARNING, True),
+    "en-tell-1": RuleGrade(False, config.WARNING, True),
+    "en-tell-2": RuleGrade(False, config.WARNING, True),
+    "en-tell-3": RuleGrade(False, config.WARNING, True),
+    "zh-tell-5": RuleGrade(False, config.WARNING, True),
+    "zh-word-1": RuleGrade(True, config.WARNING, True),
+    "zh-word-2": RuleGrade(False, config.WARNING, True),
 }
 
 # Configuration starts from DEFAULT_RULES (every rule except the
 # default-off and the experimental ones) and can subtract via `disable` or
 # add back via `enable`, so no configuration means today's behaviour.
 ALL_RULES: frozenset[str] = frozenset(GRADES)
-DEFAULT_OFF: frozenset[str] = frozenset({"R9"})
+DEFAULT_OFF: frozenset[str] = frozenset({"zh-typography-9"})
 EXPERIMENTAL_RULES: frozenset[str] = frozenset(
     rule for rule, grade in GRADES.items() if grade.experimental
 )
@@ -441,7 +504,8 @@ class Finding(typing.NamedTuple):
 
   Attributes:
     line: 1-based line number of the violation.
-    rule: Stable rule id from ``spec/rules.md`` (``R1`` / ``R2`` / ``R3``).
+    rule: Stable rule id from ``spec/rules.md``
+      (``zh-typography-1`` / ``zh-typography-2`` / ``zh-typography-3``).
     name: Human-readable check name, shown in the CLI output.
     snippet: The source text around the match, for the CLI output.
   """
@@ -510,7 +574,7 @@ def _protected(lines: list[str]) -> list[list[tuple[int, int]] | None]:
     pairs relative to that line. A span whose interior falls entirely on
     other lines still leaves a zero-length pair at the line edge, so a
     delimiter run ending a line (opener) or starting one (closer) stays
-    identifiable for R7.
+    identifiable for zh-typography-7.
   """
   result: list[list[tuple[int, int]] | None] = [None] * len(lines)
   paragraph: list[int] = []
@@ -677,8 +741,9 @@ class FixContext(typing.NamedTuple):
   """What the per-fragment fixes need beyond the fragment itself.
 
   Attributes:
-    units: ``skip_zh_units``, the measure words exempting R5 boundaries.
-    terms: The T1 entries whose anchors the line carries. The anchor test
+    units: ``skip_zh_units``, the measure words exempting
+      zh-typography-5 boundaries.
+    terms: The zh-word-1 entries whose anchors the line carries. The anchor test
       is per line but the fixes run per prose fragment, so the answer
       travels down here.
   """
@@ -700,7 +765,7 @@ def _anchored(line: str, term: wordlists.Term) -> bool:
     term: One wordlist entry.
 
   Returns:
-    True when T1 may report and fix this term on this line.
+    True when zh-word-1 may report and fix this term on this line.
   """
   lowered = line.lower()
   return any(anchor.lower() in lowered for anchor in term.anchors)
@@ -713,7 +778,7 @@ def _covered(line: str, start: int, allowed: tuple[str, ...]) -> bool:
   occurrences holds the hit's first character — 零售 covers the 零 of
   零售价格, 从零 covers the 零 of 从零建一台, so a fixed collocation on
   either side of the hit is expressible in one table. The whole line is
-  searched, exempt ranges included, as with T1's anchors: an allowlist
+  searched, exempt ranges included, as with zh-word-1's anchors: an allowlist
   entry is evidence about the wording, not a violation.
 
   Args:
@@ -731,7 +796,7 @@ def _covered(line: str, start: int, allowed: tuple[str, ...]) -> bool:
 
 
 def _is_coinage(line: str, start: int) -> bool:
-  """Return whether one 零 opens a 零 + noun coinage (A8).
+  """Return whether one 零 opens a 零 + noun coinage (zh-tell-5).
 
   Args:
     line: One Markdown line outside fenced code blocks.
@@ -743,9 +808,9 @@ def _is_coinage(line: str, start: int) -> bool:
   """
   run = CJK_RUN.match(line, start)
   candidate = run.group(0) if run else ""
-  if not A8_MIN_LENGTH <= len(candidate) <= A8_MAX_LENGTH:
+  if not ZH_TELL_5_MIN_LENGTH <= len(candidate) <= ZH_TELL_5_MAX_LENGTH:
     return False
-  return not _covered(line, start, ALLOWED["A8"])
+  return not _covered(line, start, ALLOWED["zh-tell-5"])
 
 
 def _fix_line(
@@ -760,13 +825,14 @@ def _fix_line(
     line: One Markdown line outside fenced code blocks.
     spans: Inline code interiors on this line, from ``_protected``.
     rules: The enabled rule ids; disabled rules leave the text alone.
-    units: ``skip_zh_units``, the measure words exempting R5 boundaries.
+    units: ``skip_zh_units``, the measure words exempting
+      zh-typography-5 boundaries.
 
   Returns:
     The fixed line; inline code, URL and kana quote ranges are copied
     through verbatim.
   """
-  active = TERMS if "T1" in rules else ()
+  active = TERMS if "zh-word-1" in rules else ()
   ctx = FixContext(units, tuple(t for t in active if _anchored(line, t)))
   ranges = [(a, b, True) for a, b in spans]
   ranges += [(a, b, False) for a, b in _prose_spans(line, spans)]
@@ -791,17 +857,17 @@ def _fix_frag(
     closes: bool,
     opens: bool,
 ) -> str:
-  """Return one prose fragment fixed, including its span delimiters (R7).
+  """Return one prose fragment fixed, its span delimiters included.
 
   A fragment between two inline code spans starts with the left span's
   closing delimiter run and ends with the right span's opening run; only
-  ``_fix_line`` knows which backticks are delimiters, so R7 spacing
+  ``_fix_line`` knows which backticks are delimiters, so zh-typography-7 spacing
   happens here and not in ``_fix_prose``.
 
   Args:
     frag: Prose between two code interiors (delimiter runs included).
     rules: The enabled rule ids; disabled rules leave the text alone.
-    ctx: The line's fix context (``skip_zh_units``, active T1 terms).
+    ctx: The line's fix context (``skip_zh_units``, active zh-word-1 terms).
     closes: Whether the fragment starts with a closing delimiter run.
     opens: Whether the fragment ends with an opening delimiter run.
 
@@ -809,11 +875,11 @@ def _fix_frag(
     The fixed fragment.
   """
   frag = _fix_prose(frag, rules, ctx)
-  if "R7" in rules:
+  if "zh-typography-7" in rules:
     if closes:
-      frag = R7_CLOSE_EDGE.sub(r"\1 ", frag)
+      frag = ZH_TYPOGRAPHY_7_CLOSE_EDGE.sub(r"\1 ", frag)
     if opens:
-      frag = R7_OPEN_EDGE.sub(r" \1", frag)
+      frag = ZH_TYPOGRAPHY_7_OPEN_EDGE.sub(r" \1", frag)
   return frag
 
 
@@ -846,7 +912,7 @@ def _cjk(ch: str) -> bool:
   return bool(CJK_CHAR.match(ch)) if ch else False
 
 
-def _fix_r1(line: str) -> str:
+def _fix_zh_typography_1(line: str) -> str:
   """Return the fragment with CJK-adjacent half-width punct full-width.
 
   Args:
@@ -877,7 +943,7 @@ def _fix_r1(line: str) -> str:
   return "".join(out)
 
 
-def _fix_r11(line: str) -> str:
+def _fix_zh_typography_11(line: str) -> str:
   """Return the fragment with spaces next to full-width punct removed.
 
   Args:
@@ -890,7 +956,7 @@ def _fix_r11(line: str) -> str:
   return SPACE_BEFORE_FW_FIX.sub("", line)
 
 
-def _fix_r3(line: str) -> str:
+def _fix_zh_typography_3(line: str) -> str:
   """Return the fragment with half-width paren outside spacing applied.
 
   Args:
@@ -906,7 +972,7 @@ def _fix_r3(line: str) -> str:
 
 
 def _unit_skips(text: str, units: str) -> set[int]:
-  """Return the R5 boundary offsets exempted by ``skip_zh_units``.
+  """Return the zh-typography-5 boundary offsets exempted by ``skip_zh_units``.
 
   Args:
     text: One line or prose fragment; offsets are relative to it.
@@ -926,7 +992,7 @@ def _unit_skips(text: str, units: str) -> set[int]:
   }
 
 
-def _fix_t1(line: str, ctx: FixContext) -> str:
+def _fix_zh_word_1(line: str, ctx: FixContext) -> str:
   """Return the fragment with the line's anchored wrong terms replaced.
 
   Args:
@@ -942,12 +1008,13 @@ def _fix_t1(line: str, ctx: FixContext) -> str:
   return line
 
 
-def _fix_r5(line: str, ctx: FixContext) -> str:
+def _fix_zh_typography_5(line: str, ctx: FixContext) -> str:
   """Return the fragment with CJK-to-digit spaces inserted.
 
   Args:
     line: Markdown text containing no code.
-    ctx: The line's fix context; its ``units`` exempt R5 boundaries.
+    ctx: The line's fix context; its ``units`` exempt zh-typography-5
+      boundaries.
 
   Returns:
     The fixed fragment.
@@ -958,7 +1025,7 @@ def _fix_r5(line: str, ctx: FixContext) -> str:
   )
 
 
-def _fix_r8(line: str) -> str:
+def _fix_zh_typography_8(line: str) -> str:
   """Return the fragment with dash-side spaces inserted.
 
   Args:
@@ -972,22 +1039,26 @@ def _fix_r8(line: str) -> str:
 
 
 # The per-fragment fix pipeline in the fix order of spec/rules.md 「修复顺序」:
-# wording first (T1), then the width conversions, the space-inserting
-# rules in id order, and the space-removing R11 last. R7 is missing
-# because only _fix_line knows which backticks delimit a span. Every step
-# takes the line's FixContext, but only T1 and R5 have a use for it.
+# wording first (zh-word-1), then the width conversions, the space-inserting
+# rules in id order, and the space-removing zh-typography-11 last.
+# zh-typography-7 is missing because only _fix_line knows which backticks
+# delimit a span. Every step takes the line's FixContext, but only zh-word-1
+# and zh-typography-5 have a use for it.
 _PROSE_FIXES: list[tuple[str, typing.Callable[[str, FixContext], str]]] = [
-    ("T1", _fix_t1),
-    ("R10", lambda line, _ctx: line.translate(HALFWIDTH_DIGITS)),
-    ("R2", lambda line, _ctx: line.replace("（", "(").replace("）", ")")),
-    ("R1", lambda line, _ctx: _fix_r1(line)),
-    ("R3", lambda line, _ctx: _fix_r3(line)),
-    ("R4", lambda line, _ctx: CJK_LATIN_BOUNDARY.sub(" ", line)),
-    ("R5", _fix_r5),
-    ("R6", lambda line, _ctx: NUMBER_UNIT.sub(r"\1 \2", line)),
-    ("R8", lambda line, _ctx: _fix_r8(line)),
-    ("R9", lambda line, _ctx: LINK_AFTER_CJK_FIX.sub(" ", line)),
-    ("R11", lambda line, _ctx: _fix_r11(line)),
+    ("zh-word-1", _fix_zh_word_1),
+    ("zh-typography-10", lambda line, _ctx: line.translate(HALFWIDTH_DIGITS)),
+    (
+        "zh-typography-2",
+        lambda line, _ctx: line.replace("（", "(").replace("）", ")"),
+    ),
+    ("zh-typography-1", lambda line, _ctx: _fix_zh_typography_1(line)),
+    ("zh-typography-3", lambda line, _ctx: _fix_zh_typography_3(line)),
+    ("zh-typography-4", lambda line, _ctx: CJK_LATIN_BOUNDARY.sub(" ", line)),
+    ("zh-typography-5", _fix_zh_typography_5),
+    ("zh-typography-6", lambda line, _ctx: NUMBER_UNIT.sub(r"\1 \2", line)),
+    ("zh-typography-8", lambda line, _ctx: _fix_zh_typography_8(line)),
+    ("zh-typography-9", lambda line, _ctx: LINK_AFTER_CJK_FIX.sub(" ", line)),
+    ("zh-typography-11", lambda line, _ctx: _fix_zh_typography_11(line)),
 ]
 
 
@@ -997,7 +1068,7 @@ def _fix_prose(line: str, rules: Collection[str], ctx: FixContext) -> str:
   Args:
     line: Markdown text containing no code.
     rules: The enabled rule ids; disabled rules leave the text alone.
-    ctx: The line's fix context (``skip_zh_units``, active T1 terms).
+    ctx: The line's fix context (``skip_zh_units``, active zh-word-1 terms).
 
   Returns:
     The fixed fragment.
@@ -1023,15 +1094,15 @@ def fix_text(
   Args:
     text: Raw Markdown content.
     rules: The enabled rule ids; defaults to the default-enabled set.
-    skip_zh_units: Measure words whose digit runs are exempt from R5;
-      defaults to no exemption.
+    skip_zh_units: Measure words whose digit runs are exempt from
+      zh-typography-5; defaults to no exemption.
 
   Returns:
     The content with full-width parens replaced, CJK-adjacent punctuation
     converted to full-width, and spacing inserted; a fixpoint, since one
-    pass can make new determinations true (e.g. R2 turning a full-width
-    paren into the closer of a link destination shifts the exempt
-    ranges), so the pass repeats until the text is stable.
+    pass can make new determinations true (e.g. zh-typography-2 turning
+    a full-width paren into the closer of a link destination shifts the
+    exempt ranges), so the pass repeats until the text is stable.
   """
   enabled = frozenset(rules)
   while True:
@@ -1053,13 +1124,14 @@ class _LineScan(typing.NamedTuple):
   """What checking one line needs beyond the line and the pattern.
 
   Attributes:
-    line: The line itself, for the checks reading its whole text (T1's
+    line: The line itself, for the checks reading its whole text (zh-word-1's
       anchors).
     code_spans: Inline code interiors on this line, from ``_protected``.
     exempt: Every exempt range on this line, code interiors included.
-    unit_skips: R5 boundaries ``skip_zh_units`` exempts.
-    token_parens: Offsets of the ``(`` inside an English token (R3).
-    abbrev_dots: Offsets of the dots inside abbreviations (R1).
+    unit_skips: zh-typography-5 boundaries ``skip_zh_units`` exempts.
+    token_parens: Offsets of the ``(`` inside an English token
+      (zh-typography-3).
+    abbrev_dots: Offsets of the dots inside abbreviations (zh-typography-1).
   """
 
   line: str
@@ -1086,17 +1158,21 @@ def _suppressed(
   """
   if _exempt(m, scan.exempt):
     return True  # inline code, URL or kana quote range
-  if rule == "R5" and m.start() in scan.unit_skips:
+  if rule == "zh-typography-5" and m.start() in scan.unit_skips:
     return True  # a skip_zh_units boundary
   if m.group(0).endswith("(") and m.end() - 1 in scan.token_parens:
     return True  # paren inside an English token, e.g. word(s), 401(k)
-  if rule == "R7" and not _is_delimiter_run(m, pattern, scan.code_spans):
+  if rule == "zh-typography-7" and not _is_delimiter_run(
+      m, pattern, scan.code_spans
+  ):
     return True  # unpaired backticks are plain text, not a span
-  if pattern is R1_DOT and m.start() in scan.abbrev_dots:
+  if pattern is ZH_TYPOGRAPHY_1_DOT and m.start() in scan.abbrev_dots:
     return True  # a dot of e.g. / Dr. / ... stays half-width
-  if rule == "A8" and not _is_coinage(scan.line, m.start()):
+  if rule == "zh-tell-5" and not _is_coinage(scan.line, m.start()):
     return True  # a lone 零, a whole sentence, or an allowlisted word
-  if rule == "T2" and _covered(scan.line, m.start(), ALLOWED["T2"]):
+  if rule == "zh-word-2" and _covered(
+      scan.line, m.start(), ALLOWED["zh-word-2"]
+  ):
     return True  # 秘密 in its own sense, e.g. 保守秘密
   term = TERM_PATTERNS.get(pattern)
   return term is not None and not _anchored(scan.line, term)
@@ -1116,8 +1192,8 @@ def check_text(
   Args:
     text: Raw Markdown content.
     rules: The enabled rule ids; defaults to the default-enabled set.
-    skip_zh_units: Measure words whose digit runs are exempt from R5;
-      defaults to no exemption.
+    skip_zh_units: Measure words whose digit runs are exempt from
+      zh-typography-5; defaults to no exemption.
 
   Returns:
     One ``Finding`` per violation, ordered by line then by rule id.
@@ -1163,10 +1239,11 @@ def _is_delimiter_run(
     pattern: re.Pattern[str],
     code_spans: list[tuple[int, int]],
 ) -> bool:
-  """Return whether an R7 backtick-run match delimits a code span.
+  """Return whether an zh-typography-7 backtick-run match delimits a code span.
 
   Args:
-    m: A match of ``R7_OPEN`` or ``R7_CLOSE`` (a full backtick run).
+    m: A match of ``ZH_TYPOGRAPHY_7_OPEN`` or ``ZH_TYPOGRAPHY_7_CLOSE``
+      (a full backtick run).
     pattern: The pattern the match came from, to tell open from close.
     code_spans: Inline code interiors on this line, from ``_protected``.
 
@@ -1174,7 +1251,7 @@ def _is_delimiter_run(
     True when the run ends exactly where a span interior starts (open) or
     starts exactly where one ends (close).
   """
-  if pattern is R7_OPEN:
+  if pattern is ZH_TYPOGRAPHY_7_OPEN:
     return any(m.end() == a for a, _ in code_spans)
   return any(m.start() == b for _, b in code_spans)
 

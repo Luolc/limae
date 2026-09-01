@@ -8,9 +8,9 @@ symlink to that directory, which both the editable install and the built
 wheel resolve, so :mod:`importlib.resources` finds the files either way.
 
 Every ``.txt`` wordlist is one phrase per line, ``#`` comments and blank
-lines ignored; ``T1.toml`` is an ``entries`` array of ``wrong`` /
-``right`` / ``anchors`` tables. The ``-allow`` files (``A8-allow.txt``,
-``T2-allow.txt``) have the same format and the opposite polarity: a hit
+lines ignored; ``zh-word-1.toml`` is an ``entries`` array of ``wrong`` /
+``right`` / ``anchors`` tables. The ``-allow`` files (``zh-tell-5-allow.txt``,
+``zh-word-2-allow.txt``) have the same format and the opposite polarity: a hit
 there exempts rather than reports.
 """
 
@@ -20,12 +20,12 @@ import typing
 
 PACKAGE = "limae"
 DIRECTORY = "wordlists"
-TERMS_FILE = "T1.toml"
+TERMS_FILE = "zh-word-1.toml"
 COMMENT = "#"
 
 
 class Term(typing.NamedTuple):
-  """One terminology entry of ``spec/wordlists/T1.toml``.
+  """One terminology entry of ``spec/wordlists/zh-word-1.toml``.
 
   Attributes:
     wrong: The wrong wording, matched as a literal substring.
@@ -56,8 +56,8 @@ def phrases(rule: str) -> tuple[str, ...]:
   """Return the phrases of one line-oriented wordlist.
 
   Args:
-    rule: The wordlist's file stem — a rule id (``A1``) for a wordlist,
-      the rule id plus ``-allow`` (``A8-allow``) for an allowlist.
+    rule: The wordlist's file stem — a rule id (``zh-tell-1``) for a wordlist,
+      the rule id plus ``-allow`` (``zh-tell-5-allow``) for an allowlist.
 
   Returns:
     The listed phrases in file order, comments and blank lines dropped.
@@ -67,7 +67,7 @@ def phrases(rule: str) -> tuple[str, ...]:
 
 
 def terms() -> tuple[Term, ...]:
-  """Return the terminology entries of ``T1.toml``.
+  """Return the terminology entries of ``zh-word-1.toml``.
 
   Returns:
     The entries in file order.

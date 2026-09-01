@@ -6,11 +6,11 @@
 
 你好,世界
 
-<!-- limae-disable R4 -->
+<!-- limae-disable zh-typography-4 -->
 
 中文English混排与你好,世界
 
-<!-- limae-enable R4 -->
+<!-- limae-enable zh-typography-4 -->
 
 中文English混排
 

@@ -1,4 +1,4 @@
-<!-- lo-md-lint-disable-next-line R4 -->
+<!-- lo-md-lint-disable-next-line zh-typography-4 -->
 中文English混排
 
 中文English混排
@@ -11,11 +11,11 @@
 
 你好,世界
 
-<!-- limae-disable R4 -->
+<!-- limae-disable zh-typography-4 -->
 
 中文English混排
 
-<!-- lo-md-lint-enable R4 -->
+<!-- lo-md-lint-enable zh-typography-4 -->
 
 中文English混排
 

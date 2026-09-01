@@ -1,6 +1,6 @@
-# A5：英文 AI 词汇 (English AI vocabulary) —— 通用 LLM 文风的高频词。
+# en-tell-1：英文 AI 词汇 (English AI vocabulary) —— 通用 LLM 文风的高频词。
 # 一行一条，全词匹配、大小写不敏感；`#` 开头是注释，空行忽略。
-# 格式与匹配语义的正本是 spec/rules.md「词表」与 A5 条目。
+# 格式与匹配语义的正本是 spec/rules.md「词表」与 en-tell-1 条目。
 #
 # 不做词干还原：要管的屈折形逐条写全。
 # 不收广告腔 (in the heart of、nestled、boasts)：技术文档里几乎不出现，

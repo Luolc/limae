@@ -1,6 +1,6 @@
-# A1：中文套话 (formulaic phrases) —— 开场白与八股连接词。
+# zh-tell-1：中文套话 (formulaic phrases) —— 开场白与八股连接词。
 # 一行一条，字面子串匹配；`#` 开头是注释，空行忽略。
-# 格式与匹配语义的正本是 spec/rules.md「词表」与 A1 条目。
+# 格式与匹配语义的正本是 spec/rules.md「词表」与 zh-tell-1 条目。
 
 综上所述
 总的来说

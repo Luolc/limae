@@ -4,14 +4,14 @@
 
 - `rules.md` —— 规则的正本：稳定 id、判定条件、修复行为、豁免范围。
 - `fixtures/` —— 黄金集 (golden fixtures)：可执行的那一半，每加一个 case 就是所有实现的回归测试。
-- `wordlists/` —— 词表：A1 / A3 / A4 / A5 / A7 / A8 / T1 / T2 的判定数据，格式与匹配语义的正本是 `rules.md`「词表」。
+- `wordlists/` —— 词表：zh-tell-1 / zh-tell-3 / zh-tell-4 / en-tell-1 / en-tell-3 / zh-tell-5 / zh-word-1 / zh-word-2 的判定数据，格式与匹配语义的正本是 `rules.md`「词表」。
 - `polish/` —— `limae polish` 的 prompt spec：通用层 `general.md` (英文) 加每种语言一份用该语言写的层 (`zh.md`)，形制的正本是 ADR-0008 §九。它是 prompt，不是判定数据 —— 词表不进 prompt。
 
 三份同目录、同 PR 改，不会漂移。改规则的顺序固定：先改这里，再改各实现。
 
 ## 词表
 
-`wordlists/A1.txt`、`A3.txt`、`A4.txt`、`A5.txt`、`A7.txt` 一行一条 (`#` 注释、空行忽略)，`wordlists/T1.toml` 是 `wrong` / `right` / `anchors` 的 `entries` 数组。中文词表按字面子串匹配，英文词表 (`A5` / `A7`) 按整词、大小写不敏感。`wordlists/A8-allow.txt` 与 `T2-allow.txt` 格式相同但方向相反，是**豁免表**：命中它才不报 —— 语义的正本都在 `rules.md`「词表」。
+`wordlists/zh-tell-1.txt`、`zh-tell-3.txt`、`zh-tell-4.txt`、`en-tell-1.txt`、`en-tell-3.txt` 一行一条 (`#` 注释、空行忽略)，`wordlists/zh-word-1.toml` 是 `wrong` / `right` / `anchors` 的 `entries` 数组。中文词表按字面子串匹配，英文词表 (`en-tell-1` / `en-tell-3`) 按整词、大小写不敏感。`wordlists/zh-tell-5-allow.txt` 与 `zh-word-2-allow.txt` 格式相同但方向相反，是**豁免表**：命中它才不报 —— 语义的正本都在 `rules.md`「词表」。
 
 **各实现在运行时从这些文件读词表，不把词表内联进代码**：词表是规范的一部分，加一条词只改这里，任何实现都不用重新发版逻辑。Python 参考实现的读取在 `src/limae/wordlists.py`；`src/limae/wordlists` 是指向本目录的目录级软链，editable 安装与打好的 wheel 都能经 `importlib.resources` 找到同一份文件。
 
@@ -23,14 +23,14 @@
 | --- | --- |
 | `<case>.in` | 输入的 Markdown 文本 |
 | `<case>.fixed` | 期望的 `--fix` 输出；「应保持不变」的 case 与 `.in` 逐字相同 |
-| `<case>.findings` | 期望的违规列表，每行 `<行号> <规则 id>`，如 `3 R1`；空文件表示无违规 |
+| `<case>.findings` | 期望的违规列表，每行 `<行号> <规则 id>`，如 `3 zh-typography-1`；空文件表示无违规 |
 | `<case>.conf` | 可选：这个 case 的配置，内容就是独立配置文件 `limae.toml` 的内容 —— 配置键见 `rules.md`「配置」；没有这个文件 = 默认配置 |
 
 约定：
 
 - **三个文件都必须存在**，都是 UTF-8、都以一个换行结束。空的 `.findings` 就是零字节文件 —— 不允许省略，省略与「无违规」无法区分。
 - **`.conf` 只在这个 case 要改配置时才有**：它是唯一可选的文件，其余三个永远齐全。带 `.conf` 的 case 用它算出的配置跑 (启用集见 `rules.md`「配置」，其余键各按 `rules.md` 的默认值)，不带的用默认配置 —— 「配置」本身也是规范的一部分，所以配置维度的期望同样手写进 `.fixed` 与 `.findings`。
-- **`.findings` 的顺序是实现报告违规的顺序**：先按行号升序，同一行内按 `rules.md` 的规则顺序 (R1、R2、……)，同一条规则内按出现位置。同一行的同一条规则可以出现多次，如 `（测试）` 的两处 R2。
+- **`.findings` 的顺序是实现报告违规的顺序**：先按行号升序，同一行内按 `rules.md` 的规则顺序 (zh-typography-1、zh-typography-2、……)，同一条规则内按出现位置。同一行的同一条规则可以出现多次，如 `（测试）` 的两处 zh-typography-2。
 - **严重度不进 `.findings` 行**：某处违规是 error 还是 warning，由 `rules.md`「规则属性」的默认值与这个 case 的 `.conf` 唯一决定，runner 需要时自行推导 —— 所以 `severity` 键改不了任何一个 fixture 文件的内容。
 - **`.in` 与 `.fixed` 逐行对齐**：修复不增删行 (见 `rules.md`「处理单位」)，两个文件的行数永远相同。
 - **只用合成假数据**：`ACME`、`$1,000`、`Foo` 这类；不得出现任何真实的个人或业务信息 (`AGENTS.md`「隐私边界」)。
