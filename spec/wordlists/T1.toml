@@ -1,0 +1,29 @@
+# T1：术语选词 (terminology)。每条 entry 三个键：
+#   wrong   —— 错误写法，字面子串匹配
+#   right   —— 替换成的正确写法
+#   anchors —— 同一行内的语境锚点，命中任一个才报，大小写不敏感
+# 锚点是必要条件：`anchors` 为空的 entry 永不命中。
+# 一个 wrong 只写一条 entry —— 同一个错误写法只有一个正确替换。
+# 格式与匹配语义的正本是 spec/rules.md「词表」与 T1 条目。
+#
+# 「秘密」→「密钥」不收：2026-08-31 的 dogfood 上它 56 处命中全是误报 ——
+# 讲凭证管理的文档里「任何秘密」「零秘密」是正确用法，而 secret / token /
+# credential 这些锚点恰恰因为文档主题就是凭证而必然在场，锚点与错误负相关。
+# 只收「有唯一正确替换、且能被同行的英文或中文锚点消歧」的词。门控
+# (gate)、一等公民 (first-class citizen)、契约 (contract) 没有稳妥的
+# 唯一替换，也没有可靠锚点，不进这张表。
+
+[[entries]]
+wrong = "秘钥"
+right = "密钥"
+anchors = ["secret", "key", "token", "credential", "凭证", "加密"]
+
+[[entries]]
+wrong = "代币"
+right = "令牌"
+anchors = ["token", "OAuth", "JWT", "鉴权", "认证"]
+
+[[entries]]
+wrong = "快取"
+right = "缓存"
+anchors = ["cache", "CDN", "命中率"]

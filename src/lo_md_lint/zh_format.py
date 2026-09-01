@@ -27,6 +27,17 @@ Rules:
   R10: No full-width digits; use half-width 0-9 instead.
   R11: No spaces next to full-width punctuation (，。、；：？！); spaces
     next to a dash stay (R8 owns those).
+  A1 (experimental): A formulaic Chinese phrase listed in the wordlist.
+  A2 (experimental): The negative-parallel 不是 … 而是 … within 20
+    characters.
+  A3 (experimental): A corporate buzzword listed in the wordlist.
+  A4 (experimental): Chat residue listed in the wordlist.
+  T1 (experimental): A wrong term listed in the wordlist, on a line
+    carrying one of that entry's context anchors.
+
+The A and T families read their wordlists from ``spec/wordlists/`` through
+:mod:`lo_md_lint.wordlists`; A1 / A3 / A4 report at most one violation per
+line, T1 one per occurrence.
 
 Fenced code blocks and inline code spans (CommonMark backtick runs, which
 may cross line breaks inside a paragraph but not block boundaries) are
@@ -43,8 +54,8 @@ on. A disabled rule is neither reported nor fixed. The config's
 「规则属性」 — fixability, default severity, maturity — one entry per rule
 and nowhere else. The ``severity`` config key overrides the default
 severity per rule, ``enable_experimental`` joins the experimental rules
-into the enabled set; today every rule is fixable · error · stable, so
-both are no-ops.
+into the enabled set: R1-R11 are fixable · error · stable, A1-A4 and T1
+warning · experimental.
 
 Two escape hatches sit below the configuration: the inline directives of
 :mod:`lo_md_lint.directives` narrow the enabled set line by line, and the
@@ -69,7 +80,7 @@ import subprocess
 import sys
 import typing
 
-from lo_md_lint import config, directives
+from lo_md_lint import config, directives, wordlists
 
 CJK = "一-鿿"
 WORD = f"A-Za-z0-9{CJK}"
@@ -190,6 +201,34 @@ BLOCK_START = re.compile(
 )
 QUOTE_LINE = re.compile(r"^ {0,3}>")
 
+
+def _phrase_pattern(rule: str) -> re.Pattern[str]:
+  """Return the literal-substring pattern of one line-oriented wordlist.
+
+  Args:
+    rule: The rule id, which is also the wordlist's file stem.
+
+  Returns:
+    An alternation of the listed phrases, longest first so no phrase
+    shadows a longer one; a never-matching pattern for an empty wordlist.
+  """
+  listed = sorted(wordlists.phrases(rule), key=len, reverse=True)
+  return re.compile("|".join(re.escape(p) for p in listed) or "(?!)")
+
+
+# A2: 不是 … 而是 …, at most 20 characters apart, punctuation included.
+# The progressive 不仅 … 更 … is normal Chinese prose and not collected.
+NEGATIVE_PARALLEL = re.compile("不是.{0,20}?而是")
+# A1 / A3 / A4 fire at most once per line: these phrases come in clusters
+# and one finding per occurrence would just flood the report.
+ONCE_PER_LINE = frozenset({"A1", "A3", "A4"})
+# T1: one pattern per wordlist entry, so the findings of one line stay
+# ordered by position and each maps to its own fix.
+TERMS: tuple[wordlists.Term, ...] = wordlists.terms()
+TERM_PATTERNS: dict[re.Pattern[str], wordlists.Term] = {
+    re.compile(re.escape(t.wrong)): t for t in TERMS
+}
+
 # (rule id from spec/rules.md, human-readable name, detection pattern).
 CHECKS = [
     (
@@ -220,6 +259,14 @@ CHECKS = [
     ("R10", "R10 fullwidth digit", FULLWIDTH_DIGIT),
     ("R11", "R11 space before fullwidth punct", SPACE_BEFORE_FW),
     ("R11", "R11 space after fullwidth punct", SPACE_AFTER_FW),
+    ("A1", "A1 formulaic phrase", _phrase_pattern("A1")),
+    ("A2", "A2 negative parallelism", NEGATIVE_PARALLEL),
+    ("A3", "A3 corporate buzzword", _phrase_pattern("A3")),
+    ("A4", "A4 chat residue", _phrase_pattern("A4")),
+    *(
+        ("T1", f"T1 term {term.wrong} -> {term.right}", pattern)
+        for pattern, term in TERM_PATTERNS.items()
+    ),
 ]
 
 
@@ -244,9 +291,10 @@ class RuleGrade(typing.NamedTuple):
   experimental: bool
 
 
-# Every rule id of spec/rules.md with its three axes. R1-R11 are all
-# fixable · error · stable today, so EXPERIMENTAL_RULES is empty and every
-# violation is an error unless the `severity` key says otherwise.
+# Every rule id of spec/rules.md with its three axes: the R family (中文
+# 排版) is fixable · error · stable, the A family (中文 AI 腔) and T family
+# (术语选词) are warning · experimental, so they stay out of the enabled
+# set until `enable_experimental` joins them in.
 GRADES: dict[str, RuleGrade] = {
     "R1": RuleGrade(True, config.ERROR, False),
     "R2": RuleGrade(True, config.ERROR, False),
@@ -259,6 +307,11 @@ GRADES: dict[str, RuleGrade] = {
     "R9": RuleGrade(True, config.ERROR, False),
     "R10": RuleGrade(True, config.ERROR, False),
     "R11": RuleGrade(True, config.ERROR, False),
+    "A1": RuleGrade(False, config.WARNING, True),
+    "A2": RuleGrade(False, config.WARNING, True),
+    "A3": RuleGrade(False, config.WARNING, True),
+    "A4": RuleGrade(False, config.WARNING, True),
+    "T1": RuleGrade(True, config.WARNING, True),
 }
 
 # Configuration starts from DEFAULT_RULES (every rule except the
@@ -516,6 +569,39 @@ def _exempt(m: re.Match[str], spans: list[tuple[int, int]]) -> bool:
   return any(m.start() < b and m.end() > a for a, b in spans)
 
 
+class FixContext(typing.NamedTuple):
+  """What the per-fragment fixes need beyond the fragment itself.
+
+  Attributes:
+    units: ``skip_zh_units``, the measure words exempting R5 boundaries.
+    terms: The T1 entries whose anchors the line carries. The anchor test
+      is per line but the fixes run per prose fragment, so the answer
+      travels down here.
+  """
+
+  units: str
+  terms: tuple[wordlists.Term, ...]
+
+
+def _anchored(line: str, term: wordlists.Term) -> bool:
+  """Return whether a line carries one of a term's context anchors.
+
+  An anchor is evidence about the line's subject, not part of the
+  violation, so it is looked for in the whole line — exempt ranges
+  included, since the commonest anchor is a ``secret`` or ``token``
+  inside an inline code span. Matching ignores case.
+
+  Args:
+    line: One Markdown line outside fenced code blocks.
+    term: One wordlist entry.
+
+  Returns:
+    True when T1 may report and fix this term on this line.
+  """
+  lowered = line.lower()
+  return any(anchor.lower() in lowered for anchor in term.anchors)
+
+
 def _fix_line(
     line: str,
     spans: list[tuple[int, int]],
@@ -534,6 +620,8 @@ def _fix_line(
     The fixed line; inline code, URL and kana quote ranges are copied
     through verbatim.
   """
+  active = TERMS if "T1" in rules else ()
+  ctx = FixContext(units, tuple(t for t in active if _anchored(line, t)))
   ranges = [(a, b, True) for a, b in spans]
   ranges += [(a, b, False) for a, b in _prose_spans(line, spans)]
   ranges.sort()
@@ -542,16 +630,20 @@ def _fix_line(
   closes = False
   for start, end, is_code in ranges:
     opens = is_code and start > pos and line[start - 1] == "`"
-    parts.append(_fix_frag(line[pos:start], rules, units, closes, opens))
+    parts.append(_fix_frag(line[pos:start], rules, ctx, closes, opens))
     parts.append(line[start:end])
     pos = end
     closes = is_code and end < len(line) and line[end] == "`"
-  parts.append(_fix_frag(line[pos:], rules, units, closes, False))
+  parts.append(_fix_frag(line[pos:], rules, ctx, closes, False))
   return "".join(parts)
 
 
 def _fix_frag(
-    frag: str, rules: Collection[str], units: str, closes: bool, opens: bool
+    frag: str,
+    rules: Collection[str],
+    ctx: FixContext,
+    closes: bool,
+    opens: bool,
 ) -> str:
   """Return one prose fragment fixed, including its span delimiters (R7).
 
@@ -563,14 +655,14 @@ def _fix_frag(
   Args:
     frag: Prose between two code interiors (delimiter runs included).
     rules: The enabled rule ids; disabled rules leave the text alone.
-    units: ``skip_zh_units``, the measure words exempting R5 boundaries.
+    ctx: The line's fix context (``skip_zh_units``, active T1 terms).
     closes: Whether the fragment starts with a closing delimiter run.
     opens: Whether the fragment ends with an opening delimiter run.
 
   Returns:
     The fixed fragment.
   """
-  frag = _fix_prose(frag, rules, units)
+  frag = _fix_prose(frag, rules, ctx)
   if "R7" in rules:
     if closes:
       frag = R7_CLOSE_EDGE.sub(r"\1 ", frag)
@@ -688,17 +780,33 @@ def _unit_skips(text: str, units: str) -> set[int]:
   }
 
 
-def _fix_r5(line: str, units: str) -> str:
-  """Return the fragment with CJK-to-digit spaces inserted.
+def _fix_t1(line: str, ctx: FixContext) -> str:
+  """Return the fragment with the line's anchored wrong terms replaced.
 
   Args:
     line: Markdown text containing no code.
-    units: ``skip_zh_units``, the measure words whose digit runs are exempt.
+    ctx: The line's fix context; only its anchored terms are applied, so
+      a line without the anchors of an entry keeps its wording.
 
   Returns:
     The fixed fragment.
   """
-  skips = _unit_skips(line, units)
+  for term in ctx.terms:
+    line = line.replace(term.wrong, term.right)
+  return line
+
+
+def _fix_r5(line: str, ctx: FixContext) -> str:
+  """Return the fragment with CJK-to-digit spaces inserted.
+
+  Args:
+    line: Markdown text containing no code.
+    ctx: The line's fix context; its ``units`` exempt R5 boundaries.
+
+  Returns:
+    The fixed fragment.
+  """
+  skips = _unit_skips(line, ctx.units)
   return CJK_DIGIT_BOUNDARY.sub(
       lambda m: "" if m.start() in skips else " ", line
   )
@@ -718,38 +826,39 @@ def _fix_r8(line: str) -> str:
 
 
 # The per-fragment fix pipeline in the fix order of spec/rules.md 「修复顺序」:
-# width conversions first, the space-inserting rules in id order, and the
-# space-removing R11 last. R7 is missing because only _fix_line knows
-# which backticks delimit a span. Every step takes `skip_zh_units`, but
-# only R5 has a use for it.
-_PROSE_FIXES: list[tuple[str, typing.Callable[[str, str], str]]] = [
-    ("R10", lambda line, _units: line.translate(HALFWIDTH_DIGITS)),
-    ("R2", lambda line, _units: line.replace("（", "(").replace("）", ")")),
-    ("R1", lambda line, _units: _fix_r1(line)),
-    ("R3", lambda line, _units: _fix_r3(line)),
-    ("R4", lambda line, _units: CJK_LATIN_BOUNDARY.sub(" ", line)),
+# wording first (T1), then the width conversions, the space-inserting
+# rules in id order, and the space-removing R11 last. R7 is missing
+# because only _fix_line knows which backticks delimit a span. Every step
+# takes the line's FixContext, but only T1 and R5 have a use for it.
+_PROSE_FIXES: list[tuple[str, typing.Callable[[str, FixContext], str]]] = [
+    ("T1", _fix_t1),
+    ("R10", lambda line, _ctx: line.translate(HALFWIDTH_DIGITS)),
+    ("R2", lambda line, _ctx: line.replace("（", "(").replace("）", ")")),
+    ("R1", lambda line, _ctx: _fix_r1(line)),
+    ("R3", lambda line, _ctx: _fix_r3(line)),
+    ("R4", lambda line, _ctx: CJK_LATIN_BOUNDARY.sub(" ", line)),
     ("R5", _fix_r5),
-    ("R6", lambda line, _units: NUMBER_UNIT.sub(r"\1 \2", line)),
-    ("R8", lambda line, _units: _fix_r8(line)),
-    ("R9", lambda line, _units: LINK_AFTER_CJK_FIX.sub(" ", line)),
-    ("R11", lambda line, _units: _fix_r11(line)),
+    ("R6", lambda line, _ctx: NUMBER_UNIT.sub(r"\1 \2", line)),
+    ("R8", lambda line, _ctx: _fix_r8(line)),
+    ("R9", lambda line, _ctx: LINK_AFTER_CJK_FIX.sub(" ", line)),
+    ("R11", lambda line, _ctx: _fix_r11(line)),
 ]
 
 
-def _fix_prose(line: str, rules: Collection[str], units: str) -> str:
+def _fix_prose(line: str, rules: Collection[str], ctx: FixContext) -> str:
   """Return a prose fragment with formatting violations auto-fixed.
 
   Args:
     line: Markdown text containing no code.
     rules: The enabled rule ids; disabled rules leave the text alone.
-    units: ``skip_zh_units``, the measure words exempting R5 boundaries.
+    ctx: The line's fix context (``skip_zh_units``, active T1 terms).
 
   Returns:
     The fixed fragment.
   """
   for rule, fix in _PROSE_FIXES:
     if rule in rules:
-      line = fix(line, units)
+      line = fix(line, ctx)
   return line
 
 
@@ -794,6 +903,55 @@ def fix_text(
     text = fixed
 
 
+class _LineScan(typing.NamedTuple):
+  """What checking one line needs beyond the line and the pattern.
+
+  Attributes:
+    line: The line itself, for the checks reading its whole text (T1's
+      anchors).
+    code_spans: Inline code interiors on this line, from ``_protected``.
+    exempt: Every exempt range on this line, code interiors included.
+    unit_skips: R5 boundaries ``skip_zh_units`` exempts.
+    token_parens: Offsets of the ``(`` inside an English token (R3).
+    abbrev_dots: Offsets of the dots inside abbreviations (R1).
+  """
+
+  line: str
+  code_spans: list[tuple[int, int]]
+  exempt: list[tuple[int, int]]
+  unit_skips: set[int]
+  token_parens: set[int]
+  abbrev_dots: set[int]
+
+
+def _suppressed(
+    m: re.Match[str], rule: str, pattern: re.Pattern[str], scan: _LineScan
+) -> bool:
+  """Return whether a pattern match is not a violation after all.
+
+  Args:
+    m: A match of one of the ``CHECKS`` patterns.
+    rule: The rule id the pattern belongs to.
+    pattern: The pattern itself, telling the same rule's checks apart.
+    scan: What this line's checks share.
+
+  Returns:
+    True when the match must not be reported.
+  """
+  if _exempt(m, scan.exempt):
+    return True  # inline code, URL or kana quote range
+  if rule == "R5" and m.start() in scan.unit_skips:
+    return True  # a skip_zh_units boundary
+  if m.group(0).endswith("(") and m.end() - 1 in scan.token_parens:
+    return True  # paren inside an English token, e.g. word(s), 401(k)
+  if rule == "R7" and not _is_delimiter_run(m, pattern, scan.code_spans):
+    return True  # unpaired backticks are plain text, not a span
+  if pattern is R1_DOT and m.start() in scan.abbrev_dots:
+    return True  # a dot of e.g. / Dr. / ... stays half-width
+  term = TERM_PATTERNS.get(pattern)
+  return term is not None and not _anchored(scan.line, term)
+
+
 def check_text(
     text: str,
     rules: Collection[str] = DEFAULT_RULES,
@@ -824,29 +982,27 @@ def check_text(
     if code_spans is None:
       continue
     line_rules = enabled - mask
-    exempt_spans = code_spans + _prose_spans(line, code_spans)
-    unit_skips = _unit_skips(line, skip_zh_units)
-    token_parens = {t.start() for t in ENGLISH_TOKEN_PAREN.finditer(line)}
-    abbrev_dots = _abbrev_dots(line)
+    scan = _LineScan(
+        line,
+        code_spans,
+        code_spans + _prose_spans(line, code_spans),
+        _unit_skips(line, skip_zh_units),
+        {t.start() for t in ENGLISH_TOKEN_PAREN.finditer(line)},
+        _abbrev_dots(line),
+    )
     line_findings: list[tuple[int, int, Finding]] = []
     for rule, name, pattern in CHECKS:
       if rule not in line_rules:
         continue
       for m in pattern.finditer(line):
-        if _exempt(m, exempt_spans) or (
-            rule == "R5" and m.start() in unit_skips
-        ):
-          continue  # inline code / URL range, or a skip_zh_units boundary
-        if m.group(0).endswith("(") and m.end() - 1 in token_parens:
-          continue  # paren inside an English token, e.g. word(s), 401(k)
-        if rule == "R7" and not _is_delimiter_run(m, pattern, code_spans):
-          continue  # unpaired backticks are plain text, not a span
-        if pattern is R1_DOT and m.start() in abbrev_dots:
-          continue  # a dot of e.g. / Dr. / ... stays half-width
+        if _suppressed(m, rule, pattern, scan):
+          continue
         snippet = line[max(0, m.start() - 12) : m.end() + 12]
         line_findings.append(
             (RULE_ORDER[rule], m.start(), Finding(lineno, rule, name, snippet))
         )
+        if rule in ONCE_PER_LINE:
+          break  # these phrases cluster; one finding per line is enough
     line_findings.sort(key=lambda t: (t[0], t[1]))
     findings.extend(f for _, _, f in line_findings)
   return findings
