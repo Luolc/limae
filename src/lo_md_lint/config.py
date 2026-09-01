@@ -2,9 +2,10 @@
 
 ``spec/rules.md`` section 「配置」 is the normative description; this module
 is its Python implementation. The enabled set is
-``(default | enable) - disable`` and ``skip_zh_units`` defaults to the
-empty string, so no configuration at all is exactly the default
-behaviour.
+``((default | experimental) | enable) - disable``, with the experimental
+rules joining only under ``enable_experimental``; ``skip_zh_units``
+defaults to the empty string and ``severity`` to no override, so no
+configuration at all is exactly the default behaviour.
 
 Sources, highest priority first:
 
@@ -21,7 +22,7 @@ The ignore file ``.lo-md-lint-ignore`` (``spec/rules.md`` section
 file, and drops input files by gitignore patterns.
 """
 
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
 import pathlib
 import re
 import tomllib
@@ -36,6 +37,13 @@ TOOL_TABLE = "lo-md-lint"
 DISABLE_KEY = "disable"
 ENABLE_KEY = "enable"
 SKIP_ZH_UNITS_KEY = "skip_zh_units"
+SEVERITY_KEY = "severity"
+ENABLE_EXPERIMENTAL_KEY = "enable_experimental"
+# The two severities of spec/rules.md 「规则属性」: an error violation
+# makes the run fail, a warning one is reported but does not.
+ERROR = "error"
+WARNING = "warning"
+SEVERITIES = frozenset({ERROR, WARNING})
 # The spec's CJK class (spec/rules.md 「CJK 与 word 字符」), spelled out here
 # rather than imported so that validation does not depend on the checker,
 # which imports this module.
@@ -53,10 +61,13 @@ class Settings(typing.NamedTuple):
     rules: The enabled rule ids.
     skip_zh_units: Chinese measure-word characters exempted from R5, one
       character per unit; empty means no exemption.
+    severity: The user's per-rule severity overrides; a rule absent here
+      keeps the severity the spec gives it.
   """
 
   rules: frozenset[str]
   skip_zh_units: str
+  severity: Mapping[str, str]
 
 
 def _load_toml(path: pathlib.Path) -> dict[str, object]:
@@ -192,6 +203,84 @@ def _key_units(table: dict[str, object], path: pathlib.Path) -> str:
   return raw
 
 
+def _key_severity(
+    table: dict[str, object], path: pathlib.Path, known: Collection[str]
+) -> dict[str, str]:
+  """Read the ``severity`` key from a config table.
+
+  Args:
+    table: The lo-md-lint config table.
+    path: The config file, for the error message.
+    known: Every rule id this implementation knows.
+
+  Returns:
+    The per-rule overrides, empty when the key is absent.
+
+  Raises:
+    ConfigError: The value is not a table, names an unknown rule id, or
+      gives a severity outside ``error`` / ``warning``.
+  """
+  raw = table.get(SEVERITY_KEY, {})
+  if not isinstance(raw, dict):
+    raise ConfigError(
+        f"{path}: `{SEVERITY_KEY}` must be a table of rule id = severity"
+    )
+  overrides: dict[str, str] = dict(raw)
+  _ = _checked(list(overrides), known, f"{path}: `{SEVERITY_KEY}`")
+  bad = sorted(r for r, v in overrides.items() if v not in SEVERITIES)
+  if bad:
+    raise ConfigError(
+        f"{path}: `{SEVERITY_KEY}` value for {', '.join(bad)} must be"
+        f" {ERROR!r} or {WARNING!r}"
+    )
+  return overrides
+
+
+def _key_bool(table: dict[str, object], key: str, path: pathlib.Path) -> bool:
+  """Read one boolean key from a config table.
+
+  Args:
+    table: The lo-md-lint config table.
+    key: The key to read.
+    path: The config file, for the error message.
+
+  Returns:
+    The value, False when the key is absent.
+
+  Raises:
+    ConfigError: The value is not a boolean.
+  """
+  raw = table.get(key, False)
+  if not isinstance(raw, bool):
+    raise ConfigError(f"{path}: `{key}` must be a boolean")
+  return raw
+
+
+def _no_experimental(
+    enabled: frozenset[str], experimental: Collection[str], source: str
+) -> None:
+  """Reject experimental rule ids listed one by one.
+
+  Maturity has a single switch, ``enable_experimental``; neither
+  ``enable`` nor ``--enable`` may reach an experimental rule
+  (``spec/rules.md`` section 「成熟度的总开关」).
+
+  Args:
+    enabled: Ids from ``enable`` or ``--enable``.
+    experimental: Every experimental rule id.
+    source: Where the ids came from, for the error message.
+
+  Raises:
+    ConfigError: At least one id is an experimental rule.
+  """
+  listed = sorted(enabled & frozenset(experimental))
+  if listed:
+    raise ConfigError(
+        f"{source}: experimental rule id(s) {', '.join(listed)} cannot be"
+        f" enabled one by one; use `{ENABLE_EXPERIMENTAL_KEY} = true`"
+    )
+
+
 def _exclusive(
     disabled: frozenset[str], enabled: frozenset[str], source: str
 ) -> None:
@@ -219,12 +308,15 @@ def resolve(
     start: pathlib.Path,
     known: Collection[str],
     default: frozenset[str],
+    experimental: frozenset[str],
 ) -> Settings:
   """Return the settings of this run.
 
-  The enabled set is ``(default | enable) - disable``. Either CLI flag on
-  the command line replaces the config file wholesale; there is no
-  per-key merging, so ``skip_zh_units`` falls back to its default too.
+  The enabled set is ``((default | experimental) | enable) - disable``,
+  the experimental rules joining only when ``enable_experimental`` is on.
+  Either CLI flag on the command line replaces the config file wholesale;
+  there is no per-key merging, so ``skip_zh_units``, ``severity`` and
+  ``enable_experimental`` fall back to their defaults too.
 
   Args:
     cli_disable: Raw ``--disable`` values, each one or more comma-separated
@@ -233,30 +325,42 @@ def resolve(
     start: Directory the config-file search starts from, normally the cwd.
     known: Every rule id this implementation knows.
     default: The rule ids enabled when nothing is configured.
+    experimental: The experimental rule ids, which only
+      ``enable_experimental`` can add to the enabled set.
 
   Returns:
-    The enabled rule ids and the R5 measure-word exemptions.
+    The enabled rule ids, the R5 measure-word exemptions and the severity
+    overrides.
 
   Raises:
-    ConfigError: Bad toml, a malformed key, an unknown id, or an id in
-      both ``disable`` and ``enable``.
+    ConfigError: Bad toml, a malformed key, an unknown id, an id in both
+      ``disable`` and ``enable``, or an experimental id in ``enable``.
   """
   if cli_disable or cli_enable:
     disabled = _checked(_split_cli(cli_disable), known, "--disable")
     enabled = _checked(_split_cli(cli_enable), known, "--enable")
     _exclusive(disabled, enabled, "command line")
-    return Settings((default | enabled) - disabled, "")
+    _no_experimental(enabled, experimental, "--enable")
+    return Settings((default | enabled) - disabled, "", {})
 
   found = find_config(start)
   if found is None:
-    return Settings(default, "")
+    return Settings(default, "", {})
   path, table = found
   if not isinstance(table, dict):
     raise ConfigError(f"{path}: [tool.{TOOL_TABLE}] must be a table")
   disabled = _checked(_key_list(table, DISABLE_KEY, path), known, str(path))
   enabled = _checked(_key_list(table, ENABLE_KEY, path), known, str(path))
   _exclusive(disabled, enabled, str(path))
-  return Settings((default | enabled) - disabled, _key_units(table, path))
+  _no_experimental(enabled, experimental, f"{path}: `{ENABLE_KEY}`")
+  base = default
+  if _key_bool(table, ENABLE_EXPERIMENTAL_KEY, path):
+    base = default | experimental
+  return Settings(
+      (base | enabled) - disabled,
+      _key_units(table, path),
+      _key_severity(table, path, known),
+  )
 
 
 def _find_ignore(start: pathlib.Path) -> pathlib.Path | None:

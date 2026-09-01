@@ -39,6 +39,13 @@ and the toml config found by :mod:`lo_md_lint.config` turn rules off and
 on. A disabled rule is neither reported nor fixed. The config's
 ``skip_zh_units`` key additionally tunes R5.
 
+``GRADES`` carries the three orthogonal axes of ``spec/rules.md`` section
+「规则属性」 — fixability, default severity, maturity — one entry per rule
+and nowhere else. The ``severity`` config key overrides the default
+severity per rule, ``enable_experimental`` joins the experimental rules
+into the enabled set; today every rule is fixable · error · stable, so
+both are no-ops.
+
 Two escape hatches sit below the configuration: the inline directives of
 :mod:`lo_md_lint.directives` narrow the enabled set line by line, and the
 ``.lo-md-lint-ignore`` file drops whole input files (both in
@@ -49,12 +56,13 @@ Usage (from the repo root)::
   uv run lo-md-lint [--fix] [--disable R1,R3] FILE...
   uv run lo-md-lint --all [--fix]
 
-Exit code 0 = clean, 1 = violations found (in check mode), 2 = bad
-configuration or bad inline directive.
+Exit code 0 = clean or warnings only, 1 = at least one error-level
+violation, 2 = bad configuration or bad inline directive
+(``spec/rules.md`` section 「退出码」).
 """
 
 import argparse
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 import pathlib
 import re
 import subprocess
@@ -214,12 +222,54 @@ CHECKS = [
     ("R11", "R11 space after fullwidth punct", SPACE_AFTER_FW),
 ]
 
-# The rule ids of spec/rules.md. Configuration starts from DEFAULT_RULES
-# (every rule except the default-off ones) and can subtract via `disable`
-# or add back via `enable`, so no configuration means today's behaviour.
-ALL_RULES: frozenset[str] = frozenset(rule for rule, _, _ in CHECKS)
+
+class RuleGrade(typing.NamedTuple):
+  """The three orthogonal attributes of one rule.
+
+  ``spec/rules.md`` section 「规则属性」 is normative; ``GRADES`` mirrors the
+  属性 line of every rule entry there, and is the only place the axes
+  live in this implementation.
+
+  Attributes:
+    fixable: Whether the rule has one deterministic fix, i.e. whether
+      ``--fix`` rewrites the text; a non-fixable rule is only reported.
+    severity: The severity the spec gives the rule, ``error`` or
+      ``warning``; the ``severity`` config key overrides it per rule.
+    experimental: Whether the rule is still experimental, i.e. out of the
+      default set until ``enable_experimental`` joins it in.
+  """
+
+  fixable: bool
+  severity: str
+  experimental: bool
+
+
+# Every rule id of spec/rules.md with its three axes. R1-R11 are all
+# fixable · error · stable today, so EXPERIMENTAL_RULES is empty and every
+# violation is an error unless the `severity` key says otherwise.
+GRADES: dict[str, RuleGrade] = {
+    "R1": RuleGrade(True, config.ERROR, False),
+    "R2": RuleGrade(True, config.ERROR, False),
+    "R3": RuleGrade(True, config.ERROR, False),
+    "R4": RuleGrade(True, config.ERROR, False),
+    "R5": RuleGrade(True, config.ERROR, False),
+    "R6": RuleGrade(True, config.ERROR, False),
+    "R7": RuleGrade(True, config.ERROR, False),
+    "R8": RuleGrade(True, config.ERROR, False),
+    "R9": RuleGrade(True, config.ERROR, False),
+    "R10": RuleGrade(True, config.ERROR, False),
+    "R11": RuleGrade(True, config.ERROR, False),
+}
+
+# Configuration starts from DEFAULT_RULES (every rule except the
+# default-off and the experimental ones) and can subtract via `disable` or
+# add back via `enable`, so no configuration means today's behaviour.
+ALL_RULES: frozenset[str] = frozenset(GRADES)
 DEFAULT_OFF: frozenset[str] = frozenset({"R9"})
-DEFAULT_RULES: frozenset[str] = ALL_RULES - DEFAULT_OFF
+EXPERIMENTAL_RULES: frozenset[str] = frozenset(
+    rule for rule, grade in GRADES.items() if grade.experimental
+)
+DEFAULT_RULES: frozenset[str] = ALL_RULES - DEFAULT_OFF - EXPERIMENTAL_RULES
 
 # Report order within one line: the rule-id order of spec/rules.md, then
 # position (spec/README.md's findings order).
@@ -823,28 +873,44 @@ def _is_delimiter_run(
   return any(m.start() == b for _, b in code_spans)
 
 
+def _severity(rule: str, overrides: Mapping[str, str]) -> str:
+  """Return the severity one violation is reported at.
+
+  Args:
+    rule: The rule id of the violation.
+    overrides: This run's ``severity`` config key.
+
+  Returns:
+    ``error`` or ``warning``: the spec's default for the rule unless the
+    configuration overrides it.
+  """
+  return overrides.get(rule, GRADES[rule].severity)
+
+
 def check_file(
-    path: pathlib.Path,
-    rules: Collection[str] = DEFAULT_RULES,
-    skip_zh_units: str = "",
-) -> list[str]:
-  """Check one file and return its violation descriptions.
+    path: pathlib.Path, settings: config.Settings
+) -> list[tuple[str, str]]:
+  """Check one file and return its violations with their severities.
 
   Args:
     path: Markdown file to scan.
-    rules: The enabled rule ids; defaults to the default-enabled set.
-    skip_zh_units: Measure words whose digit runs are exempt from R5;
-      defaults to no exemption.
+    settings: The resolved configuration of this run.
 
   Returns:
-    Human-readable ``file:line`` violation lines, empty when clean.
+    One ``(severity, description)`` pair per violation, the description a
+    human-readable ``file:line`` line; empty when the file is clean.
   """
-  return [
-      f"{path}:{f.line}: [{f.name}] …{f.snippet}…"
-      for f in check_text(
-          path.read_text(encoding="utf-8"), rules, skip_zh_units
-      )
-  ]
+  problems: list[tuple[str, str]] = []
+  for f in check_text(
+      path.read_text(encoding="utf-8"),
+      settings.rules,
+      settings.skip_zh_units,
+  ):
+    severity = _severity(f.rule, settings.severity)
+    problems.append(
+        (severity, f"{path}:{f.line}: {severity}: [{f.name}] …{f.snippet}…")
+    )
+  return problems
 
 
 def tracked_markdown() -> list[pathlib.Path]:
@@ -877,8 +943,9 @@ def main() -> int:
   """Run the checker CLI.
 
   Returns:
-    Process exit code: 0 when clean, 1 when violations were found, 2 when
-    the configuration or an inline directive is invalid.
+    Process exit code (``spec/rules.md`` section 「退出码」): 0 when clean
+    or only warnings remain, 1 when an error-level violation was found,
+    2 when the configuration or an inline directive is invalid.
   """
   ap = argparse.ArgumentParser()
   _ = ap.add_argument("files", nargs="*")
@@ -906,7 +973,12 @@ def main() -> int:
 
   try:
     settings = config.resolve(
-        args.disable, args.enable, pathlib.Path.cwd(), ALL_RULES, DEFAULT_RULES
+        args.disable,
+        args.enable,
+        pathlib.Path.cwd(),
+        ALL_RULES,
+        DEFAULT_RULES,
+        EXPERIMENTAL_RULES,
     )
   except config.ConfigError as e:
     print(f"config error: {e}", file=sys.stderr)
@@ -919,22 +991,24 @@ def main() -> int:
     ap.error("no files given (use --all or list files)")
   paths = config.not_ignored(paths, pathlib.Path.cwd())
 
-  all_problems: list[str] = []
+  all_problems: list[tuple[str, str]] = []
   for path in paths:
     try:
       if args.fix:
         _fix_in_place(path, settings)
-      all_problems.extend(
-          check_file(path, settings.rules, settings.skip_zh_units)
-      )
+      all_problems.extend(check_file(path, settings))
     except directives.DirectiveError as e:
       print(f"directive error: {path}:{e}", file=sys.stderr)
       return 2
 
   if all_problems:
-    print("\n".join(all_problems))
-    print(f"\n{len(all_problems)} violation(s). --fix auto-fixes most.")
-    return 1
+    print("\n".join(message for _, message in all_problems))
+    errors = sum(1 for s, _ in all_problems if s == config.ERROR)
+    print(
+        f"\n{errors} error(s), {len(all_problems) - errors} warning(s)."
+        " --fix auto-fixes most."
+    )
+    return 1 if errors else 0
   print(f"OK: {len(paths)} file(s) clean")
   return 0
 
