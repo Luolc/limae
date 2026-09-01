@@ -1,4 +1,4 @@
-"""Configuration: the ``disable`` / ``enable`` / ``skip_zh_units`` keys.
+"""Configuration: the config keys and the ``.lo-md-lint-ignore`` file.
 
 ``spec/rules.md`` section 「配置」 is the normative description; this module
 is its Python implementation. The enabled set is
@@ -15,6 +15,10 @@ Sources, highest priority first:
    ``pyproject.toml`` carrying a ``[tool.lo-md-lint]`` table.
 
 The two file carriers are isomorphic: same keys, different nesting.
+
+The ignore file ``.lo-md-lint-ignore`` (``spec/rules.md`` section
+「忽略文件」) is found by the same upward walk, independently of the config
+file, and drops input files by gitignore patterns.
 """
 
 from collections.abc import Collection, Sequence
@@ -23,8 +27,11 @@ import re
 import tomllib
 import typing
 
+import pathspec
+
 CONFIG_FILENAME = "lo-md-lint.toml"
 PYPROJECT_FILENAME = "pyproject.toml"
+IGNORE_FILENAME = ".lo-md-lint-ignore"
 TOOL_TABLE = "lo-md-lint"
 DISABLE_KEY = "disable"
 ENABLE_KEY = "enable"
@@ -250,3 +257,71 @@ def resolve(
   enabled = _checked(_key_list(table, ENABLE_KEY, path), known, str(path))
   _exclusive(disabled, enabled, str(path))
   return Settings((default | enabled) - disabled, _key_units(table, path))
+
+
+def _find_ignore(start: pathlib.Path) -> pathlib.Path | None:
+  """Find the nearest ignore file at or above a directory.
+
+  Walks up like ``find_config`` but independently of it: a directory
+  holding a config file and no ignore file does not end the walk.
+
+  Args:
+    start: Directory to start the upward walk from, normally the cwd.
+
+  Returns:
+    The ignore file, or None when there is none.
+  """
+  for directory in [start, *start.parents]:
+    candidate = directory / IGNORE_FILENAME
+    if candidate.is_file():
+      return candidate
+    if (directory / ".git").exists():
+      break
+  return None
+
+
+def not_ignored(
+    paths: Sequence[pathlib.Path], start: pathlib.Path
+) -> list[pathlib.Path]:
+  """Return the input paths the nearest ignore file does not exclude.
+
+  The patterns are gitignore syntax, relative to the ignore file's own
+  directory; a path outside that directory is never ignored. Filtering
+  happens on every input file, whether it came from ``--all`` or from the
+  command line, because passing files explicitly is how pre-commit runs.
+
+  Args:
+    paths: The input files of this run.
+    start: Directory the ignore-file search starts from, normally the cwd.
+
+  Returns:
+    The paths to check, in the order given.
+  """
+  found = _find_ignore(start)
+  if found is None:
+    return list(paths)
+  root = found.parent.resolve()
+  spec = pathspec.GitIgnoreSpec.from_lines(
+      found.read_text(encoding="utf-8").splitlines()
+  )
+  return [p for p in paths if not _ignores(spec, root, p)]
+
+
+def _ignores(
+    spec: pathspec.GitIgnoreSpec, root: pathlib.Path, path: pathlib.Path
+) -> bool:
+  """Return whether the ignore patterns exclude one input file.
+
+  Args:
+    spec: The parsed ignore file.
+    root: The ignore file's directory, patterns are relative to it.
+    path: One input file.
+
+  Returns:
+    True when the file must be skipped silently.
+  """
+  try:
+    relative = path.resolve().relative_to(root)
+  except ValueError:
+    return False
+  return spec.match_file(relative.as_posix())

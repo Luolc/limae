@@ -1,9 +1,11 @@
 [project]
 name = "lo-md-lint"
-version = "0.4.0"
+version = "0.5.0"
 description = "Markdown linter, starting from Chinese technical-writing typography rules"
 requires-python = ">=3.13,<3.14"
-dependencies = []
+# gitignore pattern matching for the `.lo-md-lint-ignore` file; the
+# semantics are git's, not worth reimplementing.
+dependencies = ["pathspec>=0.12.1"]
 
 [project.scripts]
 lo-md-lint = "lo_md_lint.zh_format:main"

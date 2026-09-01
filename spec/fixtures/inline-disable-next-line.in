@@ -1,0 +1,21 @@
+<!-- lo-md-lint-disable-next-line R4 -->
+サンプルIT推進部の例
+
+サンプルIT推進部の例
+
+<!-- lo-md-lint-disable-next-line -->
+你好,世界
+
+你好,世界
+
+<!-- lo-md-lint-disable-next-line -->
+<!-- lo-md-lint-disable-next-line R4 -->
+中文English混排与你好,世界
+
+<!-- lo-md-lint-disable-next-line -->
+<!-- lo-md-lint-enable -->
+你好,世界
+
+<!-- lo-md-lint-disable-next-line -->
+<!-- lo-md-lint-disable R4 -->
+中文English混排与你好,世界
