@@ -71,3 +71,5 @@ zhlint 与 AutoCorrect 是前 agentic 时代的成熟手作，列为本项目的
 ## 状态
 
 accepted (2026-08-31)。
+
+§五 (fixable / non-fixable 与 warning 绑定) 由 ADR-0006 取代 (2026-08-31)。
