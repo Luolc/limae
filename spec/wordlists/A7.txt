@@ -1,0 +1,41 @@
+# A7：Claudish 专用词 (coding-agent register) —— coding agent 文档的指纹，
+# 与 A5 的通用 slop 指纹不是同一类 (调研 §2.1 B)。
+# 一行一条，全词匹配、大小写不敏感；`#` 开头是注释，空行忽略。
+# 格式与匹配语义的正本是 spec/rules.md「词表」与 A7 条目。
+#
+# 词源：Deng 的 claudish-to-english / english-to-claudish spec 点名的
+# high-signal 词，加 archiewood/claudeisms 与 louisabraham/load-bearing
+# 两份语料里的头部词 (调研 §1.4)。
+#
+# 2026-08-31 的 dogfood 删掉两条：
+#   verdict —— 114 份语料上命中 36 处，全部是 PR 审查流程里的那个产物
+#     (`Verdict: LGTM`)，是本地约定的实词，不是舞台强调。
+#   fail-closed —— 命中 3 处，都是安全工程的标准术语 (检查失败即拒)，
+#     不是 Claudish 修辞。
+
+load-bearing
+gated on
+approval-gated
+owner-gated
+quality-gated
+hard gate
+hard stop
+hard boundary
+spine
+drift
+landed
+surfaced
+surfacing
+surface the
+shape the
+blast radius
+blast-radius
+belt-and-suspenders
+smoking gun
+the key distinction
+the deeper point
+the honest take
+the honest answer
+the cleanest way
+that distinction matters
+cleanly

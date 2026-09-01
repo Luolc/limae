@@ -2,7 +2,7 @@
 
 本文件是规则的正本 (normative)，语言无关：任何实现 (implementation) 都按这里的判定与修复行为工作，并以 `spec/fixtures/` 的黄金集 (golden fixtures) 验收。规范是上游 —— 实现与规范不一致时先改规范、再改实现 (ADR-0001)。
 
-规则 id 稳定且不复用，按家族分前缀 (见「规则属性」)，当前是 R1–R11、A1–A4、T1；实现报告违规时用的 id 必须与这里一致。fixture 格式与 runner 的判定见 `spec/README.md`。
+规则 id 稳定且不复用，按家族分前缀 (见「规则属性」)，当前是 R1–R11、A1–A7、T1；实现报告违规时用的 id 必须与这里一致。fixture 格式与 runner 的判定见 `spec/README.md`。
 
 ## 通用模型
 
@@ -50,16 +50,20 @@
 
 ### 词表
 
-A1 / A3 / A4 / T1 的判定依赖词表 (wordlist)。词表与规则条目一样是规范的一部分，语言无关、所有实现共用，放在 `spec/wordlists/` —— 改词表就是改规范，不需要改任何实现 (ADR-0007)。
+A1 / A3 / A4 / A5 / A7 / T1 的判定依赖词表 (wordlist)。词表与规则条目一样是规范的一部分，语言无关、所有实现共用，放在 `spec/wordlists/` —— 改词表就是改规范，不需要改任何实现 (ADR-0007)。
 
 | 文件 | 规则 | 格式 |
 | --- | --- | --- |
 | `A1.txt` / `A3.txt` / `A4.txt` | A1 / A3 / A4 | UTF-8 纯文本，一行一条；每条前后的空白去掉，`#` 开头的行是注释，空行忽略 |
+| `A5.txt` / `A7.txt` | A5 / A7 | 同上，一行一条的纯文本；条目是英文词或英文短语 |
 | `T1.toml` | T1 | toml，一个 `entries` 数组，每条三个键 `wrong` / `right` / `anchors` |
 
-- **匹配是字面子串 (literal substring)**：词表里的每一条按原文逐字匹配，不做分词、不当正则、不做繁简或大小写折叠 (T1 的锚点是唯一的例外，见 T1)。命中的那几个字符就是违规的位置。
+词表分两种匹配语义，按词表所属的规则定，两种都不把条目当正则：
+
+- **中文词表 (A1 / A3 / A4) 匹配字面子串 (literal substring)**：每一条按原文逐字匹配，不做分词、不做繁简或大小写折叠 (T1 的锚点是唯一的例外，见 T1)。命中的那几个字符就是违规的位置。
+- **英文词表 (A5 / A7) 匹配整词 (whole word)、大小写不敏感**：一条只有在命中处两端都不是 `A-Za-z0-9_` 时才算数 —— `realm` 不命中 `realms`、也不命中 `max_realm`；连字符不是边界字符，所以 `load-bearing` 在 `non-load-bearing` 里算命中 (连字符压缩本身就是要管的形态)。**不做词干还原 (stemming)**：要管的屈折形在词表里逐条写全 (`delve` / `delves` / `delving`)。
 - **长的先匹配**：一条是另一条的子串时，参与匹配的顺序按长度降序，同一处只算一次命中。
-- **全局豁免照常适用**：落在围栏代码块、行内代码、链接 destination / 裸 URL、含假名引用 span 里的文字不报也不改。
+- **全局豁免照常适用**：落在围栏代码块、行内代码、链接 destination / 裸 URL、含假名引用 span 里的文字不报也不改。英文词表尤其吃这一条 —— `realm`、`drift`、`spine` 这类词在标识符、路径与 URL 里极常见，它们落在行内代码或 URL 里就不是行文。
 - **词表为空** (整份文件只有注释与空行) 的规则永不报违规。
 
 ### 修复顺序
@@ -97,14 +101,14 @@ A1 / A3 / A4 / T1 的判定依赖词表 (wordlist)。词表与规则条目一样
 | 前缀 | 家族 | 当前 |
 | --- | --- | --- |
 | `R` | 中文排版 (typography)：字符宽度、空格、标点 | R1–R11 |
-| `A` | 中文 AI 腔 (AI tells)：套话、句式、黑话、聊天残留 | A1–A4 |
+| `A` | AI 腔 (AI tells)：套话、句式、黑话、聊天残留、英文 tell —— 中英文同一家族，规则不分语言 (ADR-0006 §五) | A1–A7 |
 | `T` | 术语选词 (terminology)：`wrong = right` 的词表替换 | T1 |
 
 ### 每条规则的三轴取值
 
 每条规则的条目在标题下有一行 `属性：<可修复性> · <严重度> · <成熟度>`，给出它的三轴取值。**R1–R11 全部是 fixable · error · stable**。
 
-**实验规则清单**：A1、A2、A3、A4、T1，全部 warning · experimental —— 其中 A1–A4 是 non-fixable，T1 是 fixable。它们默认不进启用集，只有 `enable_experimental = true` 才一次纳入 (见「配置」)。
+**实验规则清单**：A1、A2、A3、A4、A5、A6、A7、T1，全部 warning · experimental —— 其中 A1–A7 是 non-fixable，T1 是 fixable。它们默认不进启用集，只有 `enable_experimental = true` 才一次纳入 (见「配置」)。
 
 「默认关闭」是配置层的事实，与成熟度独立：R9 是 stable 的默认关闭规则 —— 关的理由是上游规范自标争议而不是误报率没验过，它照旧用 `enable` 打开，与 `enable_experimental` 无关。
 
@@ -556,6 +560,58 @@ $1,000           → 不变
 ```text
 希望这对你有帮助。                 → A4
 如果你还有其他问题，随时告诉我。     → A4 (命中两条，只报一处)
+```
+
+## A5：英文 AI 词汇
+
+属性：non-fixable · warning · experimental
+
+- **判定**：一行内出现 `spec/wordlists/A5.txt` 里的任一条 —— 通用 LLM 文风的高频英文词，如 `delve`、`tapestry`、`realm`、`seamless`、`underscore`。词表格式与匹配语义见「词表」：整词、大小写不敏感。
+- **一行只报一处**，与 A1 同理。
+- **规则不分语言** (ADR-0006 §五)：英文 tell 是 English-to-English 的，出现在中文文档里同样报，不做语言探测。
+- **词表只收在技术文档里没有正当技术含义的词**：`harness` (agent 的 harness)、`showcase` (产品页面的专名) 都是实词，2026-08-31 的 dogfood 上全是误报，不收 —— 理由记在 `A5.txt` 的注释里。
+- **不修复**：这类词该换成什么取决于它实际想说什么。
+
+```text
+We delve into the realm of seamless rollouts.  → A5 (命中三条，只报一处)
+The `delve` in `realm` is code, not prose.     → 不变 (行内代码豁免)
+See https://example.com/delve/ for details.    → 不变 (裸 URL 豁免)
+The realm_id column of the table.              → 不变 (整词匹配，`_` 是边界字符)
+```
+
+## A6：英文否定平行
+
+属性：non-fixable · warning · experimental
+
+- **判定**：同一行内出现下面两种形态之一，两段之间至多 40 个字符 (任何字符都算，含标点)：
+  1. `not just` … `but`；
+  2. 否定的系动词 … 肯定的系动词 —— 前者是 `it's not` / `that's not` / `they're not` / `is not` / `are not` / `was not` / `were not` / `isn't` / `aren't` / `wasn't` / `weren't`，后者是 `it's` / `that's` / `they're` / `it is` / `that is` / `they are`。
+- 两种形态都按整词匹配、大小写不敏感，直撇号 `'` 与弯撇号 `’` 等价。
+- **每个非重叠匹配各报一处**，与 A2 同规矩：**句式类规则 (A2 / A6) 逐处报** —— 每个句式各是一处独立违规；**词表类规则 (A1 / A3 / A4 / A5 / A7) 一行只报一处** —— 同类词成串出现，逐处报只会刷屏。
+- **不收 `not only … but also …`**：它在英文里是正常的正式行文，与 A2 不收「不仅 … 而且 …」同一个理由。
+- **不修复**：改写要重排整句，没有唯一修法。
+
+```text
+This is not just a linter, but a spec.       → A6
+It's not a detector, it's a rule floor.      → A6
+The point isn't the words — it's the shape.  → A6
+Not only fast but also correct.              → 不变 (not only … but also 不收)
+```
+
+## A7：Claudish 专用词
+
+属性：non-fixable · warning · experimental
+
+- **判定**：一行内出现 `spec/wordlists/A7.txt` 里的任一条 —— coding agent 文档的指纹，如 `load-bearing`、`gated on`、`spine`、`blast radius`。词表格式与匹配语义与 A5 相同，见「词表」。
+- **一行只报一处**，与 A1 同理。
+- **与 A5 分成两条**：A5 是通用 LLM 文风的指纹，A7 是 coding agent 文档的指纹 (`docs/research/claudish-and-ai-slop-survey.md` §2.1 B)。两支的误报来源不同，分开用户才能只关掉其中一支。
+- **词表只收没有别的正当技术含义的词**：`verdict` (PR 审查流程里的那个产物)、`fail-closed` (安全工程的标准术语) 在 dogfood 上全是误报，不收 —— 理由记在 `A7.txt` 的注释里。
+- **不修复**：与 A5 同理。
+
+```text
+This constraint is load-bearing.        → A7
+The release is gated on approval.       → A7
+Set `drift` in the `spine` table.       → 不变 (行内代码豁免)
 ```
 
 ## T1：术语选词

@@ -1,0 +1,51 @@
+# A5：英文 AI 词汇 (English AI vocabulary) —— 通用 LLM 文风的高频词。
+# 一行一条，全词匹配、大小写不敏感；`#` 开头是注释，空行忽略。
+# 格式与匹配语义的正本是 spec/rules.md「词表」与 A5 条目。
+#
+# 不做词干还原：要管的屈折形逐条写全 (delve / delves / delving)。
+# 不收广告腔 (in the heart of、nestled、boasts)：技术文档里几乎不出现，
+# 收了也验不到 (docs/research/claudish-and-ai-slop-survey.md §7.3)。
+#
+# 2026-08-31 的 dogfood 删掉两条 (理由见 ADR-0007 §五的同类记法)：
+#   harness / harnesses / harnessed / harnessing —— 114 份语料上命中 97
+#     处，全部指 agent 的 harness (Claude Code / Codex / Grok) 这个实词，
+#     与「harness the power of」的修辞用法同形，逐行判据分不开。
+#   showcase / showcases / showcasing —— 命中 2 处，都是产品页面的专名
+#     (Client Showcase)。
+
+delve
+delves
+delved
+delving
+tapestry
+tapestries
+realm
+realms
+seamless
+seamlessly
+underscore
+underscores
+underscored
+underscoring
+foster
+fosters
+fostered
+fostering
+testament
+pivotal
+robust
+robustly
+robustness
+leverage
+leverages
+leveraged
+leveraging
+unpack
+unpacks
+unpacked
+unpacking
+myriad
+intricate
+intricacies
+evolving landscape
+diverse array
