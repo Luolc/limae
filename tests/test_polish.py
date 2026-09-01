@@ -54,6 +54,8 @@ def test_claude_template_puts_the_spec_in_a_file_and_prose_on_stdin(
   ]
   assert invocation.stdin == TEXT
   assert invocation.output is None
+  # A preset runs away from whatever repository the user stands in.
+  assert invocation.cwd == tmp_path
   assert (tmp_path / engines.SPEC_FILENAME).read_text(encoding="utf-8") == SPEC
 
 
@@ -79,6 +81,7 @@ def test_codex_template_prepends_the_spec_and_reads_an_answer_file(
   assert invocation.stdin.startswith(SPEC)
   assert invocation.stdin.endswith(f"{engines.CODEX_SEPARATOR}\n{TEXT}")
   assert invocation.output == output
+  assert invocation.cwd == tmp_path
 
 
 def test_grok_template_passes_the_spec_and_the_prose_as_arguments(
@@ -96,6 +99,7 @@ def test_grok_template_passes_the_spec_and_the_prose_as_arguments(
       TEXT,
   ]
   assert invocation.stdin == ""
+  assert invocation.cwd == tmp_path
 
 
 def test_custom_command_substitutes_both_placeholders(tmp_path: pathlib.Path):
@@ -117,6 +121,9 @@ def test_custom_command_substitutes_both_placeholders(tmp_path: pathlib.Path):
   ]
   # The prose is an argument here, so stdin stays empty.
   assert invocation.stdin == ""
+  # A custom command keeps the caller's directory: its own relative
+  # paths mean what the user meant.
+  assert invocation.cwd is None
   assert spec_file.read_text(encoding="utf-8") == SPEC
 
 

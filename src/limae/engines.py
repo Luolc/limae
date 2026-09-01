@@ -186,11 +186,19 @@ class Invocation(typing.NamedTuple):
     stdin: What to write to the child's stdin.
     output: The file the child writes its answer to, for an engine that
       does not put it on stdout; None means stdout is the answer.
+    cwd: Where to run it. Every preset runs in the throwaway directory
+      the template's files live in, so that the repository the user
+      happens to stand in is not context for the rewrite — measured on
+      this machine 2026-09-01: run from a checkout, grok answers the
+      text as a request about that repository instead of rewriting it.
+      A ``custom`` command keeps the caller's directory, which is where
+      its own relative paths mean what the user meant.
   """
 
   argv: list[str]
   stdin: str
   output: pathlib.Path | None
+  cwd: pathlib.Path | None
 
 
 def home(env: Mapping[str, str]) -> pathlib.Path:
@@ -304,7 +312,7 @@ def _claude(
       "--model",
       model,
   ]
-  return Invocation(argv, text, None)
+  return Invocation(argv, text, None, workdir)
 
 
 def _codex(
@@ -341,10 +349,14 @@ def _codex(
       str(output),
       "-",
   ]
-  return Invocation(argv, f"{spec}\n\n{CODEX_SEPARATOR}\n{text}", output)
+  return Invocation(
+      argv, f"{spec}\n\n{CODEX_SEPARATOR}\n{text}", output, workdir
+  )
 
 
-def _grok(preset: Preset, model: str, spec: str, text: str) -> Invocation:
+def _grok(
+    preset: Preset, model: str, spec: str, text: str, workdir: pathlib.Path
+) -> Invocation:
   """Expand the ``grok`` template.
 
   Both the spec and the prose are arguments: ``--system-prompt-override``
@@ -363,6 +375,7 @@ def _grok(preset: Preset, model: str, spec: str, text: str) -> Invocation:
     model: The model to run.
     spec: The assembled prompt spec.
     text: The prose to rewrite.
+    workdir: Directory to run in, away from the user's repository.
 
   Returns:
     The command.
@@ -377,7 +390,7 @@ def _grok(preset: Preset, model: str, spec: str, text: str) -> Invocation:
       "-p",
       text,
   ]
-  return Invocation(argv, "", None)
+  return Invocation(argv, "", None, workdir)
 
 
 def _custom(
@@ -407,7 +420,7 @@ def _custom(
       for word in command
   ]
   on_stdin = not any(TEXT_PLACEHOLDER in word for word in command)
-  return Invocation(argv, text if on_stdin else "", None)
+  return Invocation(argv, text if on_stdin else "", None, None)
 
 
 def expand(
@@ -438,7 +451,7 @@ def expand(
   if engine == CODEX:
     return _codex(preset, model, spec, text, workdir)
   if engine == GROK:
-    return _grok(preset, model, spec, text)
+    return _grok(preset, model, spec, text, workdir)
   return _claude(preset, model, spec, text, workdir)
 
 
@@ -485,6 +498,7 @@ def _run(
         capture_output=True,
         text=True,
         env=dict(env),
+        cwd=invocation.cwd,
         timeout=timeout,
         check=False,
     )
