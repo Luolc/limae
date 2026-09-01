@@ -254,7 +254,7 @@ class Invocation(typing.NamedTuple):
   cwd: pathlib.Path | None
 
 
-class Probed(typing.NamedTuple):
+class Observed(typing.NamedTuple):
   """What an engine last did, as the cache remembers it.
 
   That is a probe's answer, or the state a real ``polish`` call observed
@@ -719,7 +719,7 @@ def probe(engine: str, env: Mapping[str, str]) -> str:
 
 
 def _cache_file(env: Mapping[str, str]) -> pathlib.Path:
-  """Return the file the chosen engine is remembered in.
+  """Return the file the engines' answers are remembered in.
 
   Args:
     env: The environment of the run.
@@ -759,14 +759,15 @@ def _entries(env: Mapping[str, str]) -> dict[str, dict[str, object]]:
   }
 
 
-def _cached(env: Mapping[str, str], now: float) -> dict[str, Probed]:
-  """Return each engine's probe answer from within its TTL.
+def _cached(env: Mapping[str, str], now: float) -> dict[str, Observed]:
+  """Return each engine's cached answer from within its TTL.
 
-  What is cached is one probe's answer per engine, never which engine
-  was chosen: the choice runs through the six steps of ADR-0008 section
-  三 on every run, so an answer cached outside a session cannot outrank
-  the session the user is in now (step 2). The cache only saves the
-  probe call itself.
+  What is cached is one answer per engine — a probe's, or the state a
+  failed real call observed (:func:`polish`) — never which engine was
+  chosen: the choice runs through the six steps of ADR-0008 section 三
+  on every run, so an answer cached outside a session cannot outrank the
+  session the user is in now (step 2). The cache only saves the model
+  call an answer would cost.
 
   Failures are cached too, or a broken engine ahead in the order would
   cost a real model call on every run — but only for
@@ -782,13 +783,13 @@ def _cached(env: Mapping[str, str], now: float) -> dict[str, Probed]:
     Engine name to its cached answer, holding only entries still inside
     their own TTL and whose CLI is still installed.
   """
-  fresh: dict[str, Probed] = {}
+  fresh: dict[str, Observed] = {}
   for name, entry in _entries(env).items():
     state = str(entry["state"])
     age = now - float(typing.cast(float, entry["at"]))
     ttl = CACHE_TTL if state == OK else FAILURE_CACHE_TTL
     if 0 <= age <= ttl and installed(name, env):
-      fresh[name] = Probed(state, age)
+      fresh[name] = Observed(state, age)
   return fresh
 
 
@@ -844,7 +845,7 @@ def _ago(age: float) -> str:
 def select(env: Mapping[str, str]) -> str:
   """Find an engine to polish with (ADR-0008 section 三 steps 2 to 6).
 
-  The ordering is recomputed every time; only the probe of step 5 is
+  The ordering is recomputed every time; only the answer of step 5 is
   ever served from the cache (:func:`_cached`). A diagnosis that came
   from the cache says so and says how to retry now, because the user who
   needs it most is the one who has just logged in.

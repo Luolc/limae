@@ -214,7 +214,7 @@ def test_select_skips_an_engine_that_exits_zero_without_answering(
 
 
 def test_the_cache_never_outranks_the_host_marker(tmp_path: pathlib.Path):
-  # What is cached is each engine's probe result, not which engine was
+  # What is cached is each engine's own answer, not which engine was
   # chosen: the ordering of ADR-0008 三 runs again every time, so the
   # session the user is in now still comes first (step 2).
   env = environment(tmp_path)
