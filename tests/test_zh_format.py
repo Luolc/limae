@@ -219,3 +219,58 @@ def test_non_cjk_skip_zh_units_is_a_config_error(
   monkeypatch.chdir(tmp_path)
   assert run(["t.md"], monkeypatch) == 2
   assert "must be a string of CJK characters" in capsys.readouterr().err
+
+
+def test_unknown_rule_id_in_a_directive_is_an_error(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  p = tmp_path / "t.md"
+  p.write_text("<!-- lo-md-lint-disable R99 -->\n你好,世界\n", encoding="utf-8")
+  assert run([str(p)], monkeypatch) == 2
+  assert "unknown rule id" in capsys.readouterr().err
+
+
+def test_ignore_file_skips_an_explicitly_listed_file(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+  (tmp_path / ".git").mkdir()
+  (tmp_path / ".lo-md-lint-ignore").write_text("vendor/\n", encoding="utf-8")
+  (tmp_path / "vendor").mkdir()
+  p = tmp_path / "vendor" / "t.md"
+  p.write_text("你好,世界\n", encoding="utf-8")
+  monkeypatch.chdir(tmp_path)
+  # Explicit, not --all: pre-commit passes the files it staged.
+  assert run(["--fix", "vendor/t.md"], monkeypatch) == 0
+  assert p.read_text(encoding="utf-8") == "你好,世界\n"
+
+
+def test_ignore_file_is_found_above_the_cwd(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+  (tmp_path / ".git").mkdir()
+  (tmp_path / ".lo-md-lint-ignore").write_text("*.md\n", encoding="utf-8")
+  sub = tmp_path / "sub"
+  sub.mkdir()
+  (sub / "t.md").write_text("你好,世界\n", encoding="utf-8")
+  monkeypatch.chdir(sub)
+  assert run(["t.md"], monkeypatch) == 0
+
+
+def test_ignore_file_negation_keeps_a_file(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  (tmp_path / ".git").mkdir()
+  (tmp_path / ".lo-md-lint-ignore").write_text(
+      "*.md\n!keep.md\n", encoding="utf-8"
+  )
+  (tmp_path / "skip.md").write_text("你好,世界\n", encoding="utf-8")
+  (tmp_path / "keep.md").write_text("你好,世界\n", encoding="utf-8")
+  monkeypatch.chdir(tmp_path)
+  assert run(["skip.md", "keep.md"], monkeypatch) == 1
+  out = capsys.readouterr().out
+  assert "keep.md:1" in out
+  assert "skip.md" not in out

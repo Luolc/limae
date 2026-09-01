@@ -1,0 +1,11 @@
+<!-- lo-md-lint-enable -->
+
+你好,世界与中文 English 混排
+
+<!-- lo-md-lint-enable R1 -->
+
+你好,世界与中文 English 混排
+
+<!-- lo-md-lint-disable R4 -->
+
+你好,世界与中文English混排

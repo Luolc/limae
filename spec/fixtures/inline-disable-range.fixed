@@ -1,0 +1,23 @@
+<!-- lo-md-lint-disable -->
+
+你好,世界
+
+<!-- lo-md-lint-enable -->
+
+你好，世界
+
+<!-- lo-md-lint-disable R4 -->
+
+中文English混排与你好，世界
+
+<!-- lo-md-lint-enable R4 -->
+
+中文 English 混排
+
+```text
+<!-- lo-md-lint-disable -->
+```
+
+你好，世界
+
+前文 <!-- lo-md-lint-disable --> 你好，世界

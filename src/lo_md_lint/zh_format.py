@@ -39,12 +39,18 @@ and the toml config found by :mod:`lo_md_lint.config` turn rules off and
 on. A disabled rule is neither reported nor fixed. The config's
 ``skip_zh_units`` key additionally tunes R5.
 
+Two escape hatches sit below the configuration: the inline directives of
+:mod:`lo_md_lint.directives` narrow the enabled set line by line, and the
+``.lo-md-lint-ignore`` file drops whole input files (both in
+:mod:`lo_md_lint.config`).
+
 Usage (from the repo root)::
 
   uv run lo-md-lint [--fix] [--disable R1,R3] FILE...
   uv run lo-md-lint --all [--fix]
 
-Exit code 0 = clean, 1 = violations found (in check mode), 2 = bad config.
+Exit code 0 = clean, 1 = violations found (in check mode), 2 = bad
+configuration or bad inline directive.
 """
 
 import argparse
@@ -55,7 +61,7 @@ import subprocess
 import sys
 import typing
 
-from lo_md_lint import config
+from lo_md_lint import config, directives
 
 CJK = "一-鿿"
 WORD = f"A-Za-z0-9{CJK}"
@@ -338,6 +344,25 @@ def _protected(lines: list[str]) -> list[list[tuple[int, int]] | None]:
       result[i] = []
   flush()
   return result
+
+
+def _rule_masks(
+    lines: list[str], protected: list[list[tuple[int, int]] | None]
+) -> list[frozenset[str]]:
+  """Return, per line, the rule ids inline directives switch off there.
+
+  Args:
+    lines: The Markdown source split into lines.
+    protected: The ``_protected`` result for those lines; its ``None``
+      entries are the verbatim lines, where a directive-shaped comment is
+      only code.
+
+  Returns:
+    One mask per line, to subtract from the run's enabled set.
+  """
+  return directives.rule_masks(
+      lines, [spans is None for spans in protected], ALL_RULES
+  )
 
 
 def _quote_spans(line: str) -> list[tuple[int, int]]:
@@ -686,7 +711,9 @@ def fix_text(
   """Return the text with formatting violations auto-fixed.
 
   Fenced code blocks and inline code spans are left untouched (code keeps
-  half-width punctuation).
+  half-width punctuation), and the inline directives of
+  :mod:`lo_md_lint.directives` narrow the enabled set line by line; an
+  unknown rule id in one raises ``directives.DirectiveError``.
 
   Args:
     text: Raw Markdown content.
@@ -701,11 +728,16 @@ def fix_text(
     paren into the closer of a link destination shifts the exempt
     ranges), so the pass repeats until the text is stable.
   """
+  enabled = frozenset(rules)
   while True:
     lines = text.split("\n")
+    protected = _protected(lines)
+    masks = _rule_masks(lines, protected)
     fixed = "\n".join(
-        line if spans is None else _fix_line(line, spans, rules, skip_zh_units)
-        for line, spans in zip(lines, _protected(lines), strict=True)
+        line
+        if spans is None
+        else _fix_line(line, spans, enabled - mask, skip_zh_units)
+        for line, spans, mask in zip(lines, protected, masks, strict=True)
     )
     if fixed == text:
       return text
@@ -719,6 +751,10 @@ def check_text(
 ) -> list[Finding]:
   """Check Markdown text and return its violations in reading order.
 
+  The inline directives of :mod:`lo_md_lint.directives` narrow the enabled
+  set line by line; an unknown rule id in one raises
+  ``directives.DirectiveError``.
+
   Args:
     text: Raw Markdown content.
     rules: The enabled rule ids; defaults to the default-enabled set.
@@ -729,19 +765,22 @@ def check_text(
     One ``Finding`` per violation, ordered by line then by rule id.
   """
   findings: list[Finding] = []
+  enabled = frozenset(rules)
   lines = text.splitlines()
-  for lineno, (line, code_spans) in enumerate(
-      zip(lines, _protected(lines), strict=True), 1
+  protected = _protected(lines)
+  for lineno, (line, code_spans, mask) in enumerate(
+      zip(lines, protected, _rule_masks(lines, protected), strict=True), 1
   ):
     if code_spans is None:
       continue
+    line_rules = enabled - mask
     exempt_spans = code_spans + _prose_spans(line, code_spans)
     unit_skips = _unit_skips(line, skip_zh_units)
     token_parens = {t.start() for t in ENGLISH_TOKEN_PAREN.finditer(line)}
     abbrev_dots = _abbrev_dots(line)
     line_findings: list[tuple[int, int, Finding]] = []
     for rule, name, pattern in CHECKS:
-      if rule not in rules:
+      if rule not in line_rules:
         continue
       for m in pattern.finditer(line):
         if _exempt(m, exempt_spans) or (
@@ -820,12 +859,26 @@ def tracked_markdown() -> list[pathlib.Path]:
   return [pathlib.Path(p) for p in out.stdout.splitlines()]
 
 
+def _fix_in_place(path: pathlib.Path, settings: config.Settings) -> None:
+  """Rewrite one file with its violations auto-fixed, if any change.
+
+  Args:
+    path: Markdown file to fix.
+    settings: The resolved configuration of this run.
+  """
+  src = path.read_text(encoding="utf-8")
+  dst = fix_text(src, settings.rules, settings.skip_zh_units)
+  if src != dst:
+    _ = path.write_text(dst, encoding="utf-8")
+    print(f"fixed: {path}")
+
+
 def main() -> int:
   """Run the checker CLI.
 
   Returns:
     Process exit code: 0 when clean, 1 when violations were found, 2 when
-    the configuration is invalid.
+    the configuration or an inline directive is invalid.
   """
   ap = argparse.ArgumentParser()
   _ = ap.add_argument("files", nargs="*")
@@ -864,18 +917,19 @@ def main() -> int:
   )
   if not paths:
     ap.error("no files given (use --all or list files)")
+  paths = config.not_ignored(paths, pathlib.Path.cwd())
 
   all_problems: list[str] = []
   for path in paths:
-    if args.fix:
-      src = path.read_text(encoding="utf-8")
-      dst = fix_text(src, settings.rules, settings.skip_zh_units)
-      if src != dst:
-        _ = path.write_text(dst, encoding="utf-8")
-        print(f"fixed: {path}")
-    all_problems.extend(
-        check_file(path, settings.rules, settings.skip_zh_units)
-    )
+    try:
+      if args.fix:
+        _fix_in_place(path, settings)
+      all_problems.extend(
+          check_file(path, settings.rules, settings.skip_zh_units)
+      )
+    except directives.DirectiveError as e:
+      print(f"directive error: {path}:{e}", file=sys.stderr)
+      return 2
 
   if all_problems:
     print("\n".join(all_problems))
