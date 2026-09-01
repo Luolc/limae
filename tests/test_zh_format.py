@@ -3,7 +3,7 @@ import sys
 
 import pytest
 
-from lo_md_lint import zh_format
+from lo_md_lint import wordlists, zh_format
 
 
 # The rule behaviour itself lives in the language-agnostic golden set; see
@@ -270,18 +270,18 @@ def test_bad_severity_value_is_a_config_error(
 
 
 def test_enable_experimental_joins_the_experimental_rules(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ):
-  # No rule is experimental today; pretend R9 is, to exercise the key.
-  monkeypatch.setattr(zh_format, "EXPERIMENTAL_RULES", frozenset({"R9"}))
   (tmp_path / "lo-md-lint.toml").write_text(
       "enable_experimental = true\n", encoding="utf-8"
   )
-  p = tmp_path / "t.md"
-  p.write_text("前文[链接](https://example.com/)\n", encoding="utf-8")
+  (tmp_path / "t.md").write_text("综上所述，这条路走不通。\n", encoding="utf-8")
   monkeypatch.chdir(tmp_path)
-  assert run(["--fix", "t.md"], monkeypatch) == 0
-  assert p.read_text(encoding="utf-8") == "前文 [链接](https://example.com/)\n"
+  # The experimental rules are warnings, so the run still passes.
+  assert run(["t.md"], monkeypatch) == 0
+  assert "t.md:1: warning: [A1 formulaic phrase]" in capsys.readouterr().out
 
 
 def test_experimental_id_in_enable_is_a_config_error(
@@ -289,9 +289,8 @@ def test_experimental_id_in_enable_is_a_config_error(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ):
-  monkeypatch.setattr(zh_format, "EXPERIMENTAL_RULES", frozenset({"R9"}))
   (tmp_path / "lo-md-lint.toml").write_text(
-      'enable = ["R9"]\n', encoding="utf-8"
+      'enable = ["A1"]\n', encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
   monkeypatch.chdir(tmp_path)
@@ -366,3 +365,13 @@ def test_ignore_file_negation_keeps_a_file(
   out = capsys.readouterr().out
   assert "keep.md:1" in out
   assert "skip.md" not in out
+
+
+def test_wordlists_load_from_the_packaged_spec_directory():
+  # src/lo_md_lint/wordlists is a symlink to spec/wordlists; the phrases
+  # and terms must be readable through the installed package either way.
+  assert "综上所述" in wordlists.phrases("A1")
+  assert not [p for p in wordlists.phrases("A1") if p.startswith("#")]
+  assert [t for t in wordlists.terms() if t.wrong == "代币"] == [
+      wordlists.Term("代币", "令牌", ("token", "OAuth", "JWT", "鉴权", "认证"))
+  ]
