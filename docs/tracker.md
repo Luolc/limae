@@ -9,7 +9,7 @@ backlog 的正本，由 `mdlint-orchestra` 在合入后记账 (全局守则「�
 - **裸日文段落的语言探测 (P2)**：v0.3.1 只豁免了含假名的引用 span (`spec/rules.md`「全局豁免」第 4 条)，没有括号包裹的裸日文段落照旧按中文排版规则处理；要不要按行 / 按段探测日文并整体豁免，待有实际需求再定案。现象：不在「」『』《》内的裸日文专名 (如自造例 `サンプルIT推進部` 这种形态) 仍被 R4 报并插空格；消费方 wealth-management 2026-08-31 反馈，非阻塞，wm 暂以给专名补「」规避。单点逃生口已有：v0.5.0 的行内指令 `<!-- lo-md-lint-disable-next-line R4 -->` (`spec/rules.md`「行内指令」，黄金 case `inline-disable-next-line` 就带这个例子)。仍未定的候选修法 (wm 建议)：探测独立连续假名子串，跳过该子串邻接边界的 R4 (日文正字法本就不在 CJK–拉丁边界空格)；随其它规则改动一并走 spec 先行流程，不单独定案。
 - **`quote_style` 实现**：检测与转换，语义已在 `spec/rules.md`「规划中的键」定案，新规则 id 届时分配。
 - **`quote_style` majority 档**：仿 pyink majority-quotes，按文档内多数引号风格统一，作 corner / curly 之外的第三档。
-- **规则 fixable / non-fixable 分级**：non-fixable 规则当 warning 报告，学 ruff 的 fixable 标注。
+- **ADR-0006 三轴分级落地**：把可修复性 / 严重度 / 成熟度三轴标注与两个配置键 (`severity` 表、`enable_experimental` 布尔) 落进 `spec/rules.md` 与实现 (`docs/adr/0006-rule-grading-fixability-severity-experimental.md`)；spec「配置错误」清单同步加三条 (`severity` 未知 id 与非法取值、experimental id 出现在 `enable` 键或 `--enable` flag、`enable_experimental` 非布尔)。R1–R11 全是 fixable + error + stable，零行为变化。
 
 ## 实现与分发
 
