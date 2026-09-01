@@ -1,4 +1,15 @@
 repos:
+  # Credential scan, and the only hook here that guards a repository-wide
+  # red line rather than a style: no credential may ever enter this public
+  # repository's history (AGENTS.md 「隐私边界」). It scans the staged
+  # content, not the history — history is what has already got away, and a
+  # scan of it passes the token that is being committed right now.
+  # `--redact` keeps a hit's own value out of the terminal and out of any
+  # session log, which is the same rule the scan enforces.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.7
     hooks:
