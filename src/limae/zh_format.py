@@ -93,7 +93,7 @@ import subprocess
 import sys
 import typing
 
-from limae import config, directives, wordlists
+from limae import config, directives, polish, wordlists
 
 CJK = "一-鿿"
 WORD = f"A-Za-z0-9{CJK}"
@@ -1248,11 +1248,20 @@ def _fix_in_place(path: pathlib.Path, settings: config.Settings) -> None:
 def main() -> int:
   """Run the checker CLI.
 
+  ``limae polish`` is dispatched to :mod:`limae.polish`; every other
+  invocation is the checker, whose exit codes are unchanged. The other
+  two subcommands of ADR-0008 section 二 (``check`` and ``format``) are
+  not split out yet, so the bare form is still the checker.
+
   Returns:
     Process exit code (``spec/rules.md`` section 「退出码」): 0 when clean
     or only warnings remain, 1 when an error-level violation was found,
-    2 when the configuration or an inline directive is invalid.
+    2 when the configuration or an inline directive is invalid. The
+    ``polish`` subcommand brings its own (:func:`limae.polish.main`).
   """
+  if sys.argv[1:2] == [polish.SUBCOMMAND]:
+    return polish.main(sys.argv[2:])
+
   ap = argparse.ArgumentParser()
   _ = ap.add_argument("files", nargs="*")
   _ = ap.add_argument("--all", action="store_true")

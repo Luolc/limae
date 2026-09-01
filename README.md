@@ -136,6 +136,34 @@ docs/generated/*.md
 !docs/generated/index.md
 ```
 
+### LLM 语义润色 (`limae polish`)
+
+`limae polish -` 从 stdin 读一段文本，交给一个**本机已登录的 CLI** 改写，把结果写 stdout。它与 `check` / `--fix` 是两段不同的东西 (ADR-0005 §四、ADR-0008 §二)：排版由规则确定性地修，语义由模型改写，两段互不触发；`polish` 永远不进 CI 的 required check。
+
+```sh
+uv run limae polish - < draft.md > polished.md
+cat draft.md | uv run limae polish - --engine codex
+```
+
+润色 prompt 是两层 (ADR-0008 §九)：通用层 `spec/polish/general.md` (英文) 加每种语言一份用该语言写的层 (中文是 `spec/polish/zh.md`)，输入里有中文就自动叠上中文那层。两份都在 `spec/` 下，跟规则规范一样可以整体替换。词表不进 prompt (ADR-0007)。
+
+引擎在 `[polish]` 表里配，键三个：
+
+```toml
+[polish]
+engine = "auto"    # auto | claude | codex | grok | custom
+model = ""         # 留空 = 该预设自带的档
+command = []       # engine = "custom" 时的完整命令
+```
+
+- **`claude` / `codex` / `grok`** 各是一份内置的命令模板：本工具不自建 HTTP 请求、不解析任何一家的凭证，只调你已经登录的那个 CLI。
+- **`custom`** 是逃生口：自建服务、公司网关、自写脚本都用一条完整命令接进来，`{spec_file}` 会被换成拼好的 prompt 文件路径、`{text}` 换成正文；命令里没有 `{text}` 时正文走 stdin。
+- **`auto`** (默认) 按 ADR-0008 §三 的六步找引擎：`LIMAE_ENGINE` 指定的直接用 → 正跑在谁的会话里就先探谁 → 二进制不存在直接出局 (唯一的硬否定) → 凭证线索只用来排序 (只判存在性，不读值) → 依次探活、第一个答上来的用、结果按 TTL 缓存 → 全失败就逐引擎报诊断 (未安装 / 凭证失效 / 未发现凭证 / 网络不可达)，每种给下一步。
+
+`--engine` 与 `--model` 覆盖配置，`--engine` 也覆盖 `LIMAE_ENGINE`。失败一律非零退出并说清哪一步失败 (ADR-0008 §六)；诊断只说状态，不回显引擎的任何输出。
+
+**还没做的**：hook 形态与 A/B 采集、文件参数与 `--diff` / `--check`、改写前后的结构不变量核对 (ADR-0008 §七、§八、§十)。
+
 ## 本地开发
 
 ```sh
@@ -144,5 +172,6 @@ uv run pre-commit install        # 装本地钩子 (只需一次)
 uv run limae --all               # 检查全部 tracked Markdown
 uv run limae --all --fix         # 自动修复大部分违规后复查
 uv run limae <file>...           # 检查指定文件
+uv run limae polish - < draft.md # 用 LLM 润色一段文本 (stdin 进、stdout 出)
 uv run pytest -q                 # 测试
 ```
