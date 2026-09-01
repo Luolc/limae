@@ -92,6 +92,7 @@ def rule_masks(
       pending = frozenset()
       continue
     ids = _ids(match.group(2), known, line)
+    pending = frozenset()  # a directive line does not consume the previous one
     if match.group(1) == "disable":
       off |= ids
     elif match.group(1) == "enable":
