@@ -27,11 +27,14 @@
 CI (`.github/workflows/ci.yml`，required check 名为 `check`) 在 PR 与 main 上跑同一套检查；本地就是这两条：
 
 ```sh
-uv run pre-commit run --all-files   # ruff + pyink + isort + basedpyright + pydoclint + uv-lock + 用本仓 linter lint 本仓的 Markdown
+uv run pre-commit run --all-files   # gitleaks + ruff + pyink + isort + basedpyright + pydoclint + uv-lock + 用本仓 linter lint 本仓的 Markdown
 uv run pytest -q                    # 测试套件 (含对 `spec/fixtures/` 黄金集的比对)
 ```
 
 - 首次 clone 后先 `uv run pre-commit install`：钩子是本地状态，不随仓库分发，漏装则 commit 无任何拦截。
+- **凭证扫描 (gitleaks) 是这里唯一守红线而不是守风格的钩子** (见「隐私边界」)：别的检查上跳过一次只是欠一次格式，这一环上跳过一次就是让凭证有机会进这个 public 仓。`--no-verify` 会跳过全部 hooks，包括 gitleaks；如确需使用，必须在提交前 (文件已暂存后) 手工执行 `gitleaks git --staged --redact --no-banner --verbose .`。机器限频、钩子跑得慢的时候尤其要记得这一步 —— 机制不会替你拦住，这条只能靠人执行。
+- 它扫的是**暂存区** (`--staged`)，也就是正要提交的这份内容：扫历史看不见它，而历史里的凭证已经跑掉了，只剩轮换与清史。命中时 `--redact` 只打印规则名与文件行号，不把命中的值打进终端或会话记录 —— 这正是全局守则「验证凭证只看存在与长度」的机械化。版本钉在 `.pre-commit-config.yaml` 的 `rev`，pre-commit 用 Go 从源码装：首次约两分钟，之后每次约 2 秒。**升这个 `rev` 时必须重新核对上游 entry 仍带 `--staged`**：entry 会随 tag 变，`--staged` 一旦丢掉，钩子就退化成扫历史 —— 而扫历史看不见刚 `git add` 的 token，绿得像样却什么也没防住，正是这套配置要堵的那个洞。
+- CI 的 `Credential scan` 那一步是同一把扫描的另一半：CI 没有暂存区，它改扫已经落进历史的内容 (整份 clone，`fetch-depth: 0`)，兜住漏装钩子、或绕过钩子推上来的分支。它的版本与校验和跟 `.pre-commit-config.yaml` 的 `rev` 一起动，两处必须同版本。
 - 本仓用自己的 linter 检查自己的 Markdown (dogfooding)。规则一改、文档标红时，先判断是文档错还是规则错，按全局守则「linter 是工具，不是法律」处理：规则错就改规则与 `spec/` 下的规范和黄金集，不改文档迁就。
 
 ## 合并
