@@ -17,8 +17,8 @@ choice wins outright; a host CLI's own session variable puts that engine
 first; a missing binary is the only hard negative; credential traces only
 sort, because an API key with a custom base URL leaves none of the traces
 this module knows; the first engine that answers a probe wins, and the
-answer is cached with a TTL; when every engine fails, each one is
-diagnosed separately.
+answer is cached with a TTL that the next failed call cuts short; when
+every engine fails, each one is diagnosed separately.
 
 Credentials are only ever tested for existence. No credential value
 reaches a log, an error message, a diagnostic or a test: a child
@@ -53,15 +53,33 @@ PROBE_SPEC = f"Reply with this marker and nothing else: {PROBE_MARKER}"
 PROBE_INPUT = "probe"
 PROBE_TIMEOUT = 90.0
 RUN_TIMEOUT = 600.0
-# How long a probe's answer is trusted (step 5). The two directions get
-# different TTLs because their costs are not symmetric: a stale success
-# only makes one run fail — the CLI reports it, the hook form will fall
-# back to the original text, and `auto` moves on to the next engine — but
-# a stale failure makes the whole feature unusable for the window, and it
-# lands exactly on the user who has just logged in. So a failure is
-# forgotten quickly, and only the results that cost a real model call are
-# remembered at all (`command -v` is free to redo, so a missing binary is
-# never written down).
+# How long an answer about an engine is trusted (step 5). A cached
+# answer is a claim about the future, and the two directions claim
+# opposite things. An OK is a permit — "this engine will still work" —
+# and that flip, working to broken, can happen in an instant: the login
+# expires, a quota runs out, a rate limit lands. A failure is a veto —
+# "this engine still will not work" — and undoing it normally takes a
+# person: a login, a config change, a new key. The veto's direction is
+# the slower one.
+#
+# The bound on a TTL is min(how fast that direction can flip, how long
+# it takes us to notice a flip). `polish` writes the state it observes
+# back into the cache on every failed call, so an OK is re-checked by
+# every use made of it and the detection delay for a permit is one call:
+# CACHE_TTL is then an upper bound on how long a stale permit can
+# survive, not a promise that the engine is alive for the hour. Without
+# that self-correction the nominal value would also be the effective
+# one, and an hour of permit against a flip that takes an instant is
+# indefensible on any argument. A veto gets no such correction — nothing
+# re-runs an engine that is being skipped — so its whole TTL is
+# detection delay, and FAILURE_CACHE_TTL has to be short by itself. That
+# a stale veto also hurts more (it costs the feature entirely, and lands
+# on the user who has just logged in, while a stale permit costs one
+# reported failure) is a consequence of the same asymmetry, not the
+# reason for it.
+#
+# Only what cost a real model call is remembered at all: `command -v` is
+# free to redo, so a missing binary is never written down.
 CACHE_TTL = 3600.0
 FAILURE_CACHE_TTL = 300.0
 CACHE_DIRECTORY = "limae"
@@ -237,10 +255,13 @@ class Invocation(typing.NamedTuple):
 
 
 class Probed(typing.NamedTuple):
-  """One engine's cached probe answer.
+  """What an engine last did, as the cache remembers it.
+
+  That is a probe's answer, or the state a real ``polish`` call observed
+  when it failed (see :func:`polish`).
 
   Attributes:
-    state: What that probe found — ``OK`` or one of the diagnoses.
+    state: What was found — ``OK`` or one of the diagnoses.
     age: How long ago it was found, in seconds; a diagnosis says this
       out loud so that a user who has just logged in knows why the
       answer has not changed yet.
@@ -654,6 +675,15 @@ def polish(
     invocation = expand(engine, model, spec, text, workdir, command)
     state, answer = _run(invocation, _child_env(engine, env, workdir), timeout)
   if state != OK:
+    # This call is the check that keeps a cached OK honest (see
+    # CACHE_TTL): an engine that has just failed for real is not still
+    # "answered the probe", whatever the cache says, so the failure is
+    # written over it and the next run picks another engine instead of
+    # failing the same way for the rest of the hour. A `custom` command
+    # is nobody's cached engine, and a missing binary is never written
+    # down.
+    if engine in PRESETS and state != MISSING:
+      _remember(engine, state, env, time.time())
     raise EngineError(f"engine {engine}: {state} — {NEXT_STEP[state]}")
   return answer.strip() + "\n"
 
@@ -740,9 +770,9 @@ def _cached(env: Mapping[str, str], now: float) -> dict[str, Probed]:
 
   Failures are cached too, or a broken engine ahead in the order would
   cost a real model call on every run — but only for
-  ``FAILURE_CACHE_TTL``, because a stale failure is the more expensive
-  mistake of the two (see there). Their age is carried out with them so
-  that a diagnosis can say how old it is.
+  ``FAILURE_CACHE_TTL``, because nothing re-checks a veto the way the
+  next real call re-checks a permit (see ``CACHE_TTL``). Their age is
+  carried out with them so that a diagnosis can say how old it is.
 
   Args:
     env: The environment of the run.
@@ -765,15 +795,18 @@ def _cached(env: Mapping[str, str], now: float) -> dict[str, Probed]:
 def _remember(
     engine: str, state: str, env: Mapping[str, str], now: float
 ) -> None:
-  """Remember one engine's probe result until the TTL runs out.
+  """Remember what one engine last did, until the TTL runs out.
 
-  The other engines' entries are kept as they are. A cache that cannot
-  be written changes nothing but the cost of the next run, so the
-  failure is not reported.
+  Both a probe and a failed real call write here; the second is what
+  keeps a remembered ``OK`` from outliving the engine (see
+  ``CACHE_TTL``). Whatever is written replaces that engine's entry, TTL
+  included, and the other engines' entries are kept as they are. A cache
+  that cannot be written changes nothing but the cost of the next run,
+  so the failure is not reported.
 
   Args:
-    engine: The engine that was probed.
-    state: What the probe found.
+    engine: The engine that was probed or called.
+    state: What was found.
     env: The environment of the run.
     now: The current time, in seconds since the epoch.
   """
@@ -788,19 +821,23 @@ def _remember(
 
 
 def _ago(age: float) -> str:
-  """Say how long ago a cached probe ran, for a diagnosis.
+  """Say how old a cached answer is, for a diagnosis.
+
+  The answer may have come from a probe or from a real call that failed
+  (:func:`polish`), so the phrase says when it was found and not what
+  found it.
 
   Args:
-    age: Seconds since that probe.
+    age: Seconds since that answer.
 
   Returns:
     A phrase to put after the diagnosis.
   """
   minutes = int(age // 60)
   return (
-      "probed under a minute ago"
+      "last checked under a minute ago"
       if minutes < 1
-      else (f"probed {minutes} minute(s) ago")
+      else (f"last checked {minutes} minute(s) ago")
   )
 
 
@@ -855,7 +892,7 @@ def select(env: Mapping[str, str]) -> str:
   ]
   if stale:
     message.append(
-        "some of these are remembered probes, not fresh ones; to retry"
+        "some of these are remembered answers, not fresh ones; to retry"
         " right now, name the engine with --engine, or delete"
         f" {_cache_file(env)}"
     )
