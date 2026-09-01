@@ -371,6 +371,8 @@ def test_wordlists_load_from_the_packaged_spec_directory():
   # src/lo_md_lint/wordlists is a symlink to spec/wordlists; the phrases
   # and terms must be readable through the installed package either way.
   assert "综上所述" in wordlists.phrases("A1")
+  assert "testament" in wordlists.phrases("A5")
+  assert "load-bearing" in wordlists.phrases("A7")
   assert not [p for p in wordlists.phrases("A1") if p.startswith("#")]
   assert [t for t in wordlists.terms() if t.wrong == "代币"] == [
       wordlists.Term("代币", "令牌", ("token", "OAuth", "JWT", "鉴权", "认证"))

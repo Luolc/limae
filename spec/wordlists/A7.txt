@@ -1,0 +1,41 @@
+# A7：Claudish 专用词 (coding-agent register) —— coding agent 文档的指纹，
+# 与 A5 的通用 slop 指纹不是同一类 (调研 §2.1 B)。
+# 一行一条，全词匹配、大小写不敏感；`#` 开头是注释，空行忽略。
+# 格式与匹配语义的正本是 spec/rules.md「词表」与 A7 条目。
+#
+# 词源：Deng 的 claudish-to-english / english-to-claudish spec 点名的
+# high-signal 词，加 archiewood/claudeisms 与 louisabraham/load-bearing
+# 两份语料里的头部词 (调研 §1.4)。收词自检与 A5 的同一条，见 A5.txt。
+#
+# **这张表当前只有一条。** 三轮自检下来，Deng 那份 high-signal 清单上的
+# 词绝大多数都造得出常规技术行文 —— 它们本来就是正当的技术词，spec 自己
+# 也说「不要机械换词典」。剩下 load-bearing 一条：软件文档里它没有本义
+# (本义属建筑)，造不出无修辞意图的句子；它也是这批里唯一有频次实测的词
+# (claudeisms 相对频率 >7,500 倍；louisabraham 的 PR 词簇分析里是代表词)。
+# 一条词的表照留不凑数，第三批用真实语料长。
+#
+# ## 按自检删掉的词 (括号里是那句造得出来的常规技术行文)
+#
+#   gated on / approval-gated / owner-gated / quality-gated / hard gate /
+#     hard boundary / hard stop —— 「Merge is gated on approval from the
+#     maintainer.」「The network policy defines a hard boundary.」
+#     **Deng 的 spec 自己把 `gate` 与 `boundary` 列进「明确不是禁词」那
+#     一行** (调研 §1.4)：CI 的 gate、网络策略的 boundary 都是正当技术
+#     描述。整族不收。
+#   the key distinction —— 「The key distinction between fixable and
+#     non-fixable rules is whether --fix rewrites text.」
+#   the deeper point / the honest take / the honest answer /
+#     the cleanest way / that distinction matters —— 同类，都造得出，如
+#     「The honest answer is that we have not measured it yet.」
+#   belt-and-suspenders —— 「The retry plus the timeout is
+#     belt-and-suspenders, but cheap.」
+#   smoking gun —— 「We found the smoking gun in the logs.」排障文章里的
+#     日常成语。
+#   verdict —— PR 审查流程里的那个产物 (`Verdict: LGTM`)；命中 36 处。
+#   fail-closed —— 安全工程的标准术语；命中 3 处。
+#   drift / landed / cleanly / spine —— configuration drift、patch
+#     landed、exits cleanly、spine-leaf 拓扑。
+#   surfaced / surfacing / surface the / shape the —— 日常动词用法。
+#   blast radius / blast-radius —— SRE 的标准术语 (改动的影响范围)。
+
+load-bearing

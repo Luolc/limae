@@ -32,12 +32,20 @@ Rules:
     characters.
   A3 (experimental): A corporate buzzword listed in the wordlist.
   A4 (experimental): Chat residue listed in the wordlist.
+  A5 (experimental): An English AI-vocabulary word listed in the
+    wordlist, matched as a whole word, case-insensitively.
+  A6 (experimental): English negative parallelism — ``not just X, but
+    Y`` or a negated copula answered by an affirmative one — within 40
+    characters.
+  A7 (experimental): A Claudish register word listed in the wordlist,
+    matched the same way as A5.
   T1 (experimental): A wrong term listed in the wordlist, on a line
     carrying one of that entry's context anchors.
 
 The A and T families read their wordlists from ``spec/wordlists/`` through
-:mod:`lo_md_lint.wordlists`; A1 / A3 / A4 report at most one violation per
-line, T1 one per occurrence.
+:mod:`lo_md_lint.wordlists`; the wordlist rules (A1 / A3 / A4 / A5 / A7)
+report at most one violation per line, the sentence-shape rules (A2 / A6)
+and T1 one per occurrence.
 
 Fenced code blocks and inline code spans (CommonMark backtick runs, which
 may cross line breaks inside a paragraph but not block boundaries) are
@@ -54,7 +62,7 @@ on. A disabled rule is neither reported nor fixed. The config's
 「规则属性」 — fixability, default severity, maturity — one entry per rule
 and nowhere else. The ``severity`` config key overrides the default
 severity per rule, ``enable_experimental`` joins the experimental rules
-into the enabled set: R1-R11 are fixable · error · stable, A1-A4 and T1
+into the enabled set: R1-R11 are fixable · error · stable, A1-A7 and T1
 warning · experimental.
 
 Two escape hatches sit below the configuration: the inline directives of
@@ -202,26 +210,88 @@ BLOCK_START = re.compile(
 QUOTE_LINE = re.compile(r"^ {0,3}>")
 
 
-def _phrase_pattern(rule: str) -> re.Pattern[str]:
-  """Return the literal-substring pattern of one line-oriented wordlist.
+# The word boundary of the English wordlists (A5 / A7): a listed entry is
+# only a hit as a whole word. `-` is deliberately not a boundary character
+# — hyphen compression is itself Claudish, so `non-load-bearing` counts —
+# while `_` is, so a snake_case identifier outside a code span does not.
+EN_LEFT = "(?<![A-Za-z0-9_])"
+EN_RIGHT = "(?![A-Za-z0-9_])"
+NEVER = "(?!)"
+
+
+def _alternation(rule: str) -> str:
+  """Return one wordlist as an escaped alternation, longest first.
 
   Args:
     rule: The rule id, which is also the wordlist's file stem.
 
   Returns:
-    An alternation of the listed phrases, longest first so no phrase
-    shadows a longer one; a never-matching pattern for an empty wordlist.
+    The listed entries joined by ``|``, longest first so no entry
+    shadows a longer one; the empty string for an empty wordlist.
   """
   listed = sorted(wordlists.phrases(rule), key=len, reverse=True)
-  return re.compile("|".join(re.escape(p) for p in listed) or "(?!)")
+  return "|".join(re.escape(p) for p in listed)
+
+
+def _phrase_pattern(rule: str) -> re.Pattern[str]:
+  """Return the literal-substring pattern of one Chinese wordlist.
+
+  Args:
+    rule: The rule id, which is also the wordlist's file stem.
+
+  Returns:
+    An alternation of the listed phrases; a never-matching pattern for an
+    empty wordlist.
+  """
+  return re.compile(_alternation(rule) or NEVER)
+
+
+def _word_pattern(rule: str) -> re.Pattern[str]:
+  """Return the whole-word pattern of one English wordlist.
+
+  Args:
+    rule: The rule id, which is also the wordlist's file stem.
+
+  Returns:
+    An alternation of the listed entries, matched case-insensitively
+    between word boundaries; a never-matching pattern for an empty
+    wordlist.
+  """
+  alternation = _alternation(rule)
+  if not alternation:
+    return re.compile(NEVER)
+  return re.compile(f"{EN_LEFT}(?:{alternation}){EN_RIGHT}", re.IGNORECASE)
 
 
 # A2: 不是 … 而是 …, at most 20 characters apart, punctuation included.
 # The progressive 不仅 … 更 … is normal Chinese prose and not collected.
 NEGATIVE_PARALLEL = re.compile("不是.{0,20}?而是")
-# A1 / A3 / A4 fire at most once per line: these phrases come in clusters
-# and one finding per occurrence would just flood the report.
-ONCE_PER_LINE = frozenset({"A1", "A3", "A4"})
+# A6: the two English negative-parallel shapes, at most 40 characters
+# apart. `not only … but also …` is ordinary formal English and not
+# collected, the same call A2 makes about the progressive 不仅 … 更 ….
+APOSTROPHE = "['\u2019]"
+NEGATED_COPULA = (
+    f"(?:(?:it|that){APOSTROPHE}s|they{APOSTROPHE}re|is|are|was|were)"
+    f"\\s+not|(?:is|are|was|were)n{APOSTROPHE}t"
+)
+AFFIRMED_COPULA = (
+    f"(?:it|that){APOSTROPHE}s|they{APOSTROPHE}re"
+    "|(?:it|that)\\s+is|they\\s+are"
+)
+NOT_JUST_BUT = re.compile(
+    f"{EN_LEFT}not\\s+just{EN_RIGHT}.{{0,40}}?{EN_LEFT}but{EN_RIGHT}",
+    re.IGNORECASE,
+)
+NEGATIVE_PARALLEL_EN = re.compile(
+    f"{EN_LEFT}(?:{NEGATED_COPULA}){EN_RIGHT}"
+    f".{{0,40}}?{EN_LEFT}(?:{AFFIRMED_COPULA}){EN_RIGHT}",
+    re.IGNORECASE,
+)
+# The wordlist rules fire at most once per line: listed words come in
+# clusters and one finding per occurrence would just flood the report.
+# The sentence-shape rules (A2 / A6) report every match — each shape is
+# its own violation.
+ONCE_PER_LINE = frozenset({"A1", "A3", "A4", "A5", "A7"})
 # T1: one pattern per wordlist entry, so the findings of one line stay
 # ordered by position and each maps to its own fix.
 TERMS: tuple[wordlists.Term, ...] = wordlists.terms()
@@ -263,6 +333,10 @@ CHECKS = [
     ("A2", "A2 negative parallelism", NEGATIVE_PARALLEL),
     ("A3", "A3 corporate buzzword", _phrase_pattern("A3")),
     ("A4", "A4 chat residue", _phrase_pattern("A4")),
+    ("A5", "A5 English AI vocabulary", _word_pattern("A5")),
+    ("A6", "A6 English negative parallelism", NOT_JUST_BUT),
+    ("A6", "A6 English negative parallelism", NEGATIVE_PARALLEL_EN),
+    ("A7", "A7 Claudish register", _word_pattern("A7")),
     *(
         ("T1", f"T1 term {term.wrong} -> {term.right}", pattern)
         for pattern, term in TERM_PATTERNS.items()
@@ -292,9 +366,10 @@ class RuleGrade(typing.NamedTuple):
 
 
 # Every rule id of spec/rules.md with its three axes: the R family (中文
-# 排版) is fixable · error · stable, the A family (中文 AI 腔) and T family
-# (术语选词) are warning · experimental, so they stay out of the enabled
-# set until `enable_experimental` joins them in.
+# 排版) is fixable · error · stable, the A family (AI 腔, Chinese and
+# English alike) and T family (术语选词) are warning · experimental, so
+# they stay out of the enabled set until `enable_experimental` joins them
+# in.
 GRADES: dict[str, RuleGrade] = {
     "R1": RuleGrade(True, config.ERROR, False),
     "R2": RuleGrade(True, config.ERROR, False),
@@ -311,6 +386,9 @@ GRADES: dict[str, RuleGrade] = {
     "A2": RuleGrade(False, config.WARNING, True),
     "A3": RuleGrade(False, config.WARNING, True),
     "A4": RuleGrade(False, config.WARNING, True),
+    "A5": RuleGrade(False, config.WARNING, True),
+    "A6": RuleGrade(False, config.WARNING, True),
+    "A7": RuleGrade(False, config.WARNING, True),
     "T1": RuleGrade(True, config.WARNING, True),
 }
 

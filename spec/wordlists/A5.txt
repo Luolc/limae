@@ -1,0 +1,50 @@
+# A5：英文 AI 词汇 (English AI vocabulary) —— 通用 LLM 文风的高频词。
+# 一行一条，全词匹配、大小写不敏感；`#` 开头是注释，空行忽略。
+# 格式与匹配语义的正本是 spec/rules.md「词表」与 A5 条目。
+#
+# 不做词干还原：要管的屈折形逐条写全。
+# 不收广告腔 (in the heart of、nestled、boasts)：技术文档里几乎不出现，
+# 收了也验不到 (docs/research/claudish-and-ai-slop-survey.md §7.3)。
+#
+# ## 收词自检 (每加一条词都要做，做不过就不收)
+#
+# 给这个词造一句**无修辞意图的常规技术行文**。造得出、读着自然，就不
+# 收；造不出才收。例：`underscores` 造得出「Use underscores in generated
+# field names.」，所以不收；`testament` 造不出，收。
+#
+# 这条自检替代不了逐行判据的根本限制：单点 tell 的假阳性本来就高 (调研
+# §2.4)，真正的判据是密度，而文档级 finding 的形制还没有 (ADR-0007 §三)。
+# 所以宁可词表短、真阳性密度高，也不要用户第一次打开就看到一屏误报。
+# 例外只有一条：专名不算「常规技术行文」—— 冷门或已停更产品叫这个名字
+# (Apache Tapestry、Pivotal Cloud Foundry) 不构成删词理由，否则任何词都
+# 能被某个产品名论证掉。
+#
+# ## 按这条自检删掉的词 (括号里是那句造得出来的常规技术行文)
+#
+#   delve / delves / delved / delving —— 「We delve into the parser in
+#     §3.」维基自己的 caveat 就说 delve 有人类先例 (调研 §2.1 A)，它是
+#     频次上的 tell 而不是词义上的。
+#   seamless / seamlessly —— 「The upgrade is seamless for existing
+#     users.」
+#   foster / fosters / fostered / fostering —— 「This fosters reuse
+#     across modules.」
+#   intricate / intricacies —— 「The intricacies of the locking protocol
+#     are documented in §4.」
+#   myriad —— 「The tool supports a myriad of formats.」
+#   underscore / underscores —— `_` 这个字符的名字：「Use underscores in
+#     generated field names.」
+#   underscored / underscoring —— 同上，还兼「加下划线」的意思。
+#   harness / harnesses / harnessed / harnessing —— agent 的 harness；
+#     114 份语料上命中 97 处，全是实词。
+#   showcase / showcases / showcasing —— 产品页面的专名；命中 2 处。
+#   realm / realms —— Keycloak / Kerberos / HTTP 认证的 realm。
+#   robust / robustly / robustness —— 工程上「健壮」的标准形容词。
+#   leverage / leverages / leveraged / leveraging —— 金融的杠杆 (名词)。
+#   unpack / unpacks / unpacked / unpacking —— 解包 (归档、元组)。
+
+tapestry
+tapestries
+testament
+pivotal
+evolving landscape
+diverse array
