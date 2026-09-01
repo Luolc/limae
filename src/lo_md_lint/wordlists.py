@@ -7,9 +7,11 @@ wordlist changes no code. ``src/lo_md_lint/wordlists`` is a directory
 symlink to that directory, which both the editable install and the built
 wheel resolve, so :mod:`importlib.resources` finds the files either way.
 
-``A1.txt`` / ``A3.txt`` / ``A4.txt`` are one phrase per line, ``#``
-comments and blank lines ignored; ``T1.toml`` is an ``entries`` array of
-``wrong`` / ``right`` / ``anchors`` tables.
+Every ``.txt`` wordlist is one phrase per line, ``#`` comments and blank
+lines ignored; ``T1.toml`` is an ``entries`` array of ``wrong`` /
+``right`` / ``anchors`` tables. The ``-allow`` files (``A8-allow.txt``,
+``T2-allow.txt``) have the same format and the opposite polarity: a hit
+there exempts rather than reports.
 """
 
 import importlib.resources
@@ -54,7 +56,8 @@ def phrases(rule: str) -> tuple[str, ...]:
   """Return the phrases of one line-oriented wordlist.
 
   Args:
-    rule: The rule id, which is also the file's stem (``A1``).
+    rule: The wordlist's file stem — a rule id (``A1``) for a wordlist,
+      the rule id plus ``-allow`` (``A8-allow``) for an allowlist.
 
   Returns:
     The listed phrases in file order, comments and blank lines dropped.
