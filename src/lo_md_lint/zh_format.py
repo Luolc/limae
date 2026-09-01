@@ -39,13 +39,18 @@ Rules:
     characters.
   A7 (experimental): A Claudish register word listed in the wordlist,
     matched the same way as A5.
+  A8 (experimental): A 零 + noun coinage — a 2-5 character Chinese run
+    opening with 零 that no allowlist entry covers.
   T1 (experimental): A wrong term listed in the wordlist, on a line
     carrying one of that entry's context anchors.
+  T2 (experimental): 秘密 used as a category term, which no allowlist
+    entry covers.
 
 The A and T families read their wordlists from ``spec/wordlists/`` through
 :mod:`lo_md_lint.wordlists`; the wordlist rules (A1 / A3 / A4 / A5 / A7)
-report at most one violation per line, the sentence-shape rules (A2 / A6)
-and T1 one per occurrence.
+report at most one violation per line, the sentence-shape rules (A2 / A6),
+A8, T1 and T2 one per occurrence. A8 and T2 read allowlists instead —
+wordlists of the opposite polarity, where a hit means no violation.
 
 Fenced code blocks and inline code spans (CommonMark backtick runs, which
 may cross line breaks inside a paragraph but not block boundaries) are
@@ -62,8 +67,8 @@ on. A disabled rule is neither reported nor fixed. The config's
 「规则属性」 — fixability, default severity, maturity — one entry per rule
 and nowhere else. The ``severity`` config key overrides the default
 severity per rule, ``enable_experimental`` joins the experimental rules
-into the enabled set: R1-R11 are fixable · error · stable, A1-A7 and T1
-warning · experimental.
+into the enabled set: R1-R11 are fixable · error · stable, A1-A8 and
+T1-T2 warning · experimental.
 
 Two escape hatches sit below the configuration: the inline directives of
 :mod:`lo_md_lint.directives` narrow the enabled set line by line, and the
@@ -287,6 +292,23 @@ NEGATIVE_PARALLEL_EN = re.compile(
     f".{{0,40}}?{EN_LEFT}(?:{AFFIRMED_COPULA}){EN_RIGHT}",
     re.IGNORECASE,
 )
+# A8: one candidate per 零. The candidate string runs from that 零 to the
+# end of its CJK run and is judged in `_is_coinage`, not by the pattern —
+# a fixed-width window would truncate 零额外请求 into 零额外请 and judge a
+# word nobody wrote (spec 「匹配单位」).
+ZERO = re.compile("零")
+CJK_RUN = re.compile(f"[{CJK}]*")
+A8_MIN_LENGTH = 2  # a lone 零 is not a coinage
+A8_MAX_LENGTH = 5  # longer runs are sentences written without punctuation
+# T2: 秘密 as a category term; no anchor, unlike T1.
+SECRET = re.compile("秘密")
+# The allowlists of A8 and T2, of the opposite polarity to every other
+# wordlist: an entry covering the hit means no violation.
+ALLOWED: dict[str, tuple[str, ...]] = {
+    "A8": wordlists.phrases("A8-allow"),
+    "T2": wordlists.phrases("T2-allow"),
+}
+
 # The wordlist rules fire at most once per line: listed words come in
 # clusters and one finding per occurrence would just flood the report.
 # The sentence-shape rules (A2 / A6) report every match — each shape is
@@ -337,10 +359,12 @@ CHECKS = [
     ("A6", "A6 English negative parallelism", NOT_JUST_BUT),
     ("A6", "A6 English negative parallelism", NEGATIVE_PARALLEL_EN),
     ("A7", "A7 Claudish register", _word_pattern("A7")),
+    ("A8", "A8 zero-noun coinage", ZERO),
     *(
         ("T1", f"T1 term {term.wrong} -> {term.right}", pattern)
         for pattern, term in TERM_PATTERNS.items()
     ),
+    ("T2", "T2 misused 秘密", SECRET),
 ]
 
 
@@ -389,7 +413,9 @@ GRADES: dict[str, RuleGrade] = {
     "A5": RuleGrade(False, config.WARNING, True),
     "A6": RuleGrade(False, config.WARNING, True),
     "A7": RuleGrade(False, config.WARNING, True),
+    "A8": RuleGrade(False, config.WARNING, True),
     "T1": RuleGrade(True, config.WARNING, True),
+    "T2": RuleGrade(False, config.WARNING, True),
 }
 
 # Configuration starts from DEFAULT_RULES (every rule except the
@@ -678,6 +704,48 @@ def _anchored(line: str, term: wordlists.Term) -> bool:
   """
   lowered = line.lower()
   return any(anchor.lower() in lowered for anchor in term.anchors)
+
+
+def _covered(line: str, start: int, allowed: tuple[str, ...]) -> bool:
+  """Return whether an allowlist entry covers a hit on this line.
+
+  「覆盖」 of ``spec/rules.md`` 「词表」: an entry counts when one of its
+  occurrences holds the hit's first character — 零售 covers the 零 of
+  零售价格, 从零 covers the 零 of 从零建一台, so a fixed collocation on
+  either side of the hit is expressible in one table. The whole line is
+  searched, exempt ranges included, as with T1's anchors: an allowlist
+  entry is evidence about the wording, not a violation.
+
+  Args:
+    line: One Markdown line outside fenced code blocks.
+    start: Offset of the hit's first character.
+    allowed: The rule's allowlist entries.
+
+  Returns:
+    True when the hit must not be reported.
+  """
+  return any(
+      line.find(word, max(0, start - len(word) + 1), start + len(word)) != -1
+      for word in allowed
+  )
+
+
+def _is_coinage(line: str, start: int) -> bool:
+  """Return whether one 零 opens a 零 + noun coinage (A8).
+
+  Args:
+    line: One Markdown line outside fenced code blocks.
+    start: Offset of the 零.
+
+  Returns:
+    True when the candidate string — this 零 plus the rest of its CJK
+    run — is 2 to 5 characters long and no allowlist entry covers it.
+  """
+  run = CJK_RUN.match(line, start)
+  candidate = run.group(0) if run else ""
+  if not A8_MIN_LENGTH <= len(candidate) <= A8_MAX_LENGTH:
+    return False
+  return not _covered(line, start, ALLOWED["A8"])
 
 
 def _fix_line(
@@ -1026,6 +1094,10 @@ def _suppressed(
     return True  # unpaired backticks are plain text, not a span
   if pattern is R1_DOT and m.start() in scan.abbrev_dots:
     return True  # a dot of e.g. / Dr. / ... stays half-width
+  if rule == "A8" and not _is_coinage(scan.line, m.start()):
+    return True  # a lone 零, a whole sentence, or an allowlisted word
+  if rule == "T2" and _covered(scan.line, m.start(), ALLOWED["T2"]):
+    return True  # 秘密 in its own sense, e.g. 保守秘密
   term = TERM_PATTERNS.get(pattern)
   return term is not None and not _anchored(scan.line, term)
 

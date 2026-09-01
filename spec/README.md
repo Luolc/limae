@@ -4,13 +4,13 @@
 
 - `rules.md` —— 规则的正本：稳定 id、判定条件、修复行为、豁免范围。
 - `fixtures/` —— 黄金集 (golden fixtures)：可执行的那一半，每加一个 case 就是所有实现的回归测试。
-- `wordlists/` —— 词表：A1 / A3 / A4 / A5 / A7 / T1 的判定数据，格式与匹配语义的正本是 `rules.md`「词表」。
+- `wordlists/` —— 词表：A1 / A3 / A4 / A5 / A7 / A8 / T1 / T2 的判定数据，格式与匹配语义的正本是 `rules.md`「词表」。
 
 三份同目录、同 PR 改，不会漂移。改规则的顺序固定：先改这里，再改各实现。
 
 ## 词表
 
-`wordlists/A1.txt`、`A3.txt`、`A4.txt`、`A5.txt`、`A7.txt` 一行一条 (`#` 注释、空行忽略)，`wordlists/T1.toml` 是 `wrong` / `right` / `anchors` 的 `entries` 数组。中文词表按字面子串匹配，英文词表 (`A5` / `A7`) 按整词、大小写不敏感 —— 语义的正本在 `rules.md`「词表」。
+`wordlists/A1.txt`、`A3.txt`、`A4.txt`、`A5.txt`、`A7.txt` 一行一条 (`#` 注释、空行忽略)，`wordlists/T1.toml` 是 `wrong` / `right` / `anchors` 的 `entries` 数组。中文词表按字面子串匹配，英文词表 (`A5` / `A7`) 按整词、大小写不敏感。`wordlists/A8-allow.txt` 与 `T2-allow.txt` 格式相同但方向相反，是**豁免表**：命中它才不报 —— 语义的正本都在 `rules.md`「词表」。
 
 **各实现在运行时从这些文件读词表，不把词表内联进代码**：词表是规范的一部分，加一条词只改这里，任何实现都不用重新发版逻辑。Python 参考实现的读取在 `src/lo_md_lint/wordlists.py`；`src/lo_md_lint/wordlists` 是指向本目录的目录级软链，editable 安装与打好的 wheel 都能经 `importlib.resources` 找到同一份文件。
 
