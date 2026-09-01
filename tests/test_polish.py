@@ -183,8 +183,8 @@ def test_select_takes_the_first_engine_that_answers_and_caches_it(
   assert engines.select(env) == "codex"
   assert probes.read_text(encoding="utf-8").count("\n") == 2
 
-  # The cached answer is trusted for its TTL: no engine is probed again,
-  # even though claude would now answer first.
+  # Both results are cached for the TTL, the failure included: nothing
+  # is probed again, even though claude would now answer.
   stub(
       bin_dir,
       "claude",
@@ -212,12 +212,30 @@ def test_select_skips_an_engine_that_exits_zero_without_answering(
   assert engines.select(env) == "codex"
 
 
+def test_the_cache_never_outranks_the_host_marker(tmp_path: pathlib.Path):
+  # What is cached is each engine's probe result, not which engine was
+  # chosen: the ordering of ADR-0008 三 runs again every time, so the
+  # session the user is in now still comes first (step 2).
+  env = environment(tmp_path)
+  bin_dir = pathlib.Path(env["PATH"].split(":")[0])
+  answer = f"cat > /dev/null\necho {engines.PROBE_MARKER}"
+  stub(bin_dir, "claude", answer)
+  stub(bin_dir, "grok", answer)
+  assert engines.select(env) == "claude"
+
+  # Same cache, different session: the choice follows the marker.
+  assert engines.select(env | {"GROK_SESSION_ID": "session"}) == "grok"
+  assert engines.select(env | {"CLAUDECODE": "1"}) == "claude"
+  assert engines.select(env) == "claude"
+
+
 def test_select_ignores_a_stale_cache(tmp_path: pathlib.Path):
   env = environment(tmp_path)
   cache = pathlib.Path(env["XDG_CACHE_HOME"]) / engines.CACHE_DIRECTORY
   cache.mkdir(parents=True)
   (cache / engines.CACHE_FILENAME).write_text(
-      json.dumps({"engine": "codex", "at": 0}), encoding="utf-8"
+      json.dumps({"engines": {"codex": {"state": engines.OK, "at": 0}}}),
+      encoding="utf-8",
   )
   with pytest.raises(engines.EngineError):
     engines.select(env)

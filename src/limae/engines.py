@@ -286,6 +286,25 @@ def _has_credentials(name: str, env: Mapping[str, str]) -> bool:
   return isinstance(state, dict) and preset.auth_key in state
 
 
+def host(env: Mapping[str, str]) -> str:
+  """Return the engine whose own session we are running inside (step 2).
+
+  Only variables a CLI always sets in its own sessions count; one that
+  varies with the installation method is not a marker (ADR-0008 section
+  三 step 2).
+
+  Args:
+    env: The environment of the run.
+
+  Returns:
+    The preset name, or empty when this is nobody's session.
+  """
+  for name in ENGINES:
+    if any(env.get(variable) for variable in PRESETS[name].host_env):
+      return name
+  return ""
+
+
 def order(env: Mapping[str, str]) -> list[str]:
   """Return the installed engines, best candidate first (steps 2 to 4).
 
@@ -299,9 +318,10 @@ def order(env: Mapping[str, str]) -> list[str]:
   Returns:
     The candidate engines; empty when no CLI is installed at all.
   """
+  inside = host(env)
 
   def rank(name: str) -> int:
-    if any(env.get(variable) for variable in PRESETS[name].host_env):
+    if name == inside:
       return 0
     return 1 if _has_credentials(name, env) else 2
 
@@ -659,56 +679,94 @@ def _cache_file(env: Mapping[str, str]) -> pathlib.Path:
   return pathlib.Path(root) / CACHE_DIRECTORY / CACHE_FILENAME
 
 
-def _remembered(env: Mapping[str, str], now: float) -> str:
-  """Return the engine chosen recently enough to trust (step 5).
+def _entries(env: Mapping[str, str]) -> dict[str, dict[str, object]]:
+  """Read the cache file's per-engine entries.
+
+  Args:
+    env: The environment of the run.
+
+  Returns:
+    Engine name to its stored entry, dropping anything malformed; empty
+    when there is no readable cache.
+  """
+  try:
+    with _cache_file(env).open("rb") as f:
+      cached = json.load(f)
+  except (OSError, ValueError):
+    return {}
+  stored = cached.get("engines") if isinstance(cached, dict) else None
+  if not isinstance(stored, dict):
+    return {}
+  return {
+      name: entry
+      for name, entry in stored.items()
+      if name in PRESETS
+      and isinstance(entry, dict)
+      and isinstance(entry.get("state"), str)
+      and isinstance(entry.get("at"), (int, float))
+  }
+
+
+def _cached(env: Mapping[str, str], now: float) -> dict[str, str]:
+  """Return each engine's probe result from the last TTL.
+
+  What is cached is one probe's answer per engine, never which engine
+  was chosen: the choice runs through the six steps of ADR-0008 section
+  三 on every run, so a result cached outside a session cannot outrank
+  the session the user is in now (step 2). The cache only saves the
+  probe call itself.
+
+  Failures are cached along with successes, or a broken engine ahead in
+  the order would be probed — a real model call — on every run. The cost
+  is that a login done inside the TTL is not noticed until it runs out;
+  ``--engine`` names an engine straight away, without probing.
 
   Args:
     env: The environment of the run.
     now: The current time, in seconds since the epoch.
 
   Returns:
-    The engine name, or empty when there is no fresh answer or its CLI
-    has since gone away.
+    Engine name to probe result, holding only entries that are still
+    fresh and whose CLI is still installed.
   """
-  try:
-    with _cache_file(env).open("rb") as f:
-      cached = json.load(f)
-  except (OSError, ValueError):
-    return ""
-  if not isinstance(cached, dict):
-    return ""
-  engine = cached.get("engine")
-  written = cached.get("at")
-  if not isinstance(engine, str) or not isinstance(written, (int, float)):
-    return ""
-  if engine not in PRESETS or now - written > CACHE_TTL:
-    return ""
-  return engine if installed(engine, env) else ""
+  return {
+      name: str(entry["state"])
+      for name, entry in _entries(env).items()
+      if now - float(typing.cast(float, entry["at"])) <= CACHE_TTL
+      and installed(name, env)
+  }
 
 
-def _remember(engine: str, env: Mapping[str, str], now: float) -> None:
-  """Remember the chosen engine until the TTL runs out.
+def _remember(
+    engine: str, state: str, env: Mapping[str, str], now: float
+) -> None:
+  """Remember one engine's probe result until the TTL runs out.
 
-  A cache that cannot be written changes nothing but the cost of the
-  next run, so the failure is not reported.
+  The other engines' entries are kept as they are. A cache that cannot
+  be written changes nothing but the cost of the next run, so the
+  failure is not reported.
 
   Args:
-    engine: The engine that answered.
+    engine: The engine that was probed.
+    state: What the probe found.
     env: The environment of the run.
     now: The current time, in seconds since the epoch.
   """
   path = _cache_file(env)
+  entries = _entries(env)
+  entries[engine] = {"state": state, "at": now}
   try:
     path.parent.mkdir(parents=True, exist_ok=True)
-    _ = path.write_text(
-        json.dumps({"engine": engine, "at": now}), encoding="utf-8"
-    )
+    _ = path.write_text(json.dumps({"engines": entries}), encoding="utf-8")
   except OSError:
     return
 
 
 def select(env: Mapping[str, str]) -> str:
   """Find an engine to polish with (ADR-0008 section 三 steps 2 to 6).
+
+  The ordering is recomputed every time; only the probe of step 5 is
+  ever served from the cache (:func:`_cached`).
 
   Args:
     env: The environment of the run.
@@ -722,15 +780,15 @@ def select(env: Mapping[str, str]) -> str:
       printed is quoted.
   """
   now = time.time()
-  remembered = _remembered(env, now)
-  if remembered:
-    return remembered
+  cached = _cached(env, now)
   candidates = order(env)
   diagnosis = {name: MISSING for name in ENGINES if name not in candidates}
   for name in candidates:
-    state = probe(name, env)
+    state = cached.get(name)
+    if state is None:
+      state = probe(name, env)
+      _remember(name, state, env, now)
     if state == OK:
-      _remember(name, env, now)
       return name
     diagnosis[name] = state
   lines = [
