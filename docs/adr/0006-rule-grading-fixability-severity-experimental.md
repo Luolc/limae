@@ -24,11 +24,11 @@ ADR-0005 §五把「规则能不能自动修复」与「违规报得多重」当
 | --- | --- | --- | --- |
 | 可修复性 (fixability) | fixable / non-fixable | 规则自身的性质，写死在 `spec/rules.md` 的条目里，用户不可配 | fixable = 有唯一、确定性的修复，`--fix` 会改；non-fixable = 只报不改 (密度、选词这类没有唯一修法的规则) |
 | 严重度 (severity) | error / warning | 规范给每条规则一个默认值，用户可按规则 id 覆盖 | error 参与退出码，warning 不参与；两者都进报告 |
-| 成熟度 (maturity) | stable / experimental | 规范标注，用户不可配 | experimental = 还在开发、误报率未达标的 flaky 规则；默认关闭，沿用 ADR-0004 的默认关 + `enable` 机制打开 |
+| 成熟度 (maturity) | stable / experimental | 规则自身的性质，在 `spec/rules.md` 标注，用户不逐条指定 | experimental = 还在开发、误报率未达标的 flaky 规则；默认不进启用集，用户侧只有一个总开关 `enable_experimental` (布尔，默认关)，打开即全部纳入 |
 
 三轴互不推导，任意组合都合法：不可修复的规则可以是 error (这正是裁决要纠正的那一点)，experimental 的规则可以是 fixable、也可以默认 error。
 
-- **现有 R1–R11 全部是 fixable + error + stable，本 ADR 零行为变化。** R9 已经默认关闭，但它是 stable 的「默认关」 —— 关的理由是上游规范自标争议 (ADR-0004)，不是误报率没验过。「默认开关」是配置层的事实，「成熟度」是规则的生命周期标签，两者独立：ADR-0004 的机制在这里被复用，不被重新定义。
+- **现有 R1–R11 全部是 fixable + error + stable，本 ADR 零行为变化。** R9 已经默认关闭，但它是 stable 的「默认关」 —— 关的理由是上游规范自标争议 (ADR-0004)，不是误报率没验过。「默认开关」是配置层的事实，「成熟度」是规则的生命周期标签，两者独立：R9 照旧用 ADR-0004 的 `enable` 键打开，与下面的 `enable_experimental` 无关。
 - 严重度只影响报告与退出码，不影响修复：**fixable 的规则被降成 warning，`--fix` 照样修**。这一条是与 AutoCorrect 分道的地方 (它的 warning 等于 fix 时跳过)，也是本仓既有契约的延续 —— 启用集之内 check 与 fix 看同一批规则。要一条规则不改文本，办法是关掉它 (`disable`) 或就地用行内指令，不是把它降成 warning。
 - 退出码：启用集里有 error 违规就是非零；只有 warning 违规时退出码仍是 0，报告照常打印。配置错误的退出码不变 (`spec/rules.md`「配置错误」，Python 参考实现用 2)。
 - 举两个例子说明三轴独立：破折号密度 (全文 `——` 占比超阈值) 是 non-fixable —— 超标了也不知道该删哪一个；术语选词是 fixable —— 词表就是 `wrong = right` 的替换 (`claudish-and-ai-slop-survey.md` §5.2 的 AutoCorrect 形制)。两者的默认严重度与阈值在各自规则定案时再定，这里只借它们说明「不可修复」不等于「不重要」。
@@ -46,17 +46,24 @@ severity = { R8 = "warning" }
 - **不加 CLI flag。** 严重度是仓库级的长期口味，不是「临时试一把」的东西；沿用 ADR-0003 §五「一次运行只有一个来源」的语义，命令行上出现 `--disable` / `--enable` 时配置文件整体不生效，`severity` 与 `skip_zh_units` 一样随之回到默认值，不为它另开例外。
 - 黄金 fixture 的 `.findings` 格式不变，仍是 `<行号> <规则 id>`：某条违规是 error 还是 warning，由规范的默认值与 case 的 `.conf` 唯一决定，runner 需要时自行推导，不写进 findings 行。要不要为退出码另加断言，留给落地任务定。
 
-### 三、experimental：定义、入口与毕业
+### 三、experimental：定义、入口与唯一的总开关 `enable_experimental`
 
 **定义**：规则规范已经写进 `spec/rules.md`、有黄金 fixture，但误报率还没有在真实语料上验证到可以默认打开。它是生命周期标签，既不是严重度也不是可修复性。
 
 **入口**：新规则的判定只要依赖词表、密度或句式模板 (即从语言习惯里长出来的)，一律先 experimental；纯字符级的排版规则 (R1–R11 这一类) 可以直接 stable。
 
-**毕业到 stable 的判据**：在 dogfood 语料上跑一轮 —— 本仓文档，加上三个消费仓 (`machine-setup`、`wealth-management`、`butler`) 的 Markdown —— 未被接受的误报为零，且经过至少一个发布周期没有回退。毕业时可以同时改默认开关，但那是一个独立的决定，不因为毕业自动默认开。
+**成熟度是规则自身的性质，只在 `spec/rules.md` 标注，用户不逐条指定。** 用户侧只有一个布尔配置键 `enable_experimental`，默认 `false`：
 
-**回退**：stable 的规则出现系统性误报，可以降回 experimental (并默认关)，走 `spec/` 变更加一个 tag，与新增规则同流程。
+```toml
+enable_experimental = true
+```
 
-定义与毕业判据的松紧属于可调参数，用户在终审本 ADR 时可以就地调整。
+- 打开就是把**全部** experimental 规则纳入启用集；纳入之后它们与普通规则同等对待 —— 可以用 `disable` 逐条关掉、用 `severity` 逐条覆盖严重度。
+- **不复用 ADR-0004 的 `enable` 键逐条打开 experimental 规则**：experimental 规则 id 出现在 `enable` 里是配置错误。不留第二条打开路径，成熟度才不会变成用户逐条改写的东西。
+- experimental 规则 id 出现在 `disable` 或 `severity` 里是合法的：`enable_experimental` 打开时生效，关闭时是空操作 —— 与 ADR-0004「列出默认启用的规则是允许的空操作」同理。
+- 值不是布尔是配置错误。同样不加 CLI flag：命令行上出现 `--disable` / `--enable` 时配置文件整体不生效，`enable_experimental` 与 `severity`、`skip_zh_units` 一样回到默认值。
+
+**毕业与回退**：experimental 毕业成 stable、以及 stable 出现系统性误报后降回 experimental，都由用户 (或用户与 orchestra 一起) 逐条手动裁决，本 ADR 不写量化判据；将来有外部用户、收到真实反馈之后，再考虑把判据规则化。
 
 ### 四、LLM 语义润色是独立一条线
 
@@ -80,11 +87,11 @@ severity = { R8 = "warning" }
 
 - ADR-0005 §五被本 ADR 取代，0005 不就地改写，只在它的「状态」节记一行指向这里；§五之外的六节仍然有效。
 - `docs/tracker.md`「规则 fixable / non-fixable 分级」条目由 orchestra 在合入后改写：要做的事从「non-fixable 当 warning 报」变成「`severity` 键与三轴标注落进 `spec/rules.md` 与实现」。
-- 后续任务要动 `spec/rules.md` 三处：每条规则条目补三轴标注、「配置」一节加 `severity` 键、「配置错误」清单加未知 id 与非法取值两条。本 ADR 不改 `spec/`，也不改任何实现或 fixture。
+- 后续任务要动 `spec/rules.md` 三处：每条规则条目补三轴标注、「配置」一节加 `severity` 与 `enable_experimental` 两个键、「配置错误」清单加三条 (`severity` 的未知 id 与非法取值、experimental 规则 id 出现在 `enable`、`enable_experimental` 值不是布尔)。本 ADR 不改 `spec/`，也不改任何实现或 fixture。
 - 现有消费方不受影响：R1–R11 的可修复性、严重度、成熟度都是今天的行为，不加配置就没有任何变化。
-- 新规则的默认路径从此是 experimental + 默认关，先在 dogfood 语料上验证误报率再谈毕业；这条路径是 ADR-0005 §六 heuristic learning 的落脚点。
+- 新规则的默认路径从此是 experimental：默认不进启用集，要开 `enable_experimental` 才跑，什么时候毕业成 stable 由用户逐条裁决。这条路径是 ADR-0005 §六 heuristic learning 的落脚点。
 - `README.md`「定位与愿景」没有与 ADR-0005 §五同义的句子，本次不改。
 
 ## 状态
 
-proposed (2026-08-31)。
+accepted (2026-08-31)。
