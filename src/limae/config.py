@@ -28,6 +28,11 @@ ignored (``spec/rules.md`` sections 「发现顺序」 and 「忽略文件」).
 The ignore file ``.limae-ignore`` (``spec/rules.md`` section
 「忽略文件」) is found by the same upward walk, independently of the config
 file, and drops input files by gitignore patterns.
+
+The ``polish`` subcommand has its own sub-table, ``[polish]``, whose
+normative description is ``docs/adr/0008-limae-polish-cli.md`` section
+三; it is read by :func:`resolve_polish` out of the same carrier, and no
+rule key affects it.
 """
 
 from collections.abc import Collection, Mapping, Sequence
@@ -51,6 +56,14 @@ ENABLE_KEY = "enable"
 SKIP_ZH_UNITS_KEY = "skip_zh_units"
 SEVERITY_KEY = "severity"
 ENABLE_EXPERIMENTAL_KEY = "enable_experimental"
+# The `polish` sub-table (ADR-0008 section 三): which engine rewrites the
+# prose, and with what.
+POLISH_TABLE = "polish"
+ENGINE_KEY = "engine"
+MODEL_KEY = "model"
+COMMAND_KEY = "command"
+AUTO_ENGINE = "auto"
+CUSTOM_ENGINE = "custom"
 # The two severities of spec/rules.md 「规则属性」: an error violation
 # makes the run fail, a warning one is reported but does not.
 ERROR = "error"
@@ -422,6 +435,117 @@ def resolve(
       (base | enabled) - disabled,
       _key_units(table, path),
       _key_severity(table, path, known),
+  )
+
+
+class PolishSettings(typing.NamedTuple):
+  """The resolved ``[polish]`` configuration of one run.
+
+  Attributes:
+    engine: ``auto``, a preset name, or ``custom``.
+    model: The model to run; empty means the preset's own default
+      (ADR-0008 section 五 does not freeze the defaults).
+    command: The whole command to run under ``custom``, placeholders
+      included; empty for every other engine.
+  """
+
+  engine: str
+  model: str
+  command: tuple[str, ...]
+
+
+def _key_str(table: dict[str, object], key: str, path: pathlib.Path) -> str:
+  """Read one string key from a config table.
+
+  Args:
+    table: The config table.
+    key: The key to read.
+    path: The config file, for the error message.
+
+  Returns:
+    The value, empty when the key is absent.
+
+  Raises:
+    ConfigError: The value is not a string.
+  """
+  raw = table.get(key, "")
+  if not isinstance(raw, str):
+    raise ConfigError(f"{path}: `{key}` must be a string")
+  return raw
+
+
+def _key_words(
+    table: dict[str, object], key: str, path: pathlib.Path
+) -> list[str]:
+  """Read one list-of-strings key from a config table.
+
+  Args:
+    table: The config table.
+    key: The key to read.
+    path: The config file, for the error message.
+
+  Returns:
+    The listed words, empty when the key is absent.
+
+  Raises:
+    ConfigError: The value is not a list of strings.
+  """
+  raw = table.get(key, [])
+  if not isinstance(raw, list) or not all(isinstance(w, str) for w in raw):
+    raise ConfigError(f"{path}: `{key}` must be a list of strings")
+  return [w for w in raw if isinstance(w, str)]
+
+
+def resolve_polish(
+    start: pathlib.Path, engines: Collection[str]
+) -> PolishSettings:
+  """Return the ``[polish]`` settings of this run.
+
+  The table is found the same way the rule keys are: in ``limae.toml`` it
+  is a top-level ``[polish]`` table, in a ``pyproject.toml`` it is
+  ``[tool.limae.polish]``. No configuration at all means ``engine =
+  "auto"`` with each preset's own default model.
+
+  Args:
+    start: Directory the config-file search starts from, normally the cwd.
+    engines: The preset engine names this implementation knows.
+
+  Returns:
+    The engine, the model override and the ``custom`` command.
+
+  Raises:
+    ConfigError: Bad toml, a malformed key, an unknown engine name,
+      ``custom`` without a command, or a command without ``custom``.
+  """
+  found = find_config(start)
+  if found is None:
+    return PolishSettings(AUTO_ENGINE, "", ())
+  path, table = found
+  if not isinstance(table, dict):
+    raise ConfigError(f"{path}: [tool.{TOOL_TABLE}] must be a table")
+  raw = table.get(POLISH_TABLE, {})
+  if not isinstance(raw, dict):
+    raise ConfigError(f"{path}: [{POLISH_TABLE}] must be a table")
+  polish: dict[str, object] = raw
+  engine = _key_str(polish, ENGINE_KEY, path) or AUTO_ENGINE
+  known = [AUTO_ENGINE, *sorted(engines), CUSTOM_ENGINE]
+  if engine not in known:
+    raise ConfigError(
+        f"{path}: `{ENGINE_KEY}` must be one of {', '.join(known)}"
+    )
+  command = _key_words(polish, COMMAND_KEY, path)
+  if engine == CUSTOM_ENGINE and not command:
+    raise ConfigError(
+        f'{path}: `{ENGINE_KEY} = "{CUSTOM_ENGINE}"` needs `{COMMAND_KEY}`,'
+        " the whole command to run"
+    )
+  if command and engine != CUSTOM_ENGINE:
+    raise ConfigError(
+        f"{path}: `{COMMAND_KEY}` only runs under"
+        f' `{ENGINE_KEY} = "{CUSTOM_ENGINE}"`'
+    )
+  return PolishSettings(
+      engine, _key_str(polish, MODEL_KEY, path), tuple(command)
   )
 
 

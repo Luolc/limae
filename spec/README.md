@@ -5,6 +5,7 @@
 - `rules.md` —— 规则的正本：稳定 id、判定条件、修复行为、豁免范围。
 - `fixtures/` —— 黄金集 (golden fixtures)：可执行的那一半，每加一个 case 就是所有实现的回归测试。
 - `wordlists/` —— 词表：A1 / A3 / A4 / A5 / A7 / A8 / T1 / T2 的判定数据，格式与匹配语义的正本是 `rules.md`「词表」。
+- `polish/` —— `limae polish` 的 prompt spec：通用层 `general.md` (英文) 加每种语言一份用该语言写的层 (`zh.md`)，形制的正本是 ADR-0008 §九。它是 prompt，不是判定数据 —— 词表不进 prompt。
 
 三份同目录、同 PR 改，不会漂移。改规则的顺序固定：先改这里，再改各实现。
 

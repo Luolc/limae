@@ -17,12 +17,13 @@ lo-md-lint = "limae.zh_format:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-# `src/limae/wordlists` is a directory symlink to `spec/wordlists`:
-# the wordlists are spec, not implementation (ADR-0007), and the symlink
-# is what makes one `importlib.resources` lookup work for both an
-# editable install and a wheel built from a source checkout — the two
-# ways this package is installed (pre-commit's remote hook and
-# `uvx --from git+…` both build from a checkout).
+# `src/limae/wordlists` and `src/limae/prompts` are directory symlinks to
+# `spec/wordlists` and `spec/polish`: both are spec, not implementation
+# (ADR-0007, ADR-0008 section 九), and the symlink is what makes one
+# `importlib.resources` lookup work for both an editable install and a
+# wheel built from a source checkout — the two ways this package is
+# installed (pre-commit's remote hook and `uvx --from git+…` both build
+# from a checkout).
 [tool.hatch.build.targets.wheel]
 packages = ["src/limae"]
 
@@ -139,8 +140,9 @@ max-doc-length = 80
 # Google style §3.8.2.1: test modules need no docstrings (format rules apply);
 # pytest asserts are the test mechanism, not runtime checks.
 "tests/**" = ["D1", "S101"]
-# CLI entry point: stdout is the user-facing output contract.
+# CLI entry points: stdout is the user-facing output contract.
 "src/limae/zh_format.py" = ["T201"]
+"src/limae/polish.py" = ["T201"]
 
 [tool.ruff.format]
 # Disable ruff formatting. Use pyink in this project.
