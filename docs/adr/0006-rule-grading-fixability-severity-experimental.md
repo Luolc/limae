@@ -59,9 +59,9 @@ enable_experimental = true
 ```
 
 - 打开就是把**全部** experimental 规则纳入启用集；纳入之后它们与普通规则同等对待 —— 可以用 `disable` 逐条关掉、用 `severity` 逐条覆盖严重度。
-- **不复用 ADR-0004 的 `enable` 键逐条打开 experimental 规则**：experimental 规则 id 出现在 `enable` 里是配置错误。不留第二条打开路径，成熟度才不会变成用户逐条改写的东西。
+- **不复用 ADR-0004 的 `enable` 逐条打开 experimental 规则**：experimental 规则 id 无论出现在配置文件的 `enable` 键里、还是出现在命令行的 `--enable` 上，都是同款错误 (配置错误的那个退出码)，实现必须报错退出。两条路径都堵死，成熟度才不会变成用户逐条改写的东西。
 - experimental 规则 id 出现在 `disable` 或 `severity` 里是合法的：`enable_experimental` 打开时生效，关闭时是空操作 —— 与 ADR-0004「列出默认启用的规则是允许的空操作」同理。
-- 值不是布尔是配置错误。同样不加 CLI flag：命令行上出现 `--disable` / `--enable` 时配置文件整体不生效，`enable_experimental` 与 `severity`、`skip_zh_units` 一样回到默认值。
+- 值不是布尔是配置错误。同样不加 CLI flag：命令行上出现 `--disable` / `--enable` 时配置文件整体不生效，`enable_experimental` 与 `severity`、`skip_zh_units` 一样回到默认值。**所以命令行上没有任何打开 experimental 规则的办法** —— 既没有逐条的 `--enable <experimental-id>` (上一条已定为错误)，也没有总开关；唯一入口是配置文件里的 `enable_experimental = true`，而它与 `--disable` / `--enable` 不能同时用。
 
 **毕业与回退**：experimental 毕业成 stable、以及 stable 出现系统性误报后降回 experimental，都由用户 (或用户与 orchestra 一起) 逐条手动裁决，本 ADR 不写量化判据；将来有外部用户、收到真实反馈之后，再考虑把判据规则化。
 
@@ -87,7 +87,7 @@ enable_experimental = true
 
 - ADR-0005 §五被本 ADR 取代，0005 不就地改写，只在它的「状态」节记一行指向这里；§五之外的六节仍然有效。
 - `docs/tracker.md`「规则 fixable / non-fixable 分级」条目由 orchestra 在合入后改写：要做的事从「non-fixable 当 warning 报」变成「`severity` 键与三轴标注落进 `spec/rules.md` 与实现」。
-- 后续任务要动 `spec/rules.md` 三处：每条规则条目补三轴标注、「配置」一节加 `severity` 与 `enable_experimental` 两个键、「配置错误」清单加三条 (`severity` 的未知 id 与非法取值、experimental 规则 id 出现在 `enable`、`enable_experimental` 值不是布尔)。本 ADR 不改 `spec/`，也不改任何实现或 fixture。
+- 后续任务要动 `spec/rules.md` 三处：每条规则条目补三轴标注、「配置」一节加 `severity` 与 `enable_experimental` 两个键、「配置错误」清单加三条 (`severity` 的未知 id 与非法取值、experimental 规则 id 出现在 `enable` 键或 `--enable` flag、`enable_experimental` 值不是布尔)。本 ADR 不改 `spec/`，也不改任何实现或 fixture。
 - 现有消费方不受影响：R1–R11 的可修复性、严重度、成熟度都是今天的行为，不加配置就没有任何变化。
 - 新规则的默认路径从此是 experimental：默认不进启用集，要开 `enable_experimental` 才跑，什么时候毕业成 stable 由用户逐条裁决。这条路径是 ADR-0005 §六 heuristic learning 的落脚点。
 - `README.md`「定位与愿景」没有与 ADR-0005 §五同义的句子，本次不改。
