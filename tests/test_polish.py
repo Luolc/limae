@@ -54,7 +54,8 @@ def test_claude_template_puts_the_spec_in_a_file_and_prose_on_stdin(
   ]
   assert invocation.stdin == TEXT
   assert invocation.output is None
-  # A preset runs away from whatever repository the user stands in.
+  # Privacy boundary: a preset never runs in the caller's directory, so
+  # the repository around the user is not context the engine can read.
   assert invocation.cwd == tmp_path
   assert (tmp_path / engines.SPEC_FILENAME).read_text(encoding="utf-8") == SPEC
 
@@ -121,8 +122,8 @@ def test_custom_command_substitutes_both_placeholders(tmp_path: pathlib.Path):
   ]
   # The prose is an argument here, so stdin stays empty.
   assert invocation.stdin == ""
-  # A custom command keeps the caller's directory: its own relative
-  # paths mean what the user meant.
+  # A custom command keeps the caller's directory: it is the user's own
+  # command, so that boundary is theirs to draw.
   assert invocation.cwd is None
   assert spec_file.read_text(encoding="utf-8") == SPEC
 
@@ -166,23 +167,49 @@ def test_a_missing_binary_is_the_only_hard_negative(tmp_path: pathlib.Path):
 def test_select_takes_the_first_engine_that_answers_and_caches_it(
     tmp_path: pathlib.Path,
 ):
+  # The stubs count their own runs through a path written into the
+  # script, not an environment variable: a preset engine no longer sees
+  # the caller's environment.
   probes = tmp_path / "probes"
-  env = environment(tmp_path, PROBES=str(probes))
+  env = environment(tmp_path)
   bin_dir = pathlib.Path(env["PATH"].split(":")[0])
-  stub(bin_dir, "claude", 'echo "$0" >> "$PROBES"\necho "HTTP 401" >&2\nexit 1')
+  count = f"echo run >> {probes}"
+  stub(bin_dir, "claude", f'{count}\necho "HTTP 401" >&2\nexit 1')
   stub(
       bin_dir,
       "codex",
-      'echo "$0" >> "$PROBES"\ncat > /dev/null\nshift 8\necho PONG > "$1"',
+      f'{count}\ncat > /dev/null\nshift 8\necho {engines.PROBE_MARKER} > "$1"',
   )
   assert engines.select(env) == "codex"
   assert probes.read_text(encoding="utf-8").count("\n") == 2
 
   # The cached answer is trusted for its TTL: no engine is probed again,
   # even though claude would now answer first.
-  stub(bin_dir, "claude", 'echo "$0" >> "$PROBES"\ncat > /dev/null\necho PONG')
+  stub(
+      bin_dir,
+      "claude",
+      f"{count}\ncat > /dev/null\necho {engines.PROBE_MARKER}",
+  )
   assert engines.select(env) == "codex"
   assert probes.read_text(encoding="utf-8").count("\n") == 2
+
+
+def test_select_skips_an_engine_that_exits_zero_without_answering(
+    tmp_path: pathlib.Path,
+):
+  # An engine can exit 0 and still not have answered: it ignored the
+  # spec, or printed an error of its own on stdout. The exit code alone
+  # would cache it for the whole TTL and then write that text to stdout.
+  env = environment(tmp_path)
+  bin_dir = pathlib.Path(env["PATH"].split(":")[0])
+  stub(bin_dir, "claude", 'cat > /dev/null\necho "Let me first read the repo"')
+  stub(
+      bin_dir,
+      "codex",
+      f'cat > /dev/null\nshift 8\necho {engines.PROBE_MARKER} > "$1"',
+  )
+  assert engines.probe("claude", env) != engines.OK
+  assert engines.select(env) == "codex"
 
 
 def test_select_ignores_a_stale_cache(tmp_path: pathlib.Path):
@@ -228,6 +255,67 @@ def test_an_engine_with_no_credential_trace_is_diagnosed_as_such(
   env = environment(tmp_path)
   stub(pathlib.Path(env["PATH"].split(":")[0]), "grok", "exit 1")
   assert engines.probe("grok", env) == engines.NO_CREDENTIALS
+
+
+# A stub that answers with its own environment and working directory, so
+# a test can assert what the boundary lets through. `env` prints one
+# NAME=value line each; the assertions below only ever name variables.
+DUMP = 'cat > /dev/null\nenv\necho "cwd=$(pwd)"'
+# Stand-ins for the caller's context, none of them real: a repository
+# path, a git variable, and the host-session markers of ADR-0008 三 2.
+CALLER_DIRECTORY = "/home/nobody/private-repo"
+CALLER_CONTEXT = {
+    "PWD": CALLER_DIRECTORY,
+    "OLDPWD": CALLER_DIRECTORY,
+    "GIT_DIR": f"{CALLER_DIRECTORY}/.git",
+    "GIT_AUTHOR_NAME": "Nobody",
+    "CLAUDECODE": "1",
+    "CODEX_SESSION_ID": "session",
+    "GROK_SESSION_ID": "session",
+}
+
+
+def test_a_preset_sees_no_repository_or_session_context(
+    tmp_path: pathlib.Path,
+):
+  env = environment(
+      tmp_path, **CALLER_CONTEXT, ANTHROPIC_API_KEY=SYNTHETIC_VALUE
+  )
+  stub(pathlib.Path(env["PATH"].split(":")[0]), "claude", DUMP)
+  seen = engines.polish("claude", "", SPEC, TEXT, env)
+
+  # Nothing about where the user was standing.
+  assert CALLER_DIRECTORY not in seen
+  assert "GIT_DIR" not in seen
+  assert "GIT_AUTHOR_NAME" not in seen
+  # No host-session marker: it is both a session identity and a way for
+  # the child to think it is a nested session.
+  for marker in ("CLAUDECODE", "CODEX_SESSION_ID", "GROK_SESSION_ID"):
+    assert marker not in seen
+  # What is left is what the CLI needs to run and to find its login,
+  # its own vendor's variables included and no other vendor's.
+  assert "PATH=" in seen
+  assert "HOME=" in seen
+  assert "ANTHROPIC_API_KEY=" in seen
+  assert "OPENAI_API_KEY" not in seen
+  # The directory variables point at the throwaway directory the engine
+  # actually runs in.
+  workdir = next(
+      line.removeprefix("cwd=")
+      for line in seen.splitlines()
+      if line.startswith("cwd=")
+  )
+  assert f"PWD={workdir}" in seen
+
+
+def test_a_custom_command_keeps_the_callers_environment(
+    tmp_path: pathlib.Path,
+):
+  env = environment(tmp_path, **CALLER_CONTEXT)
+  stub(pathlib.Path(env["PATH"].split(":")[0]), "mygateway", DUMP)
+  seen = engines.polish("custom", "", SPEC, TEXT, env, command=["mygateway"])
+  # The user wrote this command, so its boundary is theirs to draw.
+  assert CALLER_DIRECTORY in seen
 
 
 def test_polish_returns_what_the_engine_answered(tmp_path: pathlib.Path):

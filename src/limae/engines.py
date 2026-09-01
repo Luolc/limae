@@ -8,6 +8,10 @@ attack surface moves in here (ADR-0008 section 三,
 ``docs/research/llm-polish-survey.md`` section 5.2). ``custom`` is the
 escape hatch: the user's own command, with placeholders.
 
+Why each template carries the flags it does is measured, not guessed:
+``docs/research/polish-engine-cli-behavior.md`` holds those measurements
+and is the only place they are written down.
+
 ``auto`` follows the six steps of ADR-0008 section 三: the explicit
 choice wins outright; a host CLI's own session variable puts that engine
 first; a missing binary is the only hard negative; credential traces only
@@ -36,11 +40,17 @@ CLAUDE = "claude"
 CODEX = "codex"
 GROK = "grok"
 
-# The probe of step 5, which is also the PONG acceptance test of ADR-0008
-# section 四: an instruction that could only come from our own spec, so a
-# model that keeps its built-in persona fails visibly.
-PROBE_SPEC = "Reply with exactly one word: PONG. Nothing else."
-PROBE_INPUT = "ping"
+# The probe of step 5 asks for one agreed marker and accepts an answer
+# that contains it. That is deliberately the cheapest possible check: a
+# CLI can exit 0 and still print an authentication error, or a gateway
+# return an error body, and an exit code alone would call that alive. It
+# is not a persona test — the PONG acceptance of ADR-0008 section 四 is a
+# once-per-model manual step, kept off the hot path because it is slow
+# and, under a long spec, not stable enough to gate every run on
+# (docs/research/polish-engine-cli-behavior.md section 六).
+PROBE_MARKER = "LIMAE-PROBE-OK"
+PROBE_SPEC = f"Reply with this marker and nothing else: {PROBE_MARKER}"
+PROBE_INPUT = "probe"
 PROBE_TIMEOUT = 90.0
 RUN_TIMEOUT = 600.0
 # How long a successful probe is trusted (step 5). Only successes are
@@ -50,9 +60,9 @@ CACHE_DIRECTORY = "limae"
 CACHE_FILENAME = "engine.json"
 
 # Codex takes the reasoning effort as a config override. Polishing prose
-# is not a reasoning problem, but `minimal` is rejected outright by the
-# service on at least one model (ADR-0008 section 三), so the floor that
-# works everywhere is `low`.
+# is not a reasoning problem, so this is the floor — `minimal`, one step
+# lower, is rejected outright by the service on at least one model
+# (docs/research/polish-engine-cli-behavior.md section 三).
 CODEX_EFFORT = "low"
 
 # What separates the spec from the prose for an engine with no system
@@ -69,6 +79,20 @@ TEXT_PLACEHOLDER = "{text}"
 
 SPEC_FILENAME = "spec.md"
 OUTPUT_FILENAME = "output.txt"
+
+# What a preset engine is allowed to see of the environment: where its
+# binary and its login state live, where to put temporary files, and how
+# to render text and dates. Everything else is dropped, an allowlist
+# rather than a denylist because a denylist always misses one. Each
+# preset additionally sees its own vendor's credential and base-URL
+# variables (`Preset.credential_env`) and nothing of any other vendor's.
+# An engine that needs more environment than this belongs behind
+# `custom`, which is the user's own command and the user's own boundary.
+SHARED_ENV = ("PATH", "HOME", "TMPDIR", "LANG", "TZ")
+LOCALE_PREFIX = "LC_"
+# Set to the throwaway directory rather than passed through: the
+# caller's `PWD` is the path of the repository they are standing in.
+DIRECTORY_ENV = ("PWD", "OLDPWD")
 
 # One diagnosis per engine when `auto` finds nothing (step 6). The value
 # is the human-readable state; `NEXT_STEP` gives what to do about it.
@@ -187,12 +211,15 @@ class Invocation(typing.NamedTuple):
     output: The file the child writes its answer to, for an engine that
       does not put it on stdout; None means stdout is the answer.
     cwd: Where to run it. Every preset runs in the throwaway directory
-      the template's files live in, so that the repository the user
-      happens to stand in is not context for the rewrite — measured on
-      this machine 2026-09-01: run from a checkout, grok answers the
-      text as a request about that repository instead of rewriting it.
-      A ``custom`` command keeps the caller's directory, which is where
-      its own relative paths mean what the user meant.
+      the template's files live in, never in the caller's working
+      directory. This is a privacy boundary: an engine is an external
+      service, the user handed it one piece of text, and the rest of the
+      repository around them is not theirs to send — an engine started
+      inside a checkout reads that checkout, uncommitted changes
+      included (``docs/research/polish-engine-cli-behavior.md`` section
+      一). A ``custom`` command keeps the caller's directory: it is the
+      user's own command, so that boundary is theirs to draw, and its
+      relative paths mean what they meant.
   """
 
   argv: list[str]
@@ -323,7 +350,8 @@ def _codex(
   Codex has no system channel, so the spec is prepended to the prose in
   one stdin payload, with a separator saying which part is which; the
   answer is read back from ``--output-last-message`` rather than from
-  stdout, which also carries the agent's progress (ADR-0008 section 三).
+  stdout, which also carries the agent's progress (ADR-0008 section 三,
+  ``docs/research/polish-engine-cli-behavior.md`` section 三).
 
   Args:
     preset: The engine's preset.
@@ -365,10 +393,9 @@ def _grok(
   screens for.
 
   ``--verbatim`` is the one addition to the template of ADR-0008 section
-  三. Without it grok wraps the prompt in its own agent scaffolding and
-  answers with a plan for the repository before the rewrite; with it the
-  prose arrives as written and the answer is the rewrite alone (measured
-  on this machine, 2026-09-01).
+  三: without it grok wraps the prompt in its own agent scaffolding and
+  narrates a plan before the rewrite
+  (``docs/research/polish-engine-cli-behavior.md`` section 二).
 
   Args:
     preset: The engine's preset.
@@ -453,6 +480,41 @@ def expand(
   if engine == GROK:
     return _grok(preset, model, spec, text, workdir)
   return _claude(preset, model, spec, text, workdir)
+
+
+def _child_env(
+    engine: str, env: Mapping[str, str], workdir: pathlib.Path
+) -> dict[str, str]:
+  """Build the environment one engine invocation may see.
+
+  This is the environment half of the privacy boundary the working
+  directory draws (see :class:`Invocation`): an engine started with the
+  caller's environment reads the repository's path out of ``PWD``
+  whatever its working directory is. A preset therefore gets an
+  allowlisted environment with the directory variables pointed at the
+  throwaway directory, and never sees the host-session markers
+  (``Preset.host_env``), the ``GIT_*`` family, or anything else derived
+  from where the user was standing.
+
+  Args:
+    engine: A preset name, or ``custom``.
+    env: The environment of the run.
+    workdir: The directory the engine runs in.
+
+  Returns:
+    The environment for the child. For ``custom`` it is the caller's
+    own, unchanged: the user wrote that command, so its boundary is
+    theirs to draw.
+  """
+  if engine not in PRESETS:
+    return dict(env)
+  allowed = {*SHARED_ENV, *PRESETS[engine].credential_env}
+  child = {
+      name: value
+      for name, value in env.items()
+      if name in allowed or name.startswith(LOCALE_PREFIX)
+  }
+  return child | {name: str(workdir) for name in DIRECTORY_ENV}
 
 
 def _classify(output: str) -> str:
@@ -546,10 +608,9 @@ def polish(
       and the next step, never anything the engine printed.
   """
   with tempfile.TemporaryDirectory() as directory:
-    invocation = expand(
-        engine, model, spec, text, pathlib.Path(directory), command
-    )
-    state, answer = _run(invocation, env, timeout)
+    workdir = pathlib.Path(directory)
+    invocation = expand(engine, model, spec, text, workdir, command)
+    state, answer = _run(invocation, _child_env(engine, env, workdir), timeout)
   if state != OK:
     raise EngineError(f"engine {engine}: {state} — {NEXT_STEP[state]}")
   return answer.strip() + "\n"
@@ -558,19 +619,28 @@ def polish(
 def probe(engine: str, env: Mapping[str, str]) -> str:
   """Ask one engine the smallest question there is (step 5).
 
+  The engine is alive when its answer carries ``PROBE_MARKER``. An answer
+  without it — an authentication error printed on stdout under a zero
+  exit code, an error body from a gateway — is read for what went wrong
+  and otherwise counts as a failure, so ``auto`` moves on instead of
+  caching a broken engine for the whole TTL.
+
   Args:
     engine: A preset name.
     env: The environment to run the engine in.
 
   Returns:
-    ``OK`` when the engine answered, else the diagnosis of ADR-0008
-    section 三 step 6.
+    ``OK`` when the engine answered with the token, else the diagnosis of
+    ADR-0008 section 三 step 6.
   """
   with tempfile.TemporaryDirectory() as directory:
-    invocation = expand(
-        engine, "", PROBE_SPEC, PROBE_INPUT, pathlib.Path(directory)
+    workdir = pathlib.Path(directory)
+    invocation = expand(engine, "", PROBE_SPEC, PROBE_INPUT, workdir)
+    state, answer = _run(
+        invocation, _child_env(engine, env, workdir), PROBE_TIMEOUT
     )
-    state, _ = _run(invocation, env, PROBE_TIMEOUT)
+    if state == OK and PROBE_MARKER not in answer.upper():
+      state = _classify(answer)
   if state == FAILED and not _has_credentials(engine, env):
     return NO_CREDENTIALS
   return state
