@@ -39,7 +39,7 @@ struct MarkdownParser;
 item = _{ SOI ~ line* ~ EOI }
 ```
 
-成功解析时整份输入被 PEG 切成互不重叠的 pair；失败则 `format_pairs` 走 `Err` 分支，`FormatResult::error` 把输出打回原文 (`autocorrect/src/code/code.rs:34`，`autocorrect/src/result/mod.rs:134`)。
+成功解析时得到一棵有序、嵌套的 pair 树：`block` 与其 `text` / `inline` 等子 pair 的 span 重叠，`format_pair` 对 `into_inner()` 递归 (`code.rs:56`)。失败则 `format_pairs` 走 `Err` 分支，`FormatResult::error` 把输出打回原文 (`autocorrect/src/code/code.rs:34`，`autocorrect/src/result/mod.rs:134`)。
 
 `format_pair` 按规则名分流 (`autocorrect/src/code/code.rs:48`)：
 
@@ -63,7 +63,7 @@ item = _{ SOI ~ line* ~ EOI }
 - **HTML。** `html` 拆成起止标签 (原子，不改) 与 `inner_text` (改)。属性值不在 `inner_text` 里，所以 `title="HTML标签里面都不处理"` 保持原样，标签体内文本会改 (`markdown.rs` 测试)。HTML 注释走 `comment`，**注释正文也会被规则改写**，同时注释还是 toggle 的载体 (见 §1.3)。
 - **front matter。** `front_matter` 吃 `---` 包裹的块 (`markdown.pest:86`)。普通 `meta_pair` 的值是 `string`，会被改 (`title: 示例标题Title` → `title: 示例标题 Title`)；`tags:` 走 `meta_tags`，逗号分隔的 CJK 标签刻意不插空格。
 
-**写回。** format 模式没有「按偏移打补丁」：`FormatResult::push` 只是把每个 pair 的 `new` 按遍历顺序拼起来 (`result/mod.rs:125`)。lint 模式用 pest 的 `pair.line_col()` 作行 / 列，多行 pair 再按 `\n` 加 `sub_line` (`code.rs:104`)。`format_or_lint` 把一段可见文本按空格或换行切开分别跑规则，再 `join("\n")` (`code.rs:150`)，所以**单段内部的换行数不变**；规则函数本身是正则替换，不插 `\n`。仓内**没有**「输出行数 == 输入行数」的断言，这是拼接的副作用，不是契约。
+**写回。** format 模式没有「按偏移打补丁」。父 pair 不自己输出；只有走到 `format_or_lint`、或走到无子节点而 `ignore` 的那些节点会调用 `FormatResult::push`，按实际遍历顺序把 `new` 拼起来 (`code.rs:48`，`result/mod.rs:125`)。这是实现事实，**不是** pair 互不重叠的保证。parse 失败则整份回原文，见上。lint 模式用 pest 的 `pair.line_col()` 作行 / 列，多行 pair 再按 `\n` 加 `sub_line` (`code.rs:104`)。`format_or_lint` 把一段可见文本按空格或换行切开分别跑规则，再 `join("\n")` (`code.rs:150`)，所以**单段内部的换行数不变**；规则函数本身是正则替换，不插 `\n`。仓内**没有**「输出行数 == 输入行数」的断言，这是拼接的副作用，不是契约。
 
 含 CJK 的 `block` 会临时 `toggle_merge_for_codeblock`，并入关掉 `halfwidth-punctuation` (`code.rs:64`，`result/mod.rs:65`)，英文段落才把全角标点收成半角。
 
@@ -211,7 +211,7 @@ remark 认 CommonMark / GFM 的 \`\`\` 与 `~~~`。围栏代码不是 paragraph�
 
 ### 4.1 值得抄
 
-1. **「抽出可见文本 → 改 → 按原偏移嵌回」** (zhlint 的 block + `replaceBlocks`)，而不是 AutoCorrect 那种「PEG 切 pair 再拼接」。理由：本仓契约是语法结构不动、行数不变；嵌回只替换 mdast 认定的 paragraph / heading / table-cell，围栏、列表标记、yaml 自然留在缝里。AutoCorrect 的拼接依赖「文法恰好划分全文」，而那份 Markdown 文法已经不是 CommonMark (无 `~~~`、单反引号、注释当正文、代码块递归 format)。Rust 若换 parser，应对齐这条写回策略，而不是对齐 pest 那份文法。
+1. **「抽出可见文本 → 改 → 按原偏移嵌回」** (zhlint 的 block + `replaceBlocks`)，而不是 AutoCorrect 那种「按 pair 树遍历、终端节点依次 `push`」。理由：本仓契约是语法结构不动、行数不变；嵌回只替换 mdast 认定的 paragraph / heading / table-cell，围栏、列表标记、yaml 自然留在缝里。AutoCorrect 的拼接是成功 parse 后的树遍历副作用，parse 失败则整份回原文；那份 Markdown 文法已经不是 CommonMark (无 `~~~`、单反引号、注释当正文、代码块递归 format)。Rust 若换 parser，应对齐 zhlint 这条写回策略，而不是对齐 pest 那份文法。
 2. **Parse 失败则整份原文返回** (AutoCorrect `FormatResult::error`)。理由：排版 linter 改坏源码的代价高于漏报；本仓现在正则路径很少会「解析失败」，一旦上真实 parser，这条是必要的安全网。
 3. **行内 disable 用文档序状态机，且能带规则 id** (AutoCorrect `Toggle`)。理由：tracker 要的逃生口就是「单点误报不必动配置」。zhlint 的整文件 `disabled` 太粗；它的片段 ignore 圈的是字而不是规则，关不掉「这一段只跳过 R4」。状态机比「只作用于注释所在行」更能盖住围栏前的一段，也比源码区间标记省掉配对闭合。建议注释语法跟本仓规则 id (`R4`) 对齐，不要引入 `space-word` 这种外部分名。
 4. **忽略文件用 gitignore 语法、显式传入的路径也过滤** (两侧 CLI 都是如此)。理由：与「我写在命令行上就一定要检」相反，两侧都选择了 ignore 赢，避免 CI 脚本 `git ls-files '*.md'` 把生成物又送回来。Rust 侧直接用 `ignore` crate 即可 (AutoCorrect 已验证)。要不要像 AutoCorrect 那样**默认叠加 `.gitignore`**，宜单独拍板：叠加省一份名单，但会让「源码在 gitignore 里但仍想 lint」的生成文档消失；zhlint 只读自己的 ignore 文件，更可预测。无论选哪头，显式路径与忽略文件的关系必须写进规范，两侧源码都没有「强制检」开关。
