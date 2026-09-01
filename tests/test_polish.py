@@ -2,6 +2,7 @@ import io
 import json
 import pathlib
 import sys
+import time
 
 import pytest
 
@@ -239,6 +240,94 @@ def test_select_ignores_a_stale_cache(tmp_path: pathlib.Path):
   )
   with pytest.raises(engines.EngineError):
     engines.select(env)
+
+
+def write_cache(
+    env: dict[str, str], entries: dict[str, tuple[str, float]]
+) -> pathlib.Path:
+  """Write a cache file whose entries are a given age, in seconds."""
+  path = (
+      pathlib.Path(env["XDG_CACHE_HOME"])
+      / engines.CACHE_DIRECTORY
+      / engines.CACHE_FILENAME
+  )
+  path.parent.mkdir(parents=True, exist_ok=True)
+  now = time.time()
+  path.write_text(
+      json.dumps(
+          {
+              "engines": {
+                  name: {"state": state, "at": now - age}
+                  for name, (state, age) in entries.items()
+              }
+          }
+      ),
+      encoding="utf-8",
+  )
+  return path
+
+
+def test_a_remembered_failure_expires_sooner_than_a_remembered_success(
+    tmp_path: pathlib.Path,
+):
+  # The two directions are not symmetric: a stale failure makes the
+  # whole feature unusable and lands on the user who has just logged in,
+  # so it is forgotten first.
+  env = environment(tmp_path)
+  bin_dir = pathlib.Path(env["PATH"].split(":")[0])
+  stub(bin_dir, "claude", f"cat > /dev/null\necho {engines.PROBE_MARKER}")
+  older_than_a_failure_lives = engines.FAILURE_CACHE_TTL + 60
+  assert older_than_a_failure_lives < engines.CACHE_TTL
+
+  _ = write_cache(
+      env, {"claude": (engines.UNAUTHORIZED, older_than_a_failure_lives)}
+  )
+  assert engines.select(env) == "claude"
+
+  # A success of the same age is still trusted: claude is chosen without
+  # being probed, though it would now fail.
+  stub(bin_dir, "claude", "exit 1")
+  _ = write_cache(env, {"claude": (engines.OK, older_than_a_failure_lives)})
+  assert engines.select(env) == "claude"
+
+
+def test_a_missing_binary_is_never_written_to_the_cache(
+    tmp_path: pathlib.Path,
+):
+  # `command -v` costs nothing to redo, so caching it would only make a
+  # stale answer possible.
+  env = environment(tmp_path)
+  bin_dir = pathlib.Path(env["PATH"].split(":")[0])
+  stub(
+      bin_dir,
+      "codex",
+      f'cat > /dev/null\nshift 8\necho {engines.PROBE_MARKER} > "$1"',
+  )
+  assert engines.select(env) == "codex"
+  cached = json.loads(
+      (
+          pathlib.Path(env["XDG_CACHE_HOME"])
+          / engines.CACHE_DIRECTORY
+          / engines.CACHE_FILENAME
+      ).read_text(encoding="utf-8")
+  )
+  assert list(cached["engines"]) == ["codex"]
+
+
+def test_a_remembered_diagnosis_says_its_age_and_how_to_retry(
+    tmp_path: pathlib.Path,
+):
+  env = environment(tmp_path)
+  stub(pathlib.Path(env["PATH"].split(":")[0]), "claude", "exit 1")
+  path = write_cache(env, {"claude": (engines.UNAUTHORIZED, 120)})
+
+  with pytest.raises(engines.EngineError) as caught:
+    engines.select(env)
+  message = str(caught.value)
+  assert f"claude: {engines.UNAUTHORIZED} (probed 2 minute(s) ago)" in message
+  # The user who has just logged in must be able to get out of it.
+  assert "--engine" in message
+  assert str(path) in message
 
 
 def test_select_diagnoses_every_engine_without_echoing_anything(

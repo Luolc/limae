@@ -53,9 +53,17 @@ PROBE_SPEC = f"Reply with this marker and nothing else: {PROBE_MARKER}"
 PROBE_INPUT = "probe"
 PROBE_TIMEOUT = 90.0
 RUN_TIMEOUT = 600.0
-# How long a successful probe is trusted (step 5). Only successes are
-# cached: a negative cache would hide a login the user has just done.
+# How long a probe's answer is trusted (step 5). The two directions get
+# different TTLs because their costs are not symmetric: a stale success
+# only makes one run fail — the CLI reports it, the hook form will fall
+# back to the original text, and `auto` moves on to the next engine — but
+# a stale failure makes the whole feature unusable for the window, and it
+# lands exactly on the user who has just logged in. So a failure is
+# forgotten quickly, and only the results that cost a real model call are
+# remembered at all (`command -v` is free to redo, so a missing binary is
+# never written down).
 CACHE_TTL = 3600.0
+FAILURE_CACHE_TTL = 300.0
 CACHE_DIRECTORY = "limae"
 CACHE_FILENAME = "engine.json"
 
@@ -226,6 +234,20 @@ class Invocation(typing.NamedTuple):
   stdin: str
   output: pathlib.Path | None
   cwd: pathlib.Path | None
+
+
+class Probed(typing.NamedTuple):
+  """One engine's cached probe answer.
+
+  Attributes:
+    state: What that probe found — ``OK`` or one of the diagnoses.
+    age: How long ago it was found, in seconds; a diagnosis says this
+      out loud so that a user who has just logged in knows why the
+      answer has not changed yet.
+  """
+
+  state: str
+  age: float
 
 
 def home(env: Mapping[str, str]) -> pathlib.Path:
@@ -707,34 +729,37 @@ def _entries(env: Mapping[str, str]) -> dict[str, dict[str, object]]:
   }
 
 
-def _cached(env: Mapping[str, str], now: float) -> dict[str, str]:
-  """Return each engine's probe result from the last TTL.
+def _cached(env: Mapping[str, str], now: float) -> dict[str, Probed]:
+  """Return each engine's probe answer from within its TTL.
 
   What is cached is one probe's answer per engine, never which engine
   was chosen: the choice runs through the six steps of ADR-0008 section
-  三 on every run, so a result cached outside a session cannot outrank
+  三 on every run, so an answer cached outside a session cannot outrank
   the session the user is in now (step 2). The cache only saves the
   probe call itself.
 
-  Failures are cached along with successes, or a broken engine ahead in
-  the order would be probed — a real model call — on every run. The cost
-  is that a login done inside the TTL is not noticed until it runs out;
-  ``--engine`` names an engine straight away, without probing.
+  Failures are cached too, or a broken engine ahead in the order would
+  cost a real model call on every run — but only for
+  ``FAILURE_CACHE_TTL``, because a stale failure is the more expensive
+  mistake of the two (see there). Their age is carried out with them so
+  that a diagnosis can say how old it is.
 
   Args:
     env: The environment of the run.
     now: The current time, in seconds since the epoch.
 
   Returns:
-    Engine name to probe result, holding only entries that are still
-    fresh and whose CLI is still installed.
+    Engine name to its cached answer, holding only entries still inside
+    their own TTL and whose CLI is still installed.
   """
-  return {
-      name: str(entry["state"])
-      for name, entry in _entries(env).items()
-      if now - float(typing.cast(float, entry["at"])) <= CACHE_TTL
-      and installed(name, env)
-  }
+  fresh: dict[str, Probed] = {}
+  for name, entry in _entries(env).items():
+    state = str(entry["state"])
+    age = now - float(typing.cast(float, entry["at"]))
+    ttl = CACHE_TTL if state == OK else FAILURE_CACHE_TTL
+    if 0 <= age <= ttl and installed(name, env):
+      fresh[name] = Probed(state, age)
+  return fresh
 
 
 def _remember(
@@ -762,11 +787,30 @@ def _remember(
     return
 
 
+def _ago(age: float) -> str:
+  """Say how long ago a cached probe ran, for a diagnosis.
+
+  Args:
+    age: Seconds since that probe.
+
+  Returns:
+    A phrase to put after the diagnosis.
+  """
+  minutes = int(age // 60)
+  return (
+      "probed under a minute ago"
+      if minutes < 1
+      else (f"probed {minutes} minute(s) ago")
+  )
+
+
 def select(env: Mapping[str, str]) -> str:
   """Find an engine to polish with (ADR-0008 section 三 steps 2 to 6).
 
   The ordering is recomputed every time; only the probe of step 5 is
-  ever served from the cache (:func:`_cached`).
+  ever served from the cache (:func:`_cached`). A diagnosis that came
+  from the cache says so and says how to retry now, because the user who
+  needs it most is the one who has just logged in.
 
   Args:
     env: The environment of the run.
@@ -783,20 +827,36 @@ def select(env: Mapping[str, str]) -> str:
   cached = _cached(env, now)
   candidates = order(env)
   diagnosis = {name: MISSING for name in ENGINES if name not in candidates}
+  stale = False
   for name in candidates:
-    state = cached.get(name)
-    if state is None:
+    remembered = cached.get(name)
+    if remembered is None:
       state = probe(name, env)
-      _remember(name, state, env, now)
+      # `command -v` is free to redo, so a missing binary is never
+      # written down; only what cost a real call is.
+      if state != MISSING:
+        _remember(name, state, env, now)
+    else:
+      state = remembered.state
     if state == OK:
       return name
     diagnosis[name] = state
-  lines = [
-      f"  {name}: {diagnosis[name]} — {NEXT_STEP[diagnosis[name]]}"
-      for name in ENGINES
+    stale = stale or remembered is not None
+
+  def line(name: str) -> str:
+    remembered = cached.get(name)
+    when = f" ({_ago(remembered.age)})" if remembered is not None else ""
+    return f"  {name}: {diagnosis[name]}{when} — {NEXT_STEP[diagnosis[name]]}"
+
+  message = [
+      "no polish engine is usable:",
+      *(line(name) for name in ENGINES),
+      "or configure [polish] engine = 'custom' with your own command",
   ]
-  raise EngineError(
-      "no polish engine is usable:\n"
-      + "\n".join(lines)
-      + "\nor configure [polish] engine = 'custom' with your own command"
-  )
+  if stale:
+    message.append(
+        "some of these are remembered probes, not fresh ones; to retry"
+        " right now, name the engine with --engine, or delete"
+        f" {_cache_file(env)}"
+    )
+  raise EngineError("\n".join(message))
