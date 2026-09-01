@@ -15,13 +15,27 @@ an assistant message streams, so this subcommand caches the batches by
 over the whole message (ADR-0009 section 二). Middle batches produce no
 output at all, which is how the host displays the original.
 
-**Failure is silence.** A missing engine, a timeout, an empty answer, a
-malformed payload, a bug in this file: every one of them ends the same
-way, with no ``displayContent`` and the user's own text on screen
-(ADR-0009 section 六). This is the opposite of the CLI's contract
-(ADR-0008 section 六) and deliberately so — this code sits in front of
-every reply the user reads, so the worst thing it can do is get in the
-way.
+**Failure is silence on screen, and only there.** A missing engine, a
+timeout, an empty answer, a malformed payload, a bug in this file: every
+one of them ends the same way, with no ``displayContent`` and the user's
+own text on screen (ADR-0009 section 六). This is the opposite of the
+CLI's contract (ADR-0008 section 六) and deliberately so — this code
+sits in front of every reply the user reads, so the worst thing it can
+do is get in the way.
+
+Each of them also writes one line to ``diagnostics.jsonl`` in the
+session's state directory, because failing open and leaving no trace are
+two different things and only the first one was ever the intention: a
+reply that comes back unpolished should be answerable with "the engine
+timed out", not with a guess. The line names the step and the kind of
+failure and nothing else — never the prose, never what the engine
+printed.
+
+What does reach the screen has been through this repository's own
+deterministic fixes first (:func:`_tidy`). ADR-0005 section 四 splits
+the work that way: the model settles the words, the rules settle the
+typography, and a rewrite is not exempt from the rules just because a
+model wrote it.
 
 ``Stop`` is the other half of the A/B trial (:mod:`limae.ab`): the model
 cannot see what was displayed, so the code name and the two model names
@@ -29,6 +43,7 @@ are handed to it there.
 """
 
 from collections.abc import Mapping, Sequence
+import datetime
 import json
 import os
 import pathlib
@@ -37,7 +52,7 @@ import shutil
 import sys
 import time
 
-from limae import ab, config, engines, polish
+from limae import ab, config, engines, polish, zh_format
 
 SUBCOMMAND = "hook"
 MESSAGE_DISPLAY = "MessageDisplay"
@@ -68,6 +83,15 @@ TIMEOUT = 60.0
 
 STATE_DIRECTORY = "limae-hook"
 PARTS_DIRECTORY = "parts"
+# Where a fail-open path says what it did. Failing open means the user
+# is never interrupted, and until now it also meant nobody could find
+# out why a reply went unpolished — "no block appeared" was the whole of
+# the evidence. This file is the other half of ADR-0009 section 六: the
+# user still sees nothing, and whoever is debugging sees everything that
+# matters. It holds no prose, no engine output and no credential — the
+# step and the kind of failure, which is what a person needs to know
+# where to look next.
+DIAGNOSTICS_FILENAME = "diagnostics.jsonl"
 PART_SUFFIX = ".part"
 TEMPORARY_SUFFIX = ".writing"
 # The host starts one of these processes per batch and does not wait for
@@ -88,6 +112,29 @@ FILE_MODE = 0o600
 # finished message are deleted as soon as they are assembled, and what
 # is left is the A/B ledger of sessions that have ended.
 RETENTION = 24 * 3600.0
+# How long one message's cached batches are kept when its final batch
+# never comes. That happens for real: a message the host abandons
+# mid-stream — the session is interrupted, or restarted with `--resume`
+# — gets no final flush, so nothing ever assembles it and nothing
+# deletes it (2026-09-01, one such message left five batches behind).
+# Session retention alone does not reach these, because the session they
+# are in is the live one. An hour is orders of magnitude past the
+# seconds a message spends streaming, so a sweep can never take the
+# batches of a message still arriving.
+ORPHAN_RETENTION = 3600.0
+
+# The steps that can fail open, named so a diagnostics line says where
+# to look without saying what was being polished.
+ASSEMBLE = "assemble"
+SINGLE = "single"
+AB = "ab"
+FIX = "fix"
+DISPLAY = "display"
+# What went wrong when it was not the engine's doing (`engines.REASONS`
+# covers those).
+INCOMPLETE = "incomplete"
+REPAIRED = "repaired"
+CRASHED = "crashed"
 
 # Session and message ids are UUIDs, but they arrive from outside and
 # become path segments here, so everything that is not a plain name is
@@ -184,19 +231,145 @@ def _session(root: pathlib.Path, session: str) -> pathlib.Path:
   return directory
 
 
+def _note(directory: pathlib.Path, message: str, step: str, kind: str) -> None:
+  """Write down that one fail-open path fired.
+
+  Failing open is the right behaviour and a bad witness: the user is not
+  interrupted, and nothing anywhere says why their reply came back
+  unpolished. One line per failure fixes that without moving the
+  boundary — it goes to the session-state directory, never to the
+  screen.
+
+  What a line may hold is bounded by the same rule as the ledger
+  (ADR-0009 section 八): the message's id, the step, the kind of
+  failure. Never the prose, never what an engine printed, never a
+  credential — an engine is free to quote its environment back at us,
+  and this is a file that outlives the run.
+
+  Args:
+    directory: The session-state directory.
+    message: The sanitised message id, empty when there is none.
+    step: Which step failed; one of :data:`ASSEMBLE`, :data:`SINGLE`,
+      :data:`FIX` or :data:`DISPLAY`.
+    kind: How it failed; one of :data:`engines.REASONS`,
+      :data:`INCOMPLETE`, :data:`REPAIRED` or :data:`CRASHED`.
+  """
+  line = json.dumps(
+      {
+          "at": datetime.datetime.now(datetime.UTC).isoformat(),
+          "message_id": message,
+          "step": step,
+          "kind": kind,
+      },
+      ensure_ascii=False,
+  )
+  try:
+    directory.mkdir(parents=True, exist_ok=True, mode=DIRECTORY_MODE)
+    path = directory / DIAGNOSTICS_FILENAME
+    # Appended under the mode it is created with, for the reason every
+    # other file here has one: a diagnostics line names a session of
+    # this user's and nobody else's business.
+    descriptor = os.open(
+        path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, FILE_MODE
+    )
+    with os.fdopen(descriptor, "a", encoding="utf-8") as f:
+      _ = f.write(f"{line}\n")
+  except OSError:
+    # A hook that cannot write its own diagnostics still has a reply to
+    # get out of the way of.
+    return
+
+
+def _tidy(text: str, cwd: pathlib.Path) -> tuple[str, str]:
+  """Run this repository's own deterministic fixes over one rewrite.
+
+  ADR-0005 section 四 draws the line this walks: meaning is the model's
+  half, typography is the rules' half. A model rewriting Chinese prose
+  reliably drops a space beside an inline code span or a dash — the
+  ``zh-typography`` family, fixable and error-level — and until now the
+  hook shipped those to the screen, which is the one thing this
+  repository exists to stop.
+
+  Only the rewrite goes through here. The original is the user's own
+  text and this hook has no business changing it; it has also already
+  been displayed, batch by batch, by the time there is anything to fix.
+
+  Args:
+    text: The rewrite, as the engine returned it.
+    cwd: Directory the rule configuration is looked up from, so a
+      repository that has disabled a rule keeps it disabled here.
+
+  Returns:
+    The fixed text and an empty string; or the text unchanged and
+    :data:`CRASHED` when the fixer would not run — a rewrite with a
+    typography slip in it still beats no rewrite at all.
+  """
+  try:
+    settings = config.resolve(
+        None,
+        None,
+        cwd,
+        zh_format.ALL_RULES,
+        zh_format.DEFAULT_RULES,
+        zh_format.EXPERIMENTAL_RULES,
+    )
+    return (
+        zh_format.fix_text(text, settings.rules, settings.skip_zh_units),
+        "",
+    )
+  except Exception:
+    return text, CRASHED
+
+
+def _stale(directory: pathlib.Path, now: float, keep: float) -> bool:
+  """Return whether a directory has gone untouched for long enough.
+
+  Args:
+    directory: The directory to age.
+    now: The current time, in seconds since the epoch.
+    keep: How long it is kept, in seconds.
+
+  Returns:
+    True when it is older than that, False when it is not or cannot be
+    aged.
+  """
+  try:
+    return now - directory.stat().st_mtime > keep
+  except OSError:
+    return False
+
+
 def _prune(root: pathlib.Path, now: float) -> None:
-  """Delete the state of sessions nobody is in any more.
+  """Delete the state nobody is coming back for.
+
+  Two horizons, because there are two ways state is left behind. A whole
+  session goes when nobody has been in it for a day. Inside a session
+  that is still live, one message's batches go when its final batch
+  never came — the host abandons a message it is killed in the middle
+  of, and those batches would otherwise sit there until the session
+  itself expired.
 
   Args:
     root: The state root.
     now: The current time, in seconds since the epoch.
   """
   try:
-    for entry in root.iterdir():
-      if entry.is_dir() and now - entry.stat().st_mtime > RETENTION:
-        shutil.rmtree(entry, ignore_errors=True)
+    sessions = list(root.iterdir())
   except OSError:
     return
+  for session in sessions:
+    if not session.is_dir():
+      continue
+    if _stale(session, now, RETENTION):
+      shutil.rmtree(session, ignore_errors=True)
+      continue
+    try:
+      orphans = list((session / PARTS_DIRECTORY).iterdir())
+    except OSError:
+      continue
+    for parts in orphans:
+      if parts.is_dir() and _stale(parts, now, ORPHAN_RETENTION):
+        shutil.rmtree(parts, ignore_errors=True)
 
 
 def prose_length(text: str) -> int:
@@ -241,7 +414,13 @@ def _keep(parts: pathlib.Path, index: int, delta: str) -> None:
   _ = writing.replace(parts / f"{name}{PART_SUFFIX}")
 
 
-def _assemble(parts: pathlib.Path, batches: int, deadline: float) -> str | None:
+def _assemble(
+    parts: pathlib.Path,
+    batches: int,
+    deadline: float,
+    directory: pathlib.Path,
+    message: str,
+) -> str | None:
   """Put a message back together from its cached batches.
 
   Args:
@@ -249,6 +428,8 @@ def _assemble(parts: pathlib.Path, batches: int, deadline: float) -> str | None:
     batches: How many batches this message had, the final one included.
     deadline: When to stop waiting for the missing ones, on the
       monotonic clock.
+    directory: The session-state directory, for the diagnostics line.
+    message: The sanitised message id.
 
   Returns:
     The whole message, batches in index order; None when one of them
@@ -270,6 +451,7 @@ def _assemble(parts: pathlib.Path, batches: int, deadline: float) -> str | None:
           " deadline; showing the original",
           file=sys.stderr,
       )
+      _note(directory, message, ASSEMBLE, INCOMPLETE)
       return None
     time.sleep(SIBLING_POLL)
   return "".join(path.read_text(encoding="utf-8") for path in wanted)
@@ -327,14 +509,20 @@ def _single(text: str, env: Mapping[str, str], cwd: pathlib.Path) -> str:
 def _block(
     text: str,
     directory: pathlib.Path,
+    message: str,
     env: Mapping[str, str],
     cwd: pathlib.Path,
 ) -> str:
   """Build what to show after one finished message.
 
+  Every rewrite that leaves here has been through this repository's own
+  deterministic fixes (:func:`_tidy`): the model settles the words, the
+  rules settle the typography (ADR-0005 section 四).
+
   Args:
     text: The whole assistant message.
     directory: The session-state directory.
+    message: The sanitised message id, for the diagnostics line.
     env: The environment of the run.
     cwd: Directory the configuration is looked up from.
 
@@ -346,14 +534,33 @@ def _block(
     return ""
   trial = ab.draw(directory, env, _number(env, RATE_VARIABLE, ab.SAMPLE_RATE))
   if trial is None:
-    return f"── 润色 ──\n{_single(text, env, cwd).strip()}\n"
-  answers = ab.run(trial, text, env, _number(env, TIMEOUT_VARIABLE, TIMEOUT))
+    try:
+      answer = _single(text, env, cwd)
+    except engines.EngineError as e:
+      _note(directory, message, SINGLE, e.reason)
+      return ""
+    written = answer.strip()
+    fixed, failed = _tidy(written, cwd)
+    if failed:
+      _note(directory, message, FIX, failed)
+    elif fixed != written:
+      # Which models need the rules to clean up after them is a
+      # selection signal, not only a display fix.
+      _note(directory, message, FIX, REPAIRED)
+    return f"── 润色 ──\n{fixed}\n"
+  answers, reason = ab.run(
+      trial, text, env, _number(env, TIMEOUT_VARIABLE, TIMEOUT)
+  )
   if answers is None:
     # One candidate short is not a comparison, and a second round of
     # calls would make the user wait twice; this turn shows its original.
+    _note(directory, message, AB, reason)
     return ""
-  ab.record(directory, trial, text, answers, time.time())
-  return ab.render(trial, answers)
+  shown = (_tidy(answers[0], cwd)[0], _tidy(answers[1], cwd)[0])
+  if shown != answers:
+    _note(directory, message, FIX, REPAIRED)
+  ab.record(directory, trial, text, answers, shown, time.time())
+  return ab.render(trial, shown)
 
 
 def _display(payload: Mapping[str, object], env: Mapping[str, str]) -> str:
@@ -384,7 +591,9 @@ def _display(payload: Mapping[str, object], env: Mapping[str, str]) -> str:
     return ""
   # Indices are zero-based and increment by one per batch, so the final
   # one says how many there are.
-  text = _assemble(parts, index + 1, time.monotonic() + SIBLING_WAIT)
+  text = _assemble(
+      parts, index + 1, time.monotonic() + SIBLING_WAIT, directory, message
+  )
   shutil.rmtree(parts, ignore_errors=True)
   _prune(root, time.time())
   if text is None:
@@ -393,13 +602,19 @@ def _display(payload: Mapping[str, object], env: Mapping[str, str]) -> str:
   block = _block(
       text,
       directory,
+      message,
       env,
       pathlib.Path(where) if isinstance(where, str) else pathlib.Path.cwd(),
   )
   if not block:
     return ""
-  separator = "\n\n" if delta.endswith("\n") else "\n\n\n"
-  return f"{delta}{separator}{block}"
+  # One blank line, whatever the message happens to end on. The gap used
+  # to be built by adding to the delta's own trailing newlines, which is
+  # only stable while there is exactly one of them: a message ending on a
+  # paragraph break, or a final batch that is empty because the message
+  # ended on a newline, made it wider. Cutting the run first and then
+  # adding a fixed gap is the same answer for every ending.
+  return f"{delta.rstrip(chr(10))}\n\n{block}"
 
 
 def _stop(payload: Mapping[str, object], env: Mapping[str, str]) -> str:
@@ -460,6 +675,18 @@ def main(argv: Sequence[str]) -> int:
   except Exception:
     # Fail open, and mean it: nothing this file can go wrong at is worth
     # showing the user instead of their own reply (ADR-0009 section 六).
+    # Silent on screen is not the same as silent everywhere, so a crash
+    # says so where the other failures do — best effort, since the state
+    # directory is exactly the sort of thing that may be why we are here.
+    session = _identifier(payload.get("session_id"))
+    root = _root(env)
+    if session and root is not None:
+      _note(
+          root / session,
+          _identifier(payload.get("message_id")),
+          DISPLAY,
+          CRASHED,
+      )
     return OK
   if not answer:
     return OK
