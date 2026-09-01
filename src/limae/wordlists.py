@@ -3,7 +3,7 @@
 ``spec/rules.md`` section 「词表」 is the normative description. The files
 live in ``spec/wordlists/`` because they are part of the spec, not of this
 implementation — every implementation reads the same ones, so changing a
-wordlist changes no code. ``src/lo_md_lint/wordlists`` is a directory
+wordlist changes no code. ``src/limae/wordlists`` is a directory
 symlink to that directory, which both the editable install and the built
 wheel resolve, so :mod:`importlib.resources` finds the files either way.
 
@@ -18,7 +18,7 @@ import importlib.resources
 import tomllib
 import typing
 
-PACKAGE = "lo_md_lint"
+PACKAGE = "limae"
 DIRECTORY = "wordlists"
 TERMS_FILE = "T1.toml"
 COMMENT = "#"

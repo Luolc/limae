@@ -1,6 +1,15 @@
+- id: limae
+  name: Lint Markdown with limae
+  description: Check Markdown files against limae's Chinese typography rules.
+  entry: limae
+  language: python
+  files: \.md$
+
+# Transitional alias for the old hook id, identical behaviour: consumer
+# repositories migrate to `id: limae` on their own schedule (README 「更名说明」).
 - id: lo-md-lint
-  name: Lint Markdown with lo-md-lint
-  description: Check Markdown files against lo-md-lint's Chinese typography rules.
-  entry: lo-md-lint
+  name: Lint Markdown with limae (deprecated id)
+  description: Check Markdown files against limae's Chinese typography rules.
+  entry: limae
   language: python
   files: \.md$

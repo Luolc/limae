@@ -33,7 +33,7 @@ jobs:
       - name: Tests
         run: uv run pytest -q
 
-      # ruff + pyink + isort + basedpyright + pydoclint + uv-lock + lo-md-lint.
+      # ruff + pyink + isort + basedpyright + pydoclint + uv-lock + limae.
       # basedpyright type-checks against .venv, so this runs after `uv sync`.
       - name: Format / lint / type-check
         run: uv run pre-commit run --all-files --show-diff-on-failure

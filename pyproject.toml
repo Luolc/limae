@@ -1,6 +1,6 @@
 [project]
-name = "lo-md-lint"
-version = "0.9.0"
+name = "limae"
+version = "0.10.0"
 description = "Markdown linter, starting from Chinese technical-writing typography rules"
 requires-python = ">=3.13,<3.14"
 # gitignore pattern matching for the `.lo-md-lint-ignore` file; the
@@ -8,20 +8,23 @@ requires-python = ">=3.13,<3.14"
 dependencies = ["pathspec>=0.12.1"]
 
 [project.scripts]
-lo-md-lint = "lo_md_lint.zh_format:main"
+limae = "limae.zh_format:main"
+# Transitional alias for the old name; both entry points are the same
+# CLI, so consumers can migrate on their own schedule (README 「更名说明」).
+lo-md-lint = "limae.zh_format:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-# `src/lo_md_lint/wordlists` is a directory symlink to `spec/wordlists`:
+# `src/limae/wordlists` is a directory symlink to `spec/wordlists`:
 # the wordlists are spec, not implementation (ADR-0007), and the symlink
 # is what makes one `importlib.resources` lookup work for both an
 # editable install and a wheel built from a source checkout — the two
 # ways this package is installed (pre-commit's remote hook and
 # `uvx --from git+…` both build from a checkout).
 [tool.hatch.build.targets.wheel]
-packages = ["src/lo_md_lint"]
+packages = ["src/limae"]
 
 # Direct entry points only (AGENTS.md quality bar). ruff / pyink / isort /
 # basedpyright run inside pre-commit's own environments; their versions are
@@ -137,7 +140,7 @@ max-doc-length = 80
 # pytest asserts are the test mechanism, not runtime checks.
 "tests/**" = ["D1", "S101"]
 # CLI entry point: stdout is the user-facing output contract.
-"src/lo_md_lint/zh_format.py" = ["T201"]
+"src/limae/zh_format.py" = ["T201"]
 
 [tool.ruff.format]
 # Disable ruff formatting. Use pyink in this project.

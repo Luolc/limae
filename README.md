@@ -1,6 +1,6 @@
-# lo-md-lint
+# limae
 
-Markdown linter，从中文技术写作的排版规则起步。
+Markdown linter，从中文技术写作的排版规则起步。名字取自贺拉斯 (Horace) 的 *limae labor* —— 「锉刀的功夫」，把写完的稿子一遍遍磨到干净。
 
 ## 定位与愿景
 
@@ -11,20 +11,29 @@ Markdown linter，从中文技术写作的排版规则起步。
 
 决策记录在 `docs/adr/`；agent 守则在 `AGENTS.md`。
 
+## 更名说明
+
+本工具原名 `lo-md-lint`，现已更名为 `limae`。仓库、包名、命令名与 pre-commit hook id 都是新名，旧名在过渡期继续可用，消费方可以从容迁移：
+
+- **仓库**：已改名为 <https://github.com/Luolc/limae>，旧地址由 GitHub 永久重定向 (301)，`repo:` 与 `uvx --from git+…` 写旧地址仍然能用。
+- **命令名**：`limae` 是正名，`lo-md-lint` 保留为同一个入口的别名，两者行为完全一致。
+- **pre-commit hook id**：`limae` 是正名，`lo-md-lint` 保留为同一个 hook 的别名。
+- **配置语法**：配置文件名、`pyproject.toml` 的表名与行内指令前缀这一批用户可见的名字另有一次改动，同样带向后兼容的旧名，届时在这里更新。
+
 ## 现状
 
 Python 参考实现已就位。默认规则集是中文排版一套：宽度转换 (R1 CJK 旁的半角标点含句号、R2 全角括号、R10 全角数字)、空格 (R3 半角括号外侧、R4 CJK–拉丁字母、R5 CJK–数字、R6 数字–单位、R7 行内代码定界符、R8 破折号两侧、R11 全角标点旁去空格、R9 链接前，默认关)，全是 fixable · error · stable。另有一批默认关闭的实验规则：中文 AI 腔 A1 套话、A2 否定平行、A3 互联网黑话、A4 聊天残留，英文 tell A5 AI 词汇、A6 否定平行、A7 Claudish 专用词、中文造词 A8「零 + 名词」，与术语选词 T1、T2「秘密」误用 (ADR-0007)，全是 warning · experimental，判定用的词表在 `spec/wordlists/`。规则不分语言 (ADR-0006)：英文 tell 出现在中文文档里同样报。每条规则都可单独开关 (ADR-0003 / ADR-0004)，并按可修复性 / 严重度 / 成熟度三轴标注 (ADR-0006)。逃生口两个：行内指令按行 × 规则就地关掉，`.lo-md-lint-ignore` 把整份文件排除在输入之外。`spec/` 已建起来：规则规范在 `spec/rules.md`，黄金 fixture 在 `spec/fixtures/`，格式与 runner 的判定见 `spec/README.md`；Python 的薄 runner 是 `tests/test_fixtures.py`。
 
 ## 使用
 
-作为 pre-commit 远端 hook (推荐)，`rev` 固定到一个 tag ([tag 列表](https://github.com/Luolc/lo-md-lint/tags))：
+作为 pre-commit 远端 hook (推荐)，`rev` 固定到一个 tag ([tag 列表](https://github.com/Luolc/limae/tags))：
 
 ```yaml
 repos:
-  - repo: https://github.com/Luolc/lo-md-lint
+  - repo: https://github.com/Luolc/limae
     rev: <tag>
     hooks:
-      - id: lo-md-lint
+      - id: limae
 ```
 
 默认只检查、不修复；要自动修复就自己加 `args: ["--fix"]`。
@@ -32,8 +41,8 @@ repos:
 不接 pre-commit、手动或在 CI 里一次性跑：
 
 ```sh
-uvx --from git+https://github.com/Luolc/lo-md-lint@<tag> lo-md-lint --all
-uvx --from git+https://github.com/Luolc/lo-md-lint@<tag> lo-md-lint <file>...
+uvx --from git+https://github.com/Luolc/limae@<tag> limae --all
+uvx --from git+https://github.com/Luolc/limae@<tag> limae <file>...
 ```
 
 ### 开关某条规则
@@ -101,9 +110,9 @@ severity = { T1 = "error" }
 临时在命令行上开关，整体覆盖配置文件：
 
 ```sh
-lo-md-lint --disable R3 <file>...
-lo-md-lint --disable R1,R3 --all
-lo-md-lint --enable R9 --all
+limae --disable R3 <file>...
+limae --disable R1,R3 --all
+limae --enable R9 --all
 ```
 
 ### 单点豁免与整份跳过
@@ -132,8 +141,8 @@ docs/generated/*.md
 ```sh
 uv sync                          # 建 .venv、装 dev 依赖
 uv run pre-commit install        # 装本地钩子 (只需一次)
-uv run lo-md-lint --all          # 检查全部 tracked Markdown
-uv run lo-md-lint --all --fix    # 自动修复大部分违规后复查
-uv run lo-md-lint <file>...      # 检查指定文件
+uv run limae --all               # 检查全部 tracked Markdown
+uv run limae --all --fix         # 自动修复大部分违规后复查
+uv run limae <file>...           # 检查指定文件
 uv run pytest -q                 # 测试
 ```

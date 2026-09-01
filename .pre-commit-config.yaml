@@ -37,8 +37,8 @@ repos:
   # Dogfooding: this repo's own Markdown is checked by this repo's linter.
   - repo: local
     hooks:
-      - id: lo-md-lint
-        name: chinese markdown format (lo-md-lint)
+      - id: limae
+        name: chinese markdown format (limae)
         language: system
-        entry: uv run lo-md-lint
+        entry: uv run limae
         files: \.md$

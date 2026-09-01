@@ -3,7 +3,7 @@ import tomllib
 
 import pytest
 
-from lo_md_lint.zh_format import (
+from limae.zh_format import (
     check_text,
     DEFAULT_RULES,
     EXPERIMENTAL_RULES,
