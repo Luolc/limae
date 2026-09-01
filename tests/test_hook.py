@@ -2,6 +2,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import sys
 import threading
 import time
@@ -21,6 +22,12 @@ SECOND = "乙稿"
 SESSION = "11111111-2222-3333-4444-555555555555"
 MESSAGE = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 PAIR = (ab.Candidate("claude", "haiku"), ab.Candidate("grok", "grok-4.6"))
+HANDBOOK = (
+    pathlib.Path(__file__).resolve().parents[1]
+    / "docs"
+    / "knowledge"
+    / "polish-hook-self-trial.md"
+)
 # A rewrite carrying the slip a model reliably makes in Chinese prose:
 # the dash of `zh-typography-8`, fixable and error-level, with the
 # spaces eaten off both sides. TIDY is the same sentence already right.
@@ -75,6 +82,31 @@ def diagnostics(
       for line in path.read_text(encoding="utf-8").splitlines()
       if line
   ]
+
+
+def painted(
+    batches: list[tuple[str, bool]],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    message: str,
+) -> str:
+  """Run one message's batches and return what the screen ends up with.
+
+  The host paints a batch's own delta unless the hook answers, and the
+  answer replaces that batch and nothing before it — so the aggregate,
+  not any one answer, is what a reader sees.
+  """
+  screen = ""
+  for index, (delta, final) in enumerate(batches):
+    answer = run_hook(
+        display(delta, index=index, final=final, message=message, cwd=tmp_path),
+        tmp_path,
+        monkeypatch,
+        capsys,
+    )
+    screen += delta if answer is None else str(answer["displayContent"])
+  return screen
 
 
 def candidates(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1071,3 +1103,141 @@ def test_the_batches_of_an_abandoned_message_are_swept_up(
   # A message still arriving keeps its batches, and so does the session.
   assert fresh.is_dir()
   assert state(tmp_path).is_dir()
+
+
+def test_the_gap_is_one_blank_line_across_a_whole_batch_sequence(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  # The gap belongs to the screen, not to the last batch: what an
+  # earlier batch painted cannot be taken back by `displayContent`, only
+  # counted. The case that makes this visible is a message ending on a
+  # newline, whose final batch is empty because there is nothing left.
+  answering(tmp_path, TIDIED)
+  sequences = {
+      "empty-final": [(LONG + "\n\n", False), ("", True)],
+      "final-on-newline": [(LONG + "\n", False), ("尾批。\n", True)],
+      "final-mid-line": [(LONG + "\n\n", False), ("尾批。", True)],
+      "single-batch": [(LONG, True)],
+  }
+  gaps: dict[str, int] = {}
+  for name, batches in sequences.items():
+    screen = painted(batches, tmp_path, monkeypatch, capsys, name)
+    head, marker, _ = screen.partition("── 润色 ──")
+    assert marker, name
+    gaps[name] = len(head) - len(head.rstrip("\n"))
+  assert len(gaps) == len(sequences)
+  assert set(gaps.values()) == {hook.BLOCK_GAP}, gaps
+
+
+def test_a_fix_that_will_not_run_shows_the_rewrite_and_says_so(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  # Fail open at the finest grain: a rewrite with a typography slip in
+  # it still beats no rewrite. Both paths have to leave the line, or the
+  # file stops being the place you can trust to answer "what happened".
+  def unfixable(text: str, cwd: pathlib.Path) -> tuple[str, str]:
+    del cwd
+    return text, hook.CRASHED
+
+  monkeypatch.setattr(hook, "_tidy", unfixable)
+  answering(tmp_path, SLOPPY)
+  answer = run_hook(display(LONG, cwd=tmp_path), tmp_path, monkeypatch, capsys)
+  assert answer is not None
+  assert SLOPPY in str(answer["displayContent"])
+  lines = diagnostics(tmp_path)
+  assert len(lines) == 1
+  assert lines[0]["step"] == hook.FIX
+  assert lines[0]["kind"] == hook.CRASHED
+
+  # And the same on the A/B path, which used to drop the failure on the
+  # floor: the candidates went up unfixed and nothing said why.
+  monkeypatch.setattr(ab, "CANDIDATES", PAIR)
+  for name in ("claude", "grok"):
+    stub(tmp_path / "bin", name, f"cat > /dev/null\ncat {tmp_path / name}.txt")
+    (tmp_path / f"{name}.txt").write_text(SLOPPY, encoding="utf-8")
+  answer = run_hook(
+      display(LONG, message="trial", cwd=tmp_path),
+      tmp_path,
+      monkeypatch,
+      capsys,
+      **{hook.RATE_VARIABLE: "1"},
+  )
+  assert answer is not None
+  assert SLOPPY in str(answer["displayContent"])
+  lines = diagnostics(tmp_path)
+  assert len(lines) == 2
+  assert lines[1]["step"] == hook.FIX
+  assert lines[1]["kind"] == hook.CRASHED
+
+
+def test_a_broken_polish_table_says_so_instead_of_reading_as_a_crash(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  # A typo in the user's own configuration is theirs to fix, so it is
+  # worth telling apart from this file falling over.
+  (tmp_path / "limae.toml").write_text(
+      '[polish]\nengine = "nosuchengine"\n', encoding="utf-8"
+  )
+  assert (
+      run_hook(display(LONG, cwd=tmp_path), tmp_path, monkeypatch, capsys)
+      is None
+  )
+  lines = diagnostics(tmp_path)
+  assert len(lines) == 1
+  assert lines[0]["step"] == hook.SINGLE
+  assert lines[0]["kind"] == hook.MISCONFIGURED
+
+
+def test_a_ledger_that_will_not_write_still_shows_the_comparison(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  # Two model calls have already been paid for and the user has already
+  # waited for them; losing the evidence is not a reason to lose those.
+  monkeypatch.setattr(ab, "CANDIDATES", PAIR)
+  for name, text in (("claude", FIRST), ("grok", SECOND)):
+    stub(tmp_path / "bin", name, f"cat > /dev/null\necho {text}")
+
+  def refuse(*_args: object, **_kwargs: object) -> None:
+    raise OSError("no room")
+
+  monkeypatch.setattr(ab, "record", refuse)
+  answer = run_hook(
+      display(LONG, cwd=tmp_path),
+      tmp_path,
+      monkeypatch,
+      capsys,
+      **{hook.RATE_VARIABLE: "1"},
+  )
+  assert answer is not None
+  shown = str(answer["displayContent"])
+  assert FIRST in shown
+  assert SECOND in shown
+  lines = diagnostics(tmp_path)
+  assert len(lines) == 1
+  assert lines[0]["step"] == hook.AB
+  assert lines[0]["kind"] == hook.CRASHED
+
+
+def test_the_handbook_lists_every_kind_the_hook_can_write():
+  # The diagnostics file is only useful if a reader can look a `kind` up,
+  # so a category that exists in the code and not in the table is a
+  # category nobody can act on. Kept as a test rather than a habit: the
+  # table has already drifted once.
+  kinds: set[str] = set(engines.REASONS)
+  kinds.discard(engines.OK)
+  kinds |= {hook.INCOMPLETE, hook.REPAIRED, hook.MISCONFIGURED, hook.CRASHED}
+  listed = set(
+      re.findall(
+          r"^\| `([a-z-]+)` \|", HANDBOOK.read_text(encoding="utf-8"), re.M
+      )
+  )
+  assert kinds - listed == set()
+  assert len(kinds) == 13

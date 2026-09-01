@@ -134,6 +134,7 @@ DISPLAY = "display"
 # covers those).
 INCOMPLETE = "incomplete"
 REPAIRED = "repaired"
+MISCONFIGURED = "config"
 CRASHED = "crashed"
 
 # Session and message ids are UUIDs, but they arrive from outside and
@@ -147,6 +148,9 @@ NAME_LIMIT = 64
 # that is long only because it carries code is a short message as far as
 # polishing is concerned.
 FENCES = ("```", "~~~")
+
+# Newlines between the message and the block: one blank line.
+BLOCK_GAP = 2
 
 
 def _identifier(value: object) -> str:
@@ -252,7 +256,8 @@ def _note(directory: pathlib.Path, message: str, step: str, kind: str) -> None:
     step: Which step failed; one of :data:`ASSEMBLE`, :data:`SINGLE`,
       :data:`FIX` or :data:`DISPLAY`.
     kind: How it failed; one of :data:`engines.REASONS`,
-      :data:`INCOMPLETE`, :data:`REPAIRED` or :data:`CRASHED`.
+      :data:`INCOMPLETE`, :data:`REPAIRED`, :data:`MISCONFIGURED` or
+      :data:`CRASHED`.
   """
   line = json.dumps(
       {
@@ -370,6 +375,19 @@ def _prune(root: pathlib.Path, now: float) -> None:
     for parts in orphans:
       if parts.is_dir() and _stale(parts, now, ORPHAN_RETENTION):
         shutil.rmtree(parts, ignore_errors=True)
+
+
+def _trailing(text: str) -> int:
+  """Count the newlines a piece of text ends on.
+
+  Args:
+    text: The text to measure.
+
+  Returns:
+    How many newlines run to the end of it, zero when it ends on
+    anything else.
+  """
+  return len(text) - len(text.rstrip("\n"))
 
 
 def prose_length(text: str) -> int:
@@ -506,6 +524,108 @@ def _single(text: str, env: Mapping[str, str], cwd: pathlib.Path) -> str:
   )
 
 
+def _shown(
+    answers: tuple[str, ...],
+    directory: pathlib.Path,
+    message: str,
+    cwd: pathlib.Path,
+) -> tuple[str, ...]:
+  """Put every rewrite of one turn through the deterministic fixes.
+
+  Args:
+    answers: The rewrites as the models wrote them.
+    directory: The session-state directory.
+    message: The sanitised message id.
+    cwd: Directory the rule configuration is looked up from.
+
+  Returns:
+    What to display, in the same order; a rewrite whose fix would not
+    run is passed through as it came.
+  """
+  fixed = [_tidy(answer, cwd) for answer in answers]
+  failed = next((why for _, why in fixed if why), "")
+  shown = tuple(answer for answer, _ in fixed)
+  if failed:
+    _note(directory, message, FIX, failed)
+  elif shown != answers:
+    # Which models need the rules to clean up after them is a selection
+    # signal, not only a display fix.
+    _note(directory, message, FIX, REPAIRED)
+  return shown
+
+
+def _one(
+    text: str,
+    directory: pathlib.Path,
+    message: str,
+    env: Mapping[str, str],
+    cwd: pathlib.Path,
+) -> str:
+  """Build the block of an ordinary turn: one engine, one rewrite.
+
+  Args:
+    text: The whole assistant message.
+    directory: The session-state directory.
+    message: The sanitised message id.
+    env: The environment of the run.
+    cwd: Directory the configuration is looked up from.
+
+  Returns:
+    The block, empty when no engine answered.
+  """
+  try:
+    answer = _single(text, env, cwd)
+  except engines.EngineError as e:
+    _note(directory, message, SINGLE, e.reason)
+    return ""
+  except config.ConfigError:
+    # A typo in `[polish]` is the user's to fix and says so by name,
+    # rather than arriving as a crash of this file.
+    _note(directory, message, SINGLE, MISCONFIGURED)
+    return ""
+  (fixed,) = _shown((answer.strip(),), directory, message, cwd)
+  return f"── 润色 ──\n{fixed}\n"
+
+
+def _trial(
+    trial: ab.Trial,
+    text: str,
+    directory: pathlib.Path,
+    message: str,
+    env: Mapping[str, str],
+    cwd: pathlib.Path,
+) -> str:
+  """Build the block of a sampled turn: two engines, shown blind.
+
+  Args:
+    trial: The trial drawn for this turn.
+    text: The whole assistant message.
+    directory: The session-state directory.
+    message: The sanitised message id.
+    env: The environment of the run.
+    cwd: Directory the configuration is looked up from.
+
+  Returns:
+    The two columns, empty when either candidate did not answer.
+  """
+  answers, reason = ab.run(
+      trial, text, env, _number(env, TIMEOUT_VARIABLE, TIMEOUT)
+  )
+  if answers is None:
+    # One candidate short is not a comparison, and a second round of
+    # calls would make the user wait twice; this turn shows its original.
+    _note(directory, message, AB, reason)
+    return ""
+  first, second = _shown(answers, directory, message, cwd)
+  try:
+    ab.record(directory, trial, text, answers, (first, second), time.time())
+  except OSError:
+    # The trial is lost as evidence, which is bad; throwing away a
+    # comparison the user waited for two model calls to see is worse.
+    _note(directory, message, AB, CRASHED)
+  return ab.render(trial, (first, second))
+
+
 def _block(
     text: str,
     directory: pathlib.Path,
@@ -534,33 +654,8 @@ def _block(
     return ""
   trial = ab.draw(directory, env, _number(env, RATE_VARIABLE, ab.SAMPLE_RATE))
   if trial is None:
-    try:
-      answer = _single(text, env, cwd)
-    except engines.EngineError as e:
-      _note(directory, message, SINGLE, e.reason)
-      return ""
-    written = answer.strip()
-    fixed, failed = _tidy(written, cwd)
-    if failed:
-      _note(directory, message, FIX, failed)
-    elif fixed != written:
-      # Which models need the rules to clean up after them is a
-      # selection signal, not only a display fix.
-      _note(directory, message, FIX, REPAIRED)
-    return f"── 润色 ──\n{fixed}\n"
-  answers, reason = ab.run(
-      trial, text, env, _number(env, TIMEOUT_VARIABLE, TIMEOUT)
-  )
-  if answers is None:
-    # One candidate short is not a comparison, and a second round of
-    # calls would make the user wait twice; this turn shows its original.
-    _note(directory, message, AB, reason)
-    return ""
-  shown = (_tidy(answers[0], cwd)[0], _tidy(answers[1], cwd)[0])
-  if shown != answers:
-    _note(directory, message, FIX, REPAIRED)
-  ab.record(directory, trial, text, answers, shown, time.time())
-  return ab.render(trial, shown)
+    return _one(text, directory, message, env, cwd)
+  return _trial(trial, text, directory, message, env, cwd)
 
 
 def _display(payload: Mapping[str, object], env: Mapping[str, str]) -> str:
@@ -608,13 +703,15 @@ def _display(payload: Mapping[str, object], env: Mapping[str, str]) -> str:
   )
   if not block:
     return ""
-  # One blank line, whatever the message happens to end on. The gap used
-  # to be built by adding to the delta's own trailing newlines, which is
-  # only stable while there is exactly one of them: a message ending on a
-  # paragraph break, or a final batch that is empty because the message
-  # ended on a newline, made it wider. Cutting the run first and then
-  # adding a fixed gap is the same answer for every ending.
-  return f"{delta.rstrip(chr(10))}\n\n{block}"
+  # One blank line, whatever the message happens to end on. The gap is a
+  # property of the screen, not of this batch: `displayContent` replaces
+  # the final delta and nothing before it, so the trailing newlines an
+  # earlier batch already painted cannot be taken back — only counted.
+  # A message ending on a newline is exactly that case, since its final
+  # delta is empty and every newline is already up there.
+  painted = _trailing(text) - _trailing(delta)
+  gap = max(0, BLOCK_GAP - painted)
+  return f"{delta.rstrip(chr(10))}{chr(10) * gap}{block}"
 
 
 def _stop(payload: Mapping[str, object], env: Mapping[str, str]) -> str:

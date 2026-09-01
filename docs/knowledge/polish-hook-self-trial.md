@@ -113,7 +113,25 @@ tail "${TMPDIR:-/tmp}"/limae-hook/*/diagnostics.jsonl
 | `at` | UTC 时间 |
 | `message_id` | 是哪条消息，用来跟屏幕上的回复对上 |
 | `step` | 哪一步：`assemble` 拼分片、`single` 单跑润色、`ab` A/B 对照、`fix` 确定性修复、`display` hook 自己崩了 |
-| `kind` | 哪一类：`timeout` 超时、`unreachable` 网络不通、`unauthorized` 凭证被拒、`exit` 引擎非零退出、`empty` 引擎没吐东西、`not-installed` 没装、`no-engine` 探活全失败、`incomplete` 有分片没到、`crashed` 这一步自己抛了、`repaired` 不是失败 (见下) |
+| `kind` | 哪一类，见下表 |
+
+`kind` 是**完整的一张表** —— 按它反查就能定位，漏一类就等于那类失败查不到：
+
+| `kind` | 什么意思 | 下一步 |
+| --- | --- | --- |
+| `timeout` | 引擎超过 `LIMAE_HOOK_TIMEOUT` 没回 | 调大超时，或换个更快的型号 |
+| `unreachable` | 网络不通 | 查网络再重试 |
+| `unauthorized` | 凭证被拒 (401 / 403) | 重新登录那个 CLI |
+| `exit` | 引擎非零退出 | 手工跑一次 `limae polish -` 看它说什么 |
+| `empty` | 引擎退出码 0 但什么都没吐 | 同上 |
+| `unreadable` | 引擎该写的输出文件读不出来 (codex 走 `--output-last-message`) | 同上；多半是引擎中途死了 |
+| `not-installed` | 二进制不在 `PATH` 上 | 装上，或用 `--engine` 指定别的 |
+| `no-engine` | `auto` 把每个引擎都探过，全失败 | 单跑 `limae polish -`，它会逐引擎报 |
+| `config` | `[polish]` 表写错了 | 按 `limae polish -` 打出的配置错误改 |
+| `incomplete` | 有分片没在 2 秒内落盘，这条消息拼不全 | 正常现象，见本节末尾 |
+| `crashed` | 这一步自己抛了异常 | 这是 bug，请报 |
+| `other` | 引擎失败但归不进上面任何一类 | 手工跑一次看 |
+| `repaired` | **不是失败** (见下) | 不用管 |
 
 `repaired` 是唯一一条不表示失败的：它说这一轮的改写带着排版违规，被本仓的规则修掉了。留着它是因为**哪个型号总要规则替它擦屁股，本身就是选型信号** (ADR-0008 §五)。
 
