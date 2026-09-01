@@ -72,7 +72,9 @@ def run_hook(
       "PATH": f"{tmp_path / 'bin'}:/usr/bin:/bin",
       "HOME": str(tmp_path / "home"),
       "XDG_CACHE_HOME": str(tmp_path / "cache"),
-      hook.STATE_VARIABLE: str(tmp_path / "state"),
+      # Where scratch goes is where the state goes: the hook has no
+      # setting of its own for it, on purpose.
+      "TMPDIR": str(tmp_path),
       # Off unless a test asks for it: sampling is what these tests
       # control, never chance.
       hook.RATE_VARIABLE: "0",
@@ -126,7 +128,7 @@ def stop(session: str = SESSION) -> dict[str, object]:
 
 
 def state(tmp_path: pathlib.Path, session: str = SESSION) -> pathlib.Path:
-  return tmp_path / "state" / session
+  return tmp_path / hook.STATE_DIRECTORY / session
 
 
 def ledger(
@@ -408,7 +410,7 @@ def test_the_ledger_keeps_the_whole_trial_inside_the_session_directory(
   assert {(c["engine"], c["model"]) for c in entry["candidates"]} == set(PAIR)
   assert {c["text"].strip() for c in entry["candidates"]} == {FIRST, SECOND}
   # Session state, not repository state, and nobody else's to read.
-  assert entries[0].is_relative_to(tmp_path / "state")
+  assert entries[0].is_relative_to(tmp_path / hook.STATE_DIRECTORY)
   assert entries[0].stat().st_mode & 0o777 == ab.FILE_MODE
 
 
@@ -492,7 +494,7 @@ def test_a_session_id_cannot_name_a_directory_outside_the_state_root(
       )
       is None
   )
-  root = tmp_path / "state"
+  root = tmp_path / hook.STATE_DIRECTORY
   assert [path.name for path in root.iterdir()] == ["______escape"]
   assert not (tmp_path.parent / "escape").exists()
 
@@ -516,7 +518,7 @@ def test_old_sessions_are_pruned_and_the_current_one_is_not(
     capsys: pytest.CaptureFixture[str],
 ):
   gateway(tmp_path, f"cat > /dev/null\necho {POLISHED}")
-  old = tmp_path / "state" / "older-session"
+  old = tmp_path / hook.STATE_DIRECTORY / "older-session"
   old.mkdir(parents=True)
   stale = time.time() - hook.RETENTION - 60
   os.utime(old, (stale, stale))
@@ -680,7 +682,36 @@ def test_a_message_missing_a_batch_shows_the_original_and_calls_nothing(
   assert calls(tmp_path) == 1
 
 
-def test_state_inside_a_checkout_is_refused_and_nothing_is_written(
+def test_the_state_root_is_the_one_place_and_is_not_configurable(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  gateway(tmp_path, f"cat > /dev/null\necho {POLISHED}")
+  assert (
+      run_hook(display(LONG, cwd=tmp_path), tmp_path, monkeypatch, capsys)
+      is not None
+  )
+  # One place, derived from scratch and nothing else. No variable of
+  # this module's own moves it: a hook's environment is set by whatever
+  # configured the session, so a name is not a boundary.
+  assert (tmp_path / hook.STATE_DIRECTORY / SESSION).is_dir()
+  elsewhere = tmp_path / "elsewhere"
+  for variable in ("LIMAE_HOOK_STATE", "LIMAE_HOOK_STATE_FOR_TESTS"):
+    monkeypatch.setenv(variable, str(elsewhere))
+  assert (
+      run_hook(
+          display(LONG, message="second", cwd=tmp_path),
+          tmp_path,
+          monkeypatch,
+          capsys,
+      )
+      is not None
+  )
+  assert not elsewhere.exists()
+
+
+def test_a_scratch_directory_inside_a_checkout_is_refused(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -690,23 +721,21 @@ def test_state_inside_a_checkout_is_refused_and_nothing_is_written(
   gateway(tmp_path, f"cat > /dev/null\necho {POLISHED}")
   checkout = tmp_path / "repo"
   (checkout / ".git").mkdir(parents=True)
-  inside = checkout / "notes" / "state"
   assert (
       run_hook(
           display(LONG, cwd=tmp_path),
           tmp_path,
           monkeypatch,
           capsys,
-          **{hook.STATE_VARIABLE: str(inside)},
+          TMPDIR=str(checkout),
       )
       is None
   )
   assert calls(tmp_path) == 0
-  assert not inside.exists()
   assert [path.name for path in checkout.iterdir()] == [".git"]
 
-  # The same message, with the state somewhere that is nobody's
-  # checkout: polished as usual.
+  # The same message, with scratch somewhere that is nobody's checkout:
+  # polished as usual.
   assert (
       run_hook(display(LONG, cwd=tmp_path), tmp_path, monkeypatch, capsys)
       is not None

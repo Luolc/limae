@@ -53,10 +53,6 @@ DISABLE_VARIABLE = "LIMAE_HOOK_DISABLE"
 MIN_CHARS_VARIABLE = "LIMAE_HOOK_MIN_CHARS"
 RATE_VARIABLE = "LIMAE_HOOK_AB_RATE"
 TIMEOUT_VARIABLE = "LIMAE_HOOK_TIMEOUT"
-# Not a setting, and deliberately not in `docs/knowledge/`: the tests
-# need the state to land somewhere they can look at, and nothing else
-# may move it (see `_root`).
-STATE_VARIABLE = "LIMAE_HOOK_STATE_FOR_TESTS"
 
 # Short messages are left alone (ADR-0009 section 二). The starting
 # value is Gvozdev's `CLAUDISH_MIN_CHARS`
@@ -151,24 +147,23 @@ def _root(env: Mapping[str, str]) -> pathlib.Path | None:
   directory and a fixed name under it, and a project's own configuration
   cannot say otherwise.
 
-  What the tests need is an answer to the same question, so the
-  redirection they use is checked the same way everything else is: a
-  path inside a checkout is refused whatever set it.
+  There is no variable of this module's own to move it either, not even
+  one meant for the tests: a name is not a boundary — anything that can
+  set a hook's environment could set it — and it would take exactly one
+  such setting, pointing somewhere persistent, to turn the ledger into
+  the long-lived store of replies ADR-0009 section 八 rules out. The
+  tests say where the state goes the same way anything else does, by
+  saying where scratch files go.
 
   Args:
     env: The environment of the run.
 
   Returns:
-    The state root, whether or not it exists; None when the only
-    candidate is inside a checkout, which leaves the hook with nowhere
-    to put a reply and therefore nothing to do.
+    The state root, whether or not it exists; None when scratch itself
+    is inside a checkout, which leaves the hook with nowhere to put a
+    reply and therefore nothing to do.
   """
-  override = env.get(STATE_VARIABLE)
-  root = (
-      pathlib.Path(override)
-      if override
-      else pathlib.Path(env.get("TMPDIR") or "/tmp") / STATE_DIRECTORY
-  )
+  root = pathlib.Path(env.get("TMPDIR") or "/tmp") / STATE_DIRECTORY
   return None if _in_work_tree(root) else root
 
 
