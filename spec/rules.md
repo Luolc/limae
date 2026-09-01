@@ -566,17 +566,18 @@ $1,000           → 不变
 
 属性：non-fixable · warning · experimental
 
-- **判定**：一行内出现 `spec/wordlists/A5.txt` 里的任一条 —— 通用 LLM 文风的高频英文词，如 `delve`、`tapestry`、`seamless`、`underscores`、`pivotal`。词表格式与匹配语义见「词表」：整词、大小写不敏感。
+- **判定**：一行内出现 `spec/wordlists/A5.txt` 里的任一条 —— 通用 LLM 文风的高频英文词，如 `tapestry`、`testament`、`pivotal`、`evolving landscape`。词表格式与匹配语义见「词表」：整词、大小写不敏感。
 - **一行只报一处**，与 A1 同理。
 - **规则不分语言** (ADR-0006 §五)：英文 tell 是 English-to-English 的，出现在中文文档里同样报，不做语言探测。
-- **词表只收在技术文档里没有别的正当含义的词**，与 A3 同一条判据：`harness` (agent 的 harness)、`realm` (Keycloak / Kerberos 的 realm)、`robust`、`leverage` (金融的杠杆)、`unpack` 都有日常正当用法，逐行判据分不开修辞用法与实词用法，一律不收。拿不准就不收 —— 单点 tell 的假阳性本来就高 (调研 §2.4)，experimental 阶段宁可词表短。删掉的词与理由逐条记在 `A5.txt` 的注释里。
+- **收词自检**，与 A3 同一条判据、A7 共用：给候选词造一句**无修辞意图的常规技术行文**，造得出、读着自然就不收，造不出才收。`underscores` 造得出「Use underscores in generated field names.」，不收；`testament` 造不出，收。专名是唯一的例外 —— 冷门或已停更的产品叫这个名字 (Apache Tapestry、Pivotal Cloud Foundry) 不构成删词理由，否则任何词都能被某个产品名论证掉。
+- **判据背后是逐行模型的限制**：单点 tell 的假阳性本来就高，真正的判据是密度 (调研 §2.4)，而文档级 finding 的形制还没有 (ADR-0007 §三)。所以宁可词表短、真阳性密度高。`harness`、`realm`、`robust`、`leverage`、`unpack`、`delve`、`seamless`、`foster` 都是这样删掉的，逐条理由记在 `A5.txt` 的注释里。
 - **不修复**：这类词该换成什么取决于它实际想说什么。
 
 ```text
-We delve into a seamless, pivotal shift.      → A5 (命中三条，只报一处)
-The `delve` in `tapestry` is code, not prose.  → 不变 (行内代码豁免)
-See https://example.com/delve/ for details.    → 不变 (裸 URL 豁免)
-The is_pivotal column of the table.            → 不变 (整词匹配，`_` 是边界字符)
+This release is a testament to a pivotal shift. → A5 (命中两条，只报一处)
+The `testament` in `tapestry` is code.          → 不变 (行内代码豁免)
+See https://example.com/testament/ for details. → 不变 (裸 URL 豁免)
+The is_pivotal column of the table.             → 不变 (整词匹配，`_` 是边界字符)
 ```
 
 ## A6：英文否定平行
@@ -602,16 +603,16 @@ Not only fast but also correct.              → 不变 (not only … but also �
 
 属性：non-fixable · warning · experimental
 
-- **判定**：一行内出现 `spec/wordlists/A7.txt` 里的任一条 —— coding agent 文档的指纹，如 `load-bearing`、`gated on`、`approval-gated`、`the key distinction`。词表格式与匹配语义与 A5 相同，见「词表」。
+- **判定**：一行内出现 `spec/wordlists/A7.txt` 里的任一条 —— coding agent 文档的指纹，当前只有 `load-bearing` 一条。词表格式与匹配语义与 A5 相同，见「词表」。
 - **一行只报一处**，与 A1 同理。
 - **与 A5 分成两条**：A5 是通用 LLM 文风的指纹，A7 是 coding agent 文档的指纹 (`docs/research/claudish-and-ai-slop-survey.md` §2.1 B)。两支的误报来源不同，分开用户才能只关掉其中一支。
-- **词表只收没有别的正当含义的词**，判据与 A5 相同：`verdict` (PR 审查流程里的那个产物)、`fail-closed`、`blast radius` (都是安全 / SRE 的标准术语)、`drift` (configuration drift)、`landed`、`cleanly`、`spine` 都有日常正当用法，不收。剩下的多是多词短语与连字符压缩 —— 它们没有日常技术义，是这批里判得最准的形态。删掉的词与理由逐条记在 `A7.txt` 的注释里。
+- **词表只有一条，是自检的结果不是遗漏**：Deng 那份 high-signal 清单上的词绝大多数都造得出常规技术行文 —— `gated on`、`hard boundary`、`the key distinction`、`smoking gun` 都是，而且 Deng 的 spec 自己就把 `gate` 与 `boundary` 列进「明确不是禁词」那一行 (调研 §1.4)。剩下 `load-bearing`：软件文档里它没有本义 (本义属建筑)，造不出无修辞意图的句子，也是这批里唯一有频次实测的词。一条词的表照留、不凑数，第三批用真实语料长。删掉的词与各自那句常规技术行文逐条记在 `A7.txt` 的注释里。
 - **不修复**：与 A5 同理。
 
 ```text
-This constraint is load-bearing.           → A7
-The release is gated on approval.          → A7
-Read the `load-bearing` flag from config.  → 不变 (行内代码豁免)
+This constraint is load-bearing.               → A7
+A load-bearing check and a load-bearing default. → A7 (命中两处，只报一处)
+Read the `load-bearing` flag from config.      → 不变 (行内代码豁免)
 ```
 
 ## T1：术语选词
