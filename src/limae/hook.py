@@ -578,9 +578,28 @@ def _shown(
 CONTEXT = 10
 # Two changes closer than this read as one edit, not two.
 NEAR = 6
-# Whitespace and the punctuation the deterministic rules own. A change
-# that survives stripping these is a change of words.
-COSMETIC = re.compile(r"[\s，。、；：？！,.;:?!（）()「」【】]+")
+# The one thing the deterministic rules do to punctuation: they pick a
+# width. Folding the widths together, and ignoring whitespace, leaves a
+# string that differs only when a character was added or removed — that
+# is, when the model changed something the rules do not own. Stripping
+# the punctuation instead would hide a real edit: `(注)` becoming `「注」`
+# or `注` survives stripping unchanged, and no rule in this repository
+# deletes a bracket or turns one into another.
+WIDTHS = str.maketrans("（），。；：！？", "(),.;:!?")
+SPACING = re.compile(r"\s+")
+
+
+def _folded(text: str) -> str:
+  """Reduce one excerpt to what the deterministic rules cannot change.
+
+  Args:
+    text: One side of a change.
+
+  Returns:
+    The excerpt without whitespace and with full-width punctuation
+    folded onto its half-width twin.
+  """
+  return SPACING.sub("", text).translate(WIDTHS)
 
 
 def _flat(text: str) -> str:
@@ -633,7 +652,7 @@ def _changes(before: str, after: str) -> str:
   pairs: list[str] = []
   for _, i1, i2, j1, j2 in merged:
     old, new = before[i1:i2], after[j1:j2]
-    if COSMETIC.sub("", old) == COSMETIC.sub("", new):
+    if _folded(old) == _folded(new):
       continue
     lead, tail = before[max(0, i1 - CONTEXT) : i1], before[i2 : i2 + CONTEXT]
     head = "…" if i1 > CONTEXT else ""

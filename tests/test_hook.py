@@ -967,9 +967,31 @@ def test_only_an_excerpt_around_each_change_reaches_the_screen(
   )
   assert answer is not None
   block = str(answer["displayContent"]).split("── 润色 ──")[1]
+  # Both sides, each behind its own label: an implementation that
+  # printed only the rewritten half would still satisfy "the new word is
+  # there and the paragraph is not".
+  assert "原 " in block
+  assert "改 " in block
+  assert "引外部工具" in block
   assert "引入外部工具" in block
   assert LONG not in block
   assert len(block) < len(LONG)
+
+
+def test_a_bracket_the_model_replaced_or_dropped_is_not_called_typography():
+  # The deterministic rules pick a punctuation width. They do not delete
+  # a bracket and do not turn one kind into another, so neither of these
+  # may be filtered out as something that layer owns.
+  body = "这里有 (注) 一处，正文继续写下去，后面还有别的话。"
+  assert hook._changes(body, body.replace("(注)", "「注」"))
+  assert hook._changes(body, body.replace("(注)", "注"))
+
+
+def test_a_punctuation_width_the_rules_pick_is_not_worth_showing():
+  # The other side of the same boundary: width is exactly what they do
+  # own, and showing it back would bury the changes that matter.
+  body = "这里有（注）一处，正文继续写下去，后面还有别的话。"
+  assert not hook._changes(body, body.replace("（注）", "(注)"))
 
 
 def test_a_change_only_the_rules_own_does_not_claim_to_be_none(
