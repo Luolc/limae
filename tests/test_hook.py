@@ -70,6 +70,11 @@ def answering(tmp_path: pathlib.Path, answer: str) -> None:
   gateway(tmp_path, f"cat > /dev/null\ncat {path}")
 
 
+def leaked(text: str, names: set[str]) -> set[str]:
+  """Return which of `names` appear in `text`."""
+  return {name for name in names if name in text}
+
+
 def diagnostics(
     tmp_path: pathlib.Path, session: str = SESSION
 ) -> list[dict[str, object]]:
@@ -517,12 +522,30 @@ def test_stop_hands_over_the_code_and_never_which_model_is_which(
   # This text is rendered on the user's screen, so a model name in it is
   # the answer key printed beside the blind comparison. The mapping
   # lives in the ledger, which the reader is not looking at.
-  named = 0
-  for candidate in PAIR:
-    assert candidate.model not in context
-    assert f"{candidate.engine} {candidate.model}" not in context
-    named += 1
-  assert named == len(PAIR)
+  #
+  # The names come out of the ledger rather than out of `PAIR`, because
+  # what has to stay off the screen is whatever actually ran; and the
+  # check below is asserted to be capable of failing before it is
+  # trusted, because a leak test that cannot detect a leak passes for
+  # the wrong reason.
+  entry = json.loads(ledger(tmp_path)[0].read_text(encoding="utf-8"))
+  names = {
+      value
+      for candidate in entry["candidates"]
+      for value in (candidate["engine"], candidate["model"])
+  }
+  assert len(names) == 2 * len(PAIR)
+  assert leaked(context, names) == set()
+  # The predicate is not vacuous: it does catch a name when one is there.
+  assert leaked(f"{context} {sorted(names)[0]}", names)
+
+  # Nothing else may ride along either — an unknown third name is a leak
+  # the ledger cannot describe, so the whole string is pinned.
+  assert context == (
+      f"limae A/B：本轮有一次 A/B 对照，编号「{code}」，两栏是盲评。"
+      f"型号对应在 {ledger(tmp_path)[0]}；"
+      "用户按编号给出偏好之前不要说出哪一栏是哪个模型。"
+  )
 
   # The rewrites themselves stay off the model's context too
   # (ADR-0009 五).
