@@ -716,11 +716,9 @@ def _one(
     # only they can judge that. Both, in that order.
     count = len(changes.split("\n\n"))
     return f"── 润色 ── {count} 处改动\n{fixed}\n"
-  if not changes:
-    # Something moved, but only whitespace or punctuation did, and the
-    # deterministic rules own that layer. Saying "无改动" would be false.
-    return f"── 润色 ── {TYPOGRAPHY_ONLY}\n"
-  return f"── 润色 ──\n{changes}\n"
+  # Something moved, but only whitespace or punctuation did, and the
+  # deterministic rules own that layer. Saying "无改动" would be false.
+  return f"── 润色 ── {TYPOGRAPHY_ONLY}\n"
 
 
 def _trial(

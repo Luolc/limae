@@ -5,6 +5,7 @@
 - `rules.md` —— 规则的正本：稳定 id、判定条件、修复行为、豁免范围。
 - `fixtures/` —— 黄金集 (golden fixtures)：可执行的那一半，每加一个 case 就是所有实现的回归测试。
 - `wordlists/` —— 词表：zh-tell-1 / zh-tell-3 / zh-tell-4 / en-tell-1 / en-tell-3 / zh-tell-5 / zh-word-1 / zh-word-2 的判定数据，格式与匹配语义的正本是 `rules.md`「词表」。
+- `lexicon/` —— AI 中文词典：读得懂却没人这么说的词，每条给「实际想说什么 / 中文里怎么说 / 带上下文的例子」。两个用途：喂给润色模型当判据，或转成 `wordlists/` 的词表交给 linter 直接报。判据是「一个母语者会不会这样说」，不是「读者能不能看懂」。
 - `polish/` —— `limae polish` 的 prompt spec：通用层 `general.md` (英文) 加每种语言一份用该语言写的层 (`zh.md`)，形制的正本是 ADR-0008 §九。它是 prompt，不是判定数据 —— 词表不进 prompt。
 
 三份同目录、同 PR 改，不会漂移。改规则的顺序固定：先改这里，再改各实现。
