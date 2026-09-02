@@ -319,6 +319,12 @@ def record_run(
 ) -> None:
   """Write down one un-sampled turn: one engine, one rewrite.
 
+  ``docs/adr/0012-single-run-polish-records.md`` is the normative
+  description, including why this is not the "no writing to disk" that
+  ADR-0008 section 十 rules out: that phrase is about the user's files
+  and about side-channel artefacts needing review, not about a
+  session's own scratch.
+
   Until this existed, a single polish left nothing on disk: what went in
   and what came out could only be recovered from a screenshot. That is
   not merely inconvenient — it makes the polish spec unmeasurable. A
