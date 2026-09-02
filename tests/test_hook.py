@@ -974,6 +974,26 @@ def test_only_the_changed_lines_reach_the_screen(
   assert f"改 {TIDIED}" in block
 
 
+def test_a_change_made_only_of_blank_lines_does_not_claim_to_be_none(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  # The pairs cannot render a blank line, so a rewrite that only moved
+  # blank lines used to leave the block empty and be reported as no
+  # change at all — a false statement about what the model did.
+  before = f"{LONG}\n\n{LONG}"
+  after = f"{LONG}\n{LONG}"
+  answering(tmp_path, after)
+  answer = run_hook(
+      display(before, cwd=tmp_path), tmp_path, monkeypatch, capsys
+  )
+  assert answer is not None
+  shown = str(answer["displayContent"])
+  assert shown.endswith(f"── 润色 ── {hook.BLANK_ONLY}\n")
+  assert hook.UNCHANGED not in shown
+
+
 def test_the_gap_above_the_block_is_one_blank_line_for_every_ending(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
