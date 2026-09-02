@@ -941,9 +941,9 @@ def test_a_rewrite_identical_to_the_input_says_so_instead_of_repeating_it(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ):
-  # Reprinting the message the reader just read says nothing. Measured
-  # over this session's own records the models leave a fifth of the
-  # turns byte-identical, so this is the common case, not a corner.
+  # Reprinting the message the reader just read says nothing, and a
+  # rewrite that came back identical is a case the block has to answer
+  # in words rather than by repeating the input.
   answering(tmp_path, LONG)
   answer = run_hook(display(LONG, cwd=tmp_path), tmp_path, monkeypatch, capsys)
   assert answer is not None
