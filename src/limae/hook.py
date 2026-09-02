@@ -710,6 +710,12 @@ def _one(
   if fixed == text:
     return f"── 润色 ── {UNCHANGED}\n"
   changes = _changes(text, fixed)
+  if changes:
+    # The count is the part a reader can act on at a glance; the whole
+    # rewrite is what they need to judge whether it reads better, and
+    # only they can judge that. Both, in that order.
+    count = len(changes.split("\n\n"))
+    return f"── 润色 ── {count} 处改动\n{fixed}\n"
   if not changes:
     # Something moved, but only whitespace or punctuation did, and the
     # deterministic rules own that layer. Saying "无改动" would be false.

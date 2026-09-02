@@ -918,7 +918,7 @@ def test_the_rewrite_goes_through_this_repository_s_own_fixes(
   shown = str(answer["displayContent"])
   assert TIDIED in shown
   assert SLOPPY not in shown
-  assert not zh_format.check_text(shown.split("── 润色 ──\n")[1])
+  assert not zh_format.check_text(shown.split("处改动\n")[1])
 
 
 def test_a_rewrite_that_needs_no_fixing_reaches_the_screen_unchanged(
@@ -931,9 +931,7 @@ def test_a_rewrite_that_needs_no_fixing_reaches_the_screen_unchanged(
   answering(tmp_path, TIDIED)
   answer = run_hook(display(LONG, cwd=tmp_path), tmp_path, monkeypatch, capsys)
   assert answer is not None
-  assert str(answer["displayContent"]).endswith(
-      f"── 润色 ──\n原 {LONG}\n改 {TIDIED}\n"
-  )
+  assert str(answer["displayContent"]).endswith(f"1 处改动\n{TIDIED}\n")
 
 
 def test_a_rewrite_identical_to_the_input_says_so_instead_of_repeating_it(
@@ -952,13 +950,14 @@ def test_a_rewrite_identical_to_the_input_says_so_instead_of_repeating_it(
   )
 
 
-def test_only_an_excerpt_around_each_change_reaches_the_screen(
+def test_the_block_counts_the_changes_and_then_gives_the_whole_rewrite(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ):
-  # A paragraph is one line, so a line-level pair would print the whole
-  # paragraph twice to show that one word moved.
+  # The count is what a reader can act on at a glance — it answers "did
+  # it do anything" without reading. The whole rewrite is what they need
+  # to judge whether it reads better, which only they can judge.
   before = f"{LONG}\n再看要不要引外部工具。"
   after = f"{LONG}\n再看要不要引入外部工具。"
   answering(tmp_path, after)
@@ -966,16 +965,9 @@ def test_only_an_excerpt_around_each_change_reaches_the_screen(
       display(before, cwd=tmp_path), tmp_path, monkeypatch, capsys
   )
   assert answer is not None
-  block = str(answer["displayContent"]).split("── 润色 ──")[1]
-  # Both sides, each behind its own label: an implementation that
-  # printed only the rewritten half would still satisfy "the new word is
-  # there and the paragraph is not".
-  assert "原 " in block
-  assert "改 " in block
-  assert "引外部工具" in block
-  assert "引入外部工具" in block
-  assert LONG not in block
-  assert len(block) < len(LONG)
+  shown = str(answer["displayContent"])
+  assert "── 润色 ── 1 处改动\n" in shown
+  assert shown.endswith(f"{after}\n")
 
 
 def test_a_bracket_the_model_replaced_or_dropped_is_not_called_typography():
