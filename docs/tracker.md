@@ -21,6 +21,9 @@ backlog 的正本，由 `limae-orchestra` 在合入后记账 (全局守则「多
 - **website 与多语言文档**：对标 AutoCorrect 的站点与多语言文档。
 - **社区贡献机制**：CONTRIBUTING 等贡献流程。
 
+- **词典双源已经分叉**：`spec/lexicon/zh.md` 与 `spec/lexicon/zh.toml` 是同一批内容的两份正文，违反「一个事实只有一个 canonical 位置」。合入一个 PR 就已经漂移 —— `质量门` 只在 `.toml` 里，`.md` 没有 (PR #56 只加了 TOML 侧)。渲染器 `tools/render_lexicon.py` 读的是 `.toml`，所以 `.md` 事实上已经是死的那一份。要么删掉 `.md`、要么把它降级成由 TOML 生成的产物，不能两份都当正文。
+- **仓内自用的词撞上词典自己的收词**：词典把「正本」收作要避免的 AI 中文 (`spec/lexicon/zh.toml`)，而本仓自己有 35 处在用它 (`README.md`、`spec/rules.md`、`docs/tracker.md`、多份 ADR)，包括 tracker 开头那句「backlog 的正本」。这是 dogfooding 上的自相矛盾：本仓用自己的 linter 检查自己的 Markdown，词典却没有对应的可执行规则来暴露它。两条路 —— 把词典条目做成 `zh-word` 家族的规则让它真能报，或者认定这个词在技术语境下可用、从词典里撤掉。**先定哪一条，再动那 35 处**，不要反过来。
+
 ## claudish 调研产出 (`docs/research/claudish-and-ai-slop-survey.md`)
 
 - **文档级密度规则**：破折号 / 粗体 / 列表化行文的密度判定是文档级的，`.findings` 的「行号 + 规则 id」形制装不下；要先给规范加文档级 finding 的形制，再收这批 (ADR-0007 §三)。
@@ -35,6 +38,6 @@ backlog 的正本，由 `limae-orchestra` 在合入后记账 (全局守则「多
 - **`polish` 默认模型由 A/B 决定**：ADR-0008 §五只记候选与判据，暂定 terra / sonnet / grok-4.6；用自家语料做 10–20 条盲对照后再定，降到便宜档必须有自家证据。
 - **`limae` 三个子命令的实现**：`check` / `format` / `polish` 的命令行分层 (ADR-0008 §二)，今天的 `limae [--fix]` 在过渡期继续可用。
 - **P1 `polish` 的文件形态**：单文件改写，以及按 git 变更集 (dirty 或最近一个 commit 碰过的 Markdown) 批量；P2 再做跨文件协调改写 (ADR-0008 §十)。
-- **更名过渡期别名的移除时机**：命令名 `lo-md-lint`、旧 pre-commit hook id、旧配置文件与表名、旧指令前缀、旧忽略文件名都留着 (v0.11.0)；等三个消费仓迁完再定何时移除。
+- **更名过渡期别名的移除时机**：命令名 `lo-md-lint`、旧 pre-commit hook id、旧配置文件与表名、旧指令前缀、旧忽略文件名都留着 (v0.11.0)。**「等三个消费仓迁完」这个前置已经满足** (2026-09-02 核)：butler 与 wealth-management 的 `.pre-commit-config.yaml` 都是 `repo: Luolc/limae` + `id: limae`，machine-setup 的 `check.sh` 是 `uvx --from git+…/limae@v0.11.0 limae --all`；更要紧的是**旧配置语法在全部消费仓零命中** —— `lo-md-lint-disable` / `lo-md-lint-enable` 指令前缀、`[tool.lo_md_lint]` 表名、`lo-md-lint.toml`、`.lo-md-lint-ignore` 一处都没有，所以移除别名对消费方是 no-op，不需要任何跨仓协调。覆盖面由 butler 用 `gh repo list Luolc` 加全仓 `gh search code` 核过：配置类命中只有这三个仓 (边界：GitHub 代码搜索只索引默认分支，但三仓当时都没有动 pre-commit 配置的 open PR)。残留的旧名只在注释与 tracker 历史里。**剩下的只是「何时删、删多少」的决定**，等用户裁决。
 - **zh-tell-5 补「零 + 拉丁 / 混合名词」**：现判定只取「零」右侧的连续汉字串，漏掉「零 SA 需要读它」「零 service account 需要读它」这类「零 + 拉丁或中英混合名词 + 谓语」的形态 (`machine-setup` 2026-08-31 用 v0.9.0 跑改写前语料时发现，当次靠人工改写)。匹配单位要扩到拉丁词与混合串，边界与白名单语义随之定案。
 - **实验规则的 per-file 豁免写进规则文档**：各仓的 tracker / journal 这类历史账按约定不改写，zh-tell-5 / zh-word-2 将来若转 stable，这些文件需要整份跳过。`.lo-md-lint-ignore` (v0.5.0) 已经能做，缺的是在规则文档里写明这条建议做法。
