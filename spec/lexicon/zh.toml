@@ -73,6 +73,16 @@ examples = [
 ]
 
 [[entry]]
+term = "质量门"
+pinyin = ["zhì", "liàng", "mén"]
+plain = "质量标准"
+gloss = "quality gate 逐字译来，「门」对应的是英文 gate 的字面义。中文说「合入前必须达到的要求」，用的是「标准」「门槛」这类词，不会把这件事说成「过一道门」。"
+examples = [
+  { before = "## 质量门 (quality bar)", after = "## 质量标准 (quality bar)" },
+  { before = "这条 PR 还没过质量门，先别合。", after = "这条 PR 还没达到质量标准，先别合。" },
+]
+
+[[entry]]
 term = "格言式收尾"
 pinyin = ["gé", "yán", "shì", "shōu", "wěi"]
 kind = "句式"
