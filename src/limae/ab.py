@@ -1,4 +1,12 @@
-"""A/B trials for the display hook: two candidates under one code name.
+"""What the display hook did, written down: A/B trials and single runs.
+
+The A/B trial is the elaborate shape — two candidates under one code
+name — and most of this module is about it. A turn that was not sampled
+is the plain shape: one engine, one rewrite, recorded the same way, in
+the same place, under the same permissions. Both are here rather than
+split across modules because the guarantee is a property of the pair:
+whatever polish does gets written to the session's own directory and
+nowhere else, and there is one piece of code that decides that.
 
 ``docs/adr/0009-polish-hook-contract.md`` sections 三 to 五 are the
 normative description. On a sampled turn the hook runs two models over
@@ -45,6 +53,11 @@ from limae import engines, polish
 SAMPLE_RATE = 0.1
 
 LEDGER_DIRECTORY = "ab"
+# Where a turn that was not sampled is written down. Separate from the
+# A/B ledger because it is keyed by message rather than by code name,
+# and because a reader asking "what did polish do to this message" is
+# not asking "which trial was this".
+RUN_DIRECTORY = "polish"
 PENDING_FILENAME = "pending.json"
 TEMPORARY_SUFFIX = ".writing"
 # The ledger holds an assistant reply verbatim. Nobody but this user
@@ -292,6 +305,57 @@ def record(
   _write(
       directory / PENDING_FILENAME,
       {"code": trial.code, "at": at, "candidates": candidates},
+  )
+
+
+def record_run(
+    directory: pathlib.Path,
+    message: str,
+    original: str,
+    written: str,
+    displayed: str,
+    engine: Candidate,
+    now: float,
+) -> None:
+  """Write down one un-sampled turn: one engine, one rewrite.
+
+  Until this existed, a single polish left nothing on disk: what went in
+  and what came out could only be recovered from a screenshot. That is
+  not merely inconvenient — it makes the polish spec unmeasurable. A
+  model's rewriting is not a fixed function; the same input has come
+  back anywhere from untouched to stripped of every emphasis marker, so
+  a single observation says nothing about a change to the spec. Judging
+  one needs a sample, and a sample needs every run on disk.
+
+  The three versions are kept apart for the reason the A/B ledger keeps
+  two: ``original`` is what the assistant wrote, ``text`` is what the
+  model made of it, ``displayed`` is what the reader saw after the
+  deterministic fixes. Folding the fixes into ``text`` would hide how
+  much of the tidiness was the model's doing and how much was the rules
+  cleaning up after it — which is the question.
+
+  Args:
+    directory: The session-state directory.
+    message: The sanitised message id, which names the file.
+    original: The assistant message as it was written.
+    written: The rewrite as the engine returned it.
+    displayed: The rewrite as it went on screen.
+    engine: The engine and model that ran.
+    now: The current time, in seconds since the epoch.
+  """
+  runs = directory / RUN_DIRECTORY
+  runs.mkdir(parents=True, exist_ok=True, mode=DIRECTORY_MODE)
+  _write(
+      runs / f"{message}.json",
+      {
+          "at": datetime.datetime.fromtimestamp(now, datetime.UTC).isoformat(),
+          "message_id": message,
+          "engine": engine.engine,
+          "model": engine.model,
+          "original": original,
+          "text": written,
+          "displayed": displayed,
+      },
   )
 
 

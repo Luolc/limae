@@ -131,6 +131,7 @@ ORPHAN_RETENTION = 3600.0
 ASSEMBLE = "assemble"
 SINGLE = "single"
 AB = "ab"
+RECORD = "record"
 FIX = "fix"
 DISPLAY = "display"
 # What went wrong when it was not the engine's doing (`engines.REASONS`
@@ -497,7 +498,9 @@ def _number(env: Mapping[str, str], variable: str, fallback: float) -> float:
     return fallback
 
 
-def _single(text: str, env: Mapping[str, str], cwd: pathlib.Path) -> str:
+def _single(
+    text: str, env: Mapping[str, str], cwd: pathlib.Path
+) -> tuple[str, ab.Candidate]:
   """Polish one message with one engine.
 
   The engine and model are the ones the ``polish`` configuration names,
@@ -510,13 +513,17 @@ def _single(text: str, env: Mapping[str, str], cwd: pathlib.Path) -> str:
     cwd: Directory the configuration is looked up from.
 
   Returns:
-    The rewrite.
+    The rewrite, and which engine and model produced it. The model is
+    resolved here rather than left blank, because the record of a run
+    that does not say what ran is not evidence of anything.
   """
   settings = config.resolve_polish(cwd, engines.PRESETS)
   engine = env.get(polish.ENGINE_VARIABLE, "") or settings.engine
   if engine == config.AUTO_ENGINE:
     engine = engines.select(env)
-  return engines.polish(
+  preset = engines.PRESETS.get(engine)
+  model = settings.model or (preset.model if preset is not None else "")
+  answer = engines.polish(
       engine,
       settings.model,
       polish.assemble(text),
@@ -525,6 +532,7 @@ def _single(text: str, env: Mapping[str, str], cwd: pathlib.Path) -> str:
       settings.command,
       _number(env, TIMEOUT_VARIABLE, TIMEOUT),
   )
+  return answer, ab.Candidate(engine, model)
 
 
 def _shown(
@@ -577,7 +585,7 @@ def _one(
     The block, empty when no engine answered.
   """
   try:
-    answer = _single(text, env, cwd)
+    answer, ran = _single(text, env, cwd)
   except engines.EngineError as e:
     _note(directory, message, SINGLE, e.reason)
     return ""
@@ -586,7 +594,14 @@ def _one(
     # rather than arriving as a crash of this file.
     _note(directory, message, SINGLE, MISCONFIGURED)
     return ""
-  (fixed,) = _shown((answer.strip(),), directory, message, cwd)
+  written = answer.strip()
+  (fixed,) = _shown((written,), directory, message, cwd)
+  try:
+    ab.record_run(directory, message, text, written, fixed, ran, time.time())
+  except OSError:
+    # The same trade the A/B ledger makes: losing the evidence is bad,
+    # throwing away a rewrite the user waited for is worse.
+    _note(directory, message, RECORD, CRASHED)
   return f"── 润色 ──\n{fixed}\n"
 
 
@@ -625,7 +640,7 @@ def _trial(
   except OSError:
     # The trial is lost as evidence, which is bad; throwing away a
     # comparison the user waited for two model calls to see is worse.
-    _note(directory, message, AB, CRASHED)
+    _note(directory, message, RECORD, CRASHED)
   return ab.render(trial, (first, second))
 
 
