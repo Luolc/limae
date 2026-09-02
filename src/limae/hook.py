@@ -47,6 +47,7 @@ session's ledger.
 
 from collections.abc import Mapping, Sequence
 import datetime
+import difflib
 import json
 import os
 import pathlib
@@ -130,6 +131,11 @@ ORPHAN_RETENTION = 3600.0
 # to look without saying what was being polished.
 ASSEMBLE = "assemble"
 SINGLE = "single"
+# What the block says when the rewrite came back the same as the input.
+UNCHANGED = "无改动"
+# What it says when the rewrite moved only blank lines, which the pairs
+# below cannot show.
+BLANK_ONLY = "仅空行改动"
 AB = "ab"
 RECORD = "record"
 FIX = "fix"
@@ -567,6 +573,43 @@ def _shown(
   return shown, failed
 
 
+def _changes(before: str, after: str) -> str:
+  """Render what the rewrite changed, line by line.
+
+  The whole rewrite is not worth showing: it is the message the reader
+  just read, with a small share of its characters different, which is
+  invisible in a screenful of prose. So the block carries the changed
+  lines only, each as the pair it replaced.
+
+  Blank lines are left out of the pairs because a pair of empty lines
+  shows nothing; the caller says so in words instead.
+
+  Args:
+    before: The assistant message as it was written.
+    after: The same message after the rewrite and the deterministic
+      fixes.
+
+  Returns:
+    The changed lines as ``原``/``改`` pairs, or an empty string when
+    nothing changed.
+  """
+  old, new = before.split("\n"), after.split("\n")
+  pairs: list[str] = []
+  for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(
+      None, old, new
+  ).get_opcodes():
+    if tag == "equal":
+      continue
+    for line in old[i1:i2]:
+      if line.strip():
+        pairs.append(f"原 {line}")
+    for line in new[j1:j2]:
+      if line.strip():
+        pairs.append(f"改 {line}")
+    pairs.append("")
+  return "\n".join(pairs).strip()
+
+
 def _one(
     text: str,
     directory: pathlib.Path,
@@ -611,7 +654,14 @@ def _one(
       # The same trade the A/B ledger makes: losing the evidence is bad,
       # throwing away a rewrite the user waited for is worse.
       _note(directory, message, RECORD, CRASHED)
-  return f"── 润色 ──\n{fixed}\n"
+  if fixed == text:
+    return f"── 润色 ── {UNCHANGED}\n"
+  changes = _changes(text, fixed)
+  if not changes:
+    # Something moved, but only blank lines did, and a pair of empty
+    # lines shows nothing. Saying "无改动" here would be false.
+    return f"── 润色 ── {BLANK_ONLY}\n"
+  return f"── 润色 ──\n{changes}\n"
 
 
 def _trial(

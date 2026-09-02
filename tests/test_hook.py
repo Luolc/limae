@@ -931,7 +931,67 @@ def test_a_rewrite_that_needs_no_fixing_reaches_the_screen_unchanged(
   answering(tmp_path, TIDIED)
   answer = run_hook(display(LONG, cwd=tmp_path), tmp_path, monkeypatch, capsys)
   assert answer is not None
-  assert str(answer["displayContent"]).endswith(f"── 润色 ──\n{TIDIED}\n")
+  assert str(answer["displayContent"]).endswith(
+      f"── 润色 ──\n原 {LONG}\n改 {TIDIED}\n"
+  )
+
+
+def test_a_rewrite_identical_to_the_input_says_so_instead_of_repeating_it(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  # Reprinting the message the reader just read says nothing, and a
+  # rewrite that came back identical is a case the block has to answer
+  # in words rather than by repeating the input.
+  answering(tmp_path, LONG)
+  answer = run_hook(display(LONG, cwd=tmp_path), tmp_path, monkeypatch, capsys)
+  assert answer is not None
+  assert str(answer["displayContent"]).endswith(
+      f"── 润色 ── {hook.UNCHANGED}\n"
+  )
+
+
+def test_only_the_changed_lines_reach_the_screen(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  # The point of the block is what moved. A line the rewrite left alone
+  # is already on the screen above it.
+  kept = "第一行原样不动，它不该再出现一次。"
+  before = f"{kept}\n{LONG}"
+  after = f"{kept}\n{TIDIED}"
+  answering(tmp_path, after)
+  answer = run_hook(
+      display(before, cwd=tmp_path), tmp_path, monkeypatch, capsys
+  )
+  assert answer is not None
+  shown = str(answer["displayContent"])
+  block = shown.split("── 润色 ──")[1]
+  assert kept not in block
+  assert f"原 {LONG}" in block
+  assert f"改 {TIDIED}" in block
+
+
+def test_a_change_made_only_of_blank_lines_does_not_claim_to_be_none(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  # The pairs cannot render a blank line, so a rewrite that only moved
+  # blank lines used to leave the block empty and be reported as no
+  # change at all — a false statement about what the model did.
+  before = f"{LONG}\n\n{LONG}"
+  after = f"{LONG}\n{LONG}"
+  answering(tmp_path, after)
+  answer = run_hook(
+      display(before, cwd=tmp_path), tmp_path, monkeypatch, capsys
+  )
+  assert answer is not None
+  shown = str(answer["displayContent"])
+  assert shown.endswith(f"── 润色 ── {hook.BLANK_ONLY}\n")
+  assert hook.UNCHANGED not in shown
 
 
 def test_the_gap_above_the_block_is_one_blank_line_for_every_ending(
