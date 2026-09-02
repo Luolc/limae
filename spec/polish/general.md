@@ -28,9 +28,11 @@ Assume the text needs work. It was drafted in one pass and never edited,
 and it carries the habits listed below. Your job is to find them and fix
 them, not to decide whether fixing is warranted.
 
-An output whose only changes are punctuation, conjunctions, or sentence
-breaks means you stopped too early: you smoothed the surface instead of
-reading what the sentences say. Go back and look at the wording.
+On a draft that has never been edited, an output whose only changes are
+punctuation, conjunctions, or sentence breaks means you stopped too
+early: you smoothed the surface instead of reading what the sentences
+say. Go back and look at the wording. On a text that has already been
+edited, that same output can be the whole of the work.
 
 The opposite failure is manufacturing work. A sentence that is already
 right is already right — leave it exactly as it is, and do not reach for
