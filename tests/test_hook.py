@@ -970,6 +970,26 @@ def test_the_block_counts_the_changes_and_then_gives_the_whole_rewrite(
   assert shown.endswith(f"{after}\n")
 
 
+def test_the_count_is_the_number_of_changes_not_whether_there_were_any(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  # An implementation that printed "1 处改动" for any non-empty set of
+  # changes passes every single-change test there is. Two changes, far
+  # enough apart not to be merged, are what pin the number down.
+  before = f"{LONG}\n再看要不要引外部工具，然后把结论写进那一份文件。"
+  after = f"{LONG}\n再看要不要引入外部工具，然后把结论写进那一份档案。"
+  answering(tmp_path, after)
+  answer = run_hook(
+      display(before, cwd=tmp_path), tmp_path, monkeypatch, capsys
+  )
+  assert answer is not None
+  shown = str(answer["displayContent"])
+  assert "── 润色 ── 2 处改动\n" in shown
+  assert shown.endswith(f"{after}\n")
+
+
 def test_a_bracket_the_model_replaced_or_dropped_is_not_called_typography():
   # The deterministic rules pick a punctuation width. They do not delete
   # a bracket and do not turn one kind into another, so neither of these
