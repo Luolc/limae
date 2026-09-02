@@ -315,20 +315,46 @@ def _write(path: pathlib.Path, entry: dict[str, object]) -> None:
 
 
 def context(directory: pathlib.Path) -> str:
-  """Return what the model should be told about the turn that just ended.
+  """Return what the model should be told about the trial this turn ran.
 
-  This is the whole of ADR-0009 section 五: a ``MessageDisplay`` rewrite
-  is invisible to the model, so the code name and the two model names
-  are handed over here instead — and only these, never the rewrites
-  themselves. The pending file is consumed, so one trial is announced
-  once.
+  This is ADR-0009 section 五: a ``MessageDisplay`` rewrite is invisible
+  to the model, so the code name is handed over here instead — and only
+  that, never the rewrites themselves.
+
+  **The model names are deliberately not here, and that is a
+  correction.** ADR-0009 section 五 assumed this channel reached the
+  model alone. It does not. Measured 2026-09-01 against Claude Code
+  ``2.1.258``: a ``Stop`` hook's ``additionalContext`` is wrapped in a
+  ``stop_hook_summary`` system message and rendered on screen as
+  ``Stop hook feedback: …`` — and the summary is *hidden* when there is
+  no additionalContext, so supplying it is precisely what makes it
+  visible. The schema's "delivered to the model" says where it goes in
+  the context, not that the reader cannot see it. Naming the models here
+  therefore printed the answer key next to the blind comparison, which
+  is the one thing section 三 asks this not to do. The mapping stays in
+  the ledger, which the reader is not looking at.
+
+  **Announced once, and that is load-bearing.** The pending file is
+  consumed here. The obvious-looking simplification — always return
+  something, since there is always a trial to describe — hangs the
+  session: ``additionalContext`` is non-error feedback that continues
+  the conversation, so a ``Stop`` hook that always answers re-triggers
+  itself. Measured the same day: a hook returning a constant string
+  turned "say only: hello" into five turns and counting.
+
+  **It says "this turn", not "the last reply", because a turn holds many
+  replies.** ``Stop`` fires once, at the end; the trial ran on one
+  assistant message somewhere inside it. In a long agent turn that can
+  be an hour and dozens of messages earlier — observed at 47 minutes.
+  Claiming it was the previous reply would simply be false, and the code
+  name is what the user gives feedback by in any case.
 
   Args:
     directory: The session-state directory.
 
   Returns:
-    The text for ``additionalContext``, empty when the turn that just
-    ended had no trial.
+    The text for ``additionalContext``, empty when this turn ran no
+    trial.
   """
   path = directory / PENDING_FILENAME
   try:
@@ -340,17 +366,12 @@ def context(directory: pathlib.Path) -> str:
   if not isinstance(pending, dict):
     return ""
   code = pending.get("code")
-  candidates = pending.get("candidates")
-  if not isinstance(code, str) or not isinstance(candidates, list):
+  if not isinstance(code, str) or not code:
     return ""
-  named = "，".join(
-      f"{c.get('label')} = {c.get('engine')} {c.get('model')}"
-      for c in candidates
-      if isinstance(c, dict)
-  )
+  # Short on purpose: this lands on the user's screen, where the host
+  # truncates it.
   return (
-      f"limae A/B：上一条回复做了 A/B 对照，编号「{code}」，{named}。"
-      "屏幕上只有 A 与 B 两个标签，没有型号 —— 这是盲评，"
-      "用户按编号给出偏好之前不要说出哪一边是哪个模型。"
-      f"台账在 {directory / LEDGER_DIRECTORY / f'{code}.json'}。"
+      f"limae A/B：本轮有一次 A/B 对照，编号「{code}」，两栏是盲评。"
+      f"型号对应在 {directory / LEDGER_DIRECTORY / f'{code}.json'}；"
+      "用户按编号给出偏好之前不要说出哪一栏是哪个模型。"
   )
