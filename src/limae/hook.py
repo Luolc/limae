@@ -38,8 +38,11 @@ typography, and a rewrite is not exempt from the rules just because a
 model wrote it.
 
 ``Stop`` is the other half of the A/B trial (:mod:`limae.ab`): the model
-cannot see what was displayed, so the code name and the two model names
-are handed to it there.
+cannot see what was displayed, so the code name is handed to it there.
+Only the code name — that text is rendered on the user's screen too, so
+naming the models in it would print the answer key beside a comparison
+that is supposed to be blind (ADR-0011). The mapping stays in the
+session's ledger.
 """
 
 from collections.abc import Mapping, Sequence

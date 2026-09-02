@@ -70,6 +70,11 @@ def answering(tmp_path: pathlib.Path, answer: str) -> None:
   gateway(tmp_path, f"cat > /dev/null\ncat {path}")
 
 
+def leaked(text: str, names: set[str]) -> set[str]:
+  """Return which of `names` appear in `text`."""
+  return {name for name in names if name in text}
+
+
 def diagnostics(
     tmp_path: pathlib.Path, session: str = SESSION
 ) -> list[dict[str, object]]:
@@ -493,7 +498,7 @@ def test_a_trial_that_loses_a_candidate_leaves_the_original_on_screen(
   assert ledger(tmp_path) == []
 
 
-def test_stop_hands_the_model_the_code_and_both_models_once(
+def test_stop_hands_over_the_code_and_never_which_model_is_which(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -513,15 +518,74 @@ def test_stop_hands_the_model_the_code_and_both_models_once(
   assert isinstance(context, str)
   code = ledger(tmp_path)[0].stem
   assert code in context
-  for candidate in PAIR:
-    assert f"{candidate.engine} {candidate.model}" in context
-  # Only the code and the models: the rewrites themselves stay off the
-  # model's context (ADR-0009 五).
+
+  # This text is rendered on the user's screen, so a model name in it is
+  # the answer key printed beside the blind comparison. The mapping
+  # lives in the ledger, which the reader is not looking at.
+  #
+  # The names come out of the ledger rather than out of `PAIR`, because
+  # what has to stay off the screen is whatever actually ran; and the
+  # check below is asserted to be capable of failing before it is
+  # trusted, because a leak test that cannot detect a leak passes for
+  # the wrong reason.
+  entry = json.loads(ledger(tmp_path)[0].read_text(encoding="utf-8"))
+  names = {
+      value
+      for candidate in entry["candidates"]
+      for value in (candidate["engine"], candidate["model"])
+  }
+  assert len(names) == 2 * len(PAIR)
+  assert leaked(context, names) == set()
+  # The predicate is not vacuous: it does catch a name when one is there.
+  assert leaked(f"{context} {sorted(names)[0]}", names)
+
+  # Nothing else may ride along either — an unknown third name is a leak
+  # the ledger cannot describe, so the whole string is pinned.
+  assert context == (
+      f"limae A/B：本轮有一次 A/B 对照，编号「{code}」，两栏是盲评。"
+      f"型号对应在 {ledger(tmp_path)[0]}；"
+      "用户按编号给出偏好之前不要说出哪一栏是哪个模型。"
+  )
+
+  # The rewrites themselves stay off the model's context too
+  # (ADR-0009 五).
   assert FIRST not in context
   assert SECOND not in context
 
-  # One trial is announced once.
+  # One trial is announced once. Always answering would re-trigger the
+  # Stop hook, because additionalContext continues the conversation.
   assert run_hook(stop(), tmp_path, monkeypatch, capsys) is None
+
+
+def test_the_ledger_still_holds_the_mapping_the_context_withholds(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  # Withholding the models from the screen only works if they are still
+  # written down somewhere: the point is a blind reader, not a lost
+  # measurement.
+  candidates(tmp_path, monkeypatch)
+  assert (
+      run_hook(
+          display(LONG, cwd=tmp_path),
+          tmp_path,
+          monkeypatch,
+          capsys,
+          **{hook.RATE_VARIABLE: "1"},
+      )
+      is not None
+  )
+  entries = ledger(tmp_path)
+  assert len(entries) == 1
+  written = json.loads(entries[0].read_text(encoding="utf-8"))["candidates"]
+  assert len(written) == len(PAIR)
+  assert {(c["engine"], c["model"]) for c in written} == set(PAIR)
+
+  # And the context names the file that holds it.
+  answer = run_hook(stop(), tmp_path, monkeypatch, capsys)
+  assert answer is not None
+  assert str(entries[0]) in str(answer["additionalContext"])
 
 
 def test_stop_says_nothing_when_the_turn_had_no_trial(
