@@ -952,36 +952,35 @@ def test_a_rewrite_identical_to_the_input_says_so_instead_of_repeating_it(
   )
 
 
-def test_only_the_changed_lines_reach_the_screen(
+def test_only_an_excerpt_around_each_change_reaches_the_screen(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ):
-  # The point of the block is what moved. A line the rewrite left alone
-  # is already on the screen above it.
-  kept = "第一行原样不动，它不该再出现一次。"
-  before = f"{kept}\n{LONG}"
-  after = f"{kept}\n{TIDIED}"
+  # A paragraph is one line, so a line-level pair would print the whole
+  # paragraph twice to show that one word moved.
+  before = f"{LONG}\n再看要不要引外部工具。"
+  after = f"{LONG}\n再看要不要引入外部工具。"
   answering(tmp_path, after)
   answer = run_hook(
       display(before, cwd=tmp_path), tmp_path, monkeypatch, capsys
   )
   assert answer is not None
-  shown = str(answer["displayContent"])
-  block = shown.split("── 润色 ──")[1]
-  assert kept not in block
-  assert f"原 {LONG}" in block
-  assert f"改 {TIDIED}" in block
+  block = str(answer["displayContent"]).split("── 润色 ──")[1]
+  assert "引入外部工具" in block
+  assert LONG not in block
+  assert len(block) < len(LONG)
 
 
-def test_a_change_made_only_of_blank_lines_does_not_claim_to_be_none(
+def test_a_change_only_the_rules_own_does_not_claim_to_be_none(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ):
-  # The pairs cannot render a blank line, so a rewrite that only moved
-  # blank lines used to leave the block empty and be reported as no
-  # change at all — a false statement about what the model did.
+  # Whitespace and the punctuation the deterministic rules own are left
+  # out of the pairs, so a rewrite that moved only those leaves the
+  # block empty. Reporting that as no change at all is a false statement
+  # about what the model did.
   before = f"{LONG}\n\n{LONG}"
   after = f"{LONG}\n{LONG}"
   answering(tmp_path, after)
@@ -990,7 +989,7 @@ def test_a_change_made_only_of_blank_lines_does_not_claim_to_be_none(
   )
   assert answer is not None
   shown = str(answer["displayContent"])
-  assert shown.endswith(f"── 润色 ── {hook.BLANK_ONLY}\n")
+  assert shown.endswith(f"── 润色 ── {hook.TYPOGRAPHY_ONLY}\n")
   assert hook.UNCHANGED not in shown
 
 
