@@ -135,7 +135,7 @@ SINGLE = "single"
 UNCHANGED = "无改动"
 # What it says when the rewrite moved only blank lines, which the pairs
 # below cannot show.
-BLANK_ONLY = "仅空行改动"
+TYPOGRAPHY_ONLY = "仅排版改动"
 AB = "ab"
 RECORD = "record"
 FIX = "fix"
@@ -573,16 +573,60 @@ def _shown(
   return shown, failed
 
 
+# What the pairs put on either side of a change, so the reader can see
+# where in the sentence it landed.
+CONTEXT = 10
+# Two changes closer than this read as one edit, not two.
+NEAR = 6
+# The one thing the deterministic rules do to punctuation: they pick a
+# width. Folding the widths together, and ignoring whitespace, leaves a
+# string that differs only when a character was added or removed — that
+# is, when the model changed something the rules do not own. Stripping
+# the punctuation instead would hide a real edit: `(注)` becoming `「注」`
+# or `注` survives stripping unchanged, and no rule in this repository
+# deletes a bracket or turns one into another.
+WIDTHS = str.maketrans("（），。；：！？", "(),.;:!?")
+SPACING = re.compile(r"\s+")
+
+
+def _folded(text: str) -> str:
+  """Reduce one excerpt to what the deterministic rules cannot change.
+
+  Args:
+    text: One side of a change.
+
+  Returns:
+    The excerpt without whitespace and with full-width punctuation
+    folded onto its half-width twin.
+  """
+  return SPACING.sub("", text).translate(WIDTHS)
+
+
+def _flat(text: str) -> str:
+  """Put one excerpt on one line.
+
+  Args:
+    text: The excerpt, which may straddle a line break.
+
+  Returns:
+    The excerpt with every run of whitespace as a single space.
+  """
+  return re.sub(r"\s+", " ", text).strip()
+
+
 def _changes(before: str, after: str) -> str:
-  """Render what the rewrite changed, line by line.
+  """Render what the rewrite changed, one excerpt per change.
 
-  The whole rewrite is not worth showing: it is the message the reader
-  just read, with a small share of its characters different, which is
-  invisible in a screenful of prose. So the block carries the changed
-  lines only, each as the pair it replaced.
+  Not the whole rewrite: that is the message the reader just read, with
+  a small share of its characters different. Not whole lines either —
+  a paragraph is one line here, so a line-level pair prints two hundred
+  characters to show that one of them moved.
 
-  Blank lines are left out of the pairs because a pair of empty lines
-  shows nothing; the caller says so in words instead.
+  So the unit is the change itself, with a little of the sentence on
+  either side of it. Changes that survive only as whitespace or as the
+  punctuation the deterministic rules own are dropped: that layer is
+  already handled, and it is not what the reader is being asked to look
+  at.
 
   Args:
     before: The assistant message as it was written.
@@ -590,22 +634,31 @@ def _changes(before: str, after: str) -> str:
       fixes.
 
   Returns:
-    The changed lines as ``原``/``改`` pairs, or an empty string when
-    nothing changed.
+    The changes as ``原``/``改`` pairs, or an empty string when none of
+    them changed a word.
   """
-  old, new = before.split("\n"), after.split("\n")
+  ops = [
+      op
+      for op in difflib.SequenceMatcher(None, before, after).get_opcodes()
+      if op[0] != "equal"
+  ]
+  merged: list[tuple[str, int, int, int, int]] = []
+  for op in ops:
+    if merged and op[1] - merged[-1][2] <= NEAR:
+      _, i1, _, j1, _ = merged[-1]
+      merged[-1] = ("replace", i1, op[2], j1, op[4])
+    else:
+      merged.append(op)
   pairs: list[str] = []
-  for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(
-      None, old, new
-  ).get_opcodes():
-    if tag == "equal":
+  for _, i1, i2, j1, j2 in merged:
+    old, new = before[i1:i2], after[j1:j2]
+    if _folded(old) == _folded(new):
       continue
-    for line in old[i1:i2]:
-      if line.strip():
-        pairs.append(f"原 {line}")
-    for line in new[j1:j2]:
-      if line.strip():
-        pairs.append(f"改 {line}")
+    lead, tail = before[max(0, i1 - CONTEXT) : i1], before[i2 : i2 + CONTEXT]
+    head = "…" if i1 > CONTEXT else ""
+    end = "…" if i2 + CONTEXT < len(before) else ""
+    pairs.append(f"原 {_flat(f'{head}{lead}{old}{tail}{end}')}")
+    pairs.append(f"改 {_flat(f'{head}{lead}{new}{tail}{end}')}")
     pairs.append("")
   return "\n".join(pairs).strip()
 
@@ -657,10 +710,16 @@ def _one(
   if fixed == text:
     return f"── 润色 ── {UNCHANGED}\n"
   changes = _changes(text, fixed)
+  if changes:
+    # The count is the part a reader can act on at a glance; the whole
+    # rewrite is what they need to judge whether it reads better, and
+    # only they can judge that. Both, in that order.
+    count = len(changes.split("\n\n"))
+    return f"── 润色 ── {count} 处改动\n{fixed}\n"
   if not changes:
-    # Something moved, but only blank lines did, and a pair of empty
-    # lines shows nothing. Saying "无改动" here would be false.
-    return f"── 润色 ── {BLANK_ONLY}\n"
+    # Something moved, but only whitespace or punctuation did, and the
+    # deterministic rules own that layer. Saying "无改动" would be false.
+    return f"── 润色 ── {TYPOGRAPHY_ONLY}\n"
   return f"── 润色 ──\n{changes}\n"
 
 

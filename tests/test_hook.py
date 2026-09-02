@@ -918,7 +918,7 @@ def test_the_rewrite_goes_through_this_repository_s_own_fixes(
   shown = str(answer["displayContent"])
   assert TIDIED in shown
   assert SLOPPY not in shown
-  assert not zh_format.check_text(shown.split("── 润色 ──\n")[1])
+  assert not zh_format.check_text(shown.split("处改动\n")[1])
 
 
 def test_a_rewrite_that_needs_no_fixing_reaches_the_screen_unchanged(
@@ -931,9 +931,7 @@ def test_a_rewrite_that_needs_no_fixing_reaches_the_screen_unchanged(
   answering(tmp_path, TIDIED)
   answer = run_hook(display(LONG, cwd=tmp_path), tmp_path, monkeypatch, capsys)
   assert answer is not None
-  assert str(answer["displayContent"]).endswith(
-      f"── 润色 ──\n原 {LONG}\n改 {TIDIED}\n"
-  )
+  assert str(answer["displayContent"]).endswith(f"1 处改动\n{TIDIED}\n")
 
 
 def test_a_rewrite_identical_to_the_input_says_so_instead_of_repeating_it(
@@ -952,36 +950,71 @@ def test_a_rewrite_identical_to_the_input_says_so_instead_of_repeating_it(
   )
 
 
-def test_only_the_changed_lines_reach_the_screen(
+def test_the_block_counts_the_changes_and_then_gives_the_whole_rewrite(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ):
-  # The point of the block is what moved. A line the rewrite left alone
-  # is already on the screen above it.
-  kept = "第一行原样不动，它不该再出现一次。"
-  before = f"{kept}\n{LONG}"
-  after = f"{kept}\n{TIDIED}"
+  # The count is what a reader can act on at a glance — it answers "did
+  # it do anything" without reading. The whole rewrite is what they need
+  # to judge whether it reads better, which only they can judge.
+  before = f"{LONG}\n再看要不要引外部工具。"
+  after = f"{LONG}\n再看要不要引入外部工具。"
   answering(tmp_path, after)
   answer = run_hook(
       display(before, cwd=tmp_path), tmp_path, monkeypatch, capsys
   )
   assert answer is not None
   shown = str(answer["displayContent"])
-  block = shown.split("── 润色 ──")[1]
-  assert kept not in block
-  assert f"原 {LONG}" in block
-  assert f"改 {TIDIED}" in block
+  assert "── 润色 ── 1 处改动\n" in shown
+  assert shown.endswith(f"{after}\n")
 
 
-def test_a_change_made_only_of_blank_lines_does_not_claim_to_be_none(
+def test_the_count_is_the_number_of_changes_not_whether_there_were_any(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ):
-  # The pairs cannot render a blank line, so a rewrite that only moved
-  # blank lines used to leave the block empty and be reported as no
-  # change at all — a false statement about what the model did.
+  # An implementation that printed "1 处改动" for any non-empty set of
+  # changes passes every single-change test there is. Two changes, far
+  # enough apart not to be merged, are what pin the number down.
+  before = f"{LONG}\n再看要不要引外部工具，然后把结论写进那一份文件。"
+  after = f"{LONG}\n再看要不要引入外部工具，然后把结论写进那一份档案。"
+  answering(tmp_path, after)
+  answer = run_hook(
+      display(before, cwd=tmp_path), tmp_path, monkeypatch, capsys
+  )
+  assert answer is not None
+  shown = str(answer["displayContent"])
+  assert "── 润色 ── 2 处改动\n" in shown
+  assert shown.endswith(f"{after}\n")
+
+
+def test_a_bracket_the_model_replaced_or_dropped_is_not_called_typography():
+  # The deterministic rules pick a punctuation width. They do not delete
+  # a bracket and do not turn one kind into another, so neither of these
+  # may be filtered out as something that layer owns.
+  body = "这里有 (注) 一处，正文继续写下去，后面还有别的话。"
+  assert hook._changes(body, body.replace("(注)", "「注」"))
+  assert hook._changes(body, body.replace("(注)", "注"))
+
+
+def test_a_punctuation_width_the_rules_pick_is_not_worth_showing():
+  # The other side of the same boundary: width is exactly what they do
+  # own, and showing it back would bury the changes that matter.
+  body = "这里有（注）一处，正文继续写下去，后面还有别的话。"
+  assert not hook._changes(body, body.replace("（注）", "(注)"))
+
+
+def test_a_change_only_the_rules_own_does_not_claim_to_be_none(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  # Whitespace and the punctuation the deterministic rules own are left
+  # out of the pairs, so a rewrite that moved only those leaves the
+  # block empty. Reporting that as no change at all is a false statement
+  # about what the model did.
   before = f"{LONG}\n\n{LONG}"
   after = f"{LONG}\n{LONG}"
   answering(tmp_path, after)
@@ -990,7 +1023,7 @@ def test_a_change_made_only_of_blank_lines_does_not_claim_to_be_none(
   )
   assert answer is not None
   shown = str(answer["displayContent"])
-  assert shown.endswith(f"── 润色 ── {hook.BLANK_ONLY}\n")
+  assert shown.endswith(f"── 润色 ── {hook.TYPOGRAPHY_ONLY}\n")
   assert hook.UNCHANGED not in shown
 
 
