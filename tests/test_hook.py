@@ -1221,6 +1221,11 @@ def test_a_fix_that_will_not_run_shows_the_rewrite_and_says_so(
   assert len(lines) == 1
   assert lines[0]["step"] == hook.FIX
   assert lines[0]["kind"] == hook.CRASHED
+  # ADR-0012 section 决定: nothing is recorded when the fixes did not
+  # run. Such a record would carry `displayed` equal to `text` for a
+  # reason that has nothing to do with the model, and the whole point of
+  # keeping the two apart is to measure what the model did.
+  assert runs(tmp_path) == []
 
   # And the same on the A/B path, which used to drop the failure on the
   # floor: the candidates went up unfixed and nothing said why.

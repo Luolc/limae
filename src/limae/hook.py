@@ -540,7 +540,7 @@ def _shown(
     directory: pathlib.Path,
     message: str,
     cwd: pathlib.Path,
-) -> tuple[str, ...]:
+) -> tuple[tuple[str, ...], str]:
   """Put every rewrite of one turn through the deterministic fixes.
 
   Args:
@@ -550,8 +550,10 @@ def _shown(
     cwd: Directory the rule configuration is looked up from.
 
   Returns:
-    What to display, in the same order; a rewrite whose fix would not
-    run is passed through as it came.
+    What to display, in the same order, and why the fixes did not run —
+    empty when they did. A rewrite whose fix would not run is passed
+    through as it came, so the caller gets something to show either way
+    and decides for itself what an unfixed rewrite is worth.
   """
   fixed = [_tidy(answer, cwd) for answer in answers]
   failed = next((why for _, why in fixed if why), "")
@@ -562,7 +564,7 @@ def _shown(
     # Which models need the rules to clean up after them is a selection
     # signal, not only a display fix.
     _note(directory, message, FIX, REPAIRED)
-  return shown
+  return shown, failed
 
 
 def _one(
@@ -595,13 +597,20 @@ def _one(
     _note(directory, message, SINGLE, MISCONFIGURED)
     return ""
   written = answer.strip()
-  (fixed,) = _shown((written,), directory, message, cwd)
-  try:
-    ab.record_run(directory, message, text, written, fixed, ran, time.time())
-  except OSError:
-    # The same trade the A/B ledger makes: losing the evidence is bad,
-    # throwing away a rewrite the user waited for is worse.
-    _note(directory, message, RECORD, CRASHED)
+  (fixed,), failed = _shown((written,), directory, message, cwd)
+  if not failed:
+    # ADR-0012: a round whose fixes did not run is not an observation of
+    # what polish does. Its `displayed` would equal `text` because the
+    # rules never ran, not because the model wrote nothing to clean up,
+    # and a distribution counting those understates the rules' half of
+    # ADR-0005 section 四. The round still reaches the screen and still
+    # leaves its `fix` line; it just does not enter the sample.
+    try:
+      ab.record_run(directory, message, text, written, fixed, ran, time.time())
+    except OSError:
+      # The same trade the A/B ledger makes: losing the evidence is bad,
+      # throwing away a rewrite the user waited for is worse.
+      _note(directory, message, RECORD, CRASHED)
   return f"── 润色 ──\n{fixed}\n"
 
 
@@ -634,7 +643,7 @@ def _trial(
     # calls would make the user wait twice; this turn shows its original.
     _note(directory, message, AB, reason)
     return ""
-  first, second = _shown(answers, directory, message, cwd)
+  (first, second), _ = _shown(answers, directory, message, cwd)
   try:
     ab.record(directory, trial, text, answers, (first, second), time.time())
   except OSError:
