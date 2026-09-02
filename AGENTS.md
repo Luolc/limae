@@ -26,7 +26,7 @@
 - **内容类 Markdown 在 `docs/`**：`docs/adr/` (决策记录)、`docs/knowledge/` (操作手册)、`docs/research/` (调研)。
 - 项目级 skill 只放在 `.agents/skills/<name>/`，见 `.agents/skills/README.md`。
 
-## 质量门 (quality bar)
+## 质量标准 (quality bar)
 
 CI (`.github/workflows/ci.yml`，required check 名为 `check`) 在 PR 与 main 上跑同一套检查；本地就是这两条：
 
