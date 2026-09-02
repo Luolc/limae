@@ -70,6 +70,11 @@ def answering(tmp_path: pathlib.Path, answer: str) -> None:
   gateway(tmp_path, f"cat > /dev/null\ncat {path}")
 
 
+def runs(tmp_path: pathlib.Path, session: str = SESSION) -> list[pathlib.Path]:
+  """Return the single-run records this session has written."""
+  return sorted((state(tmp_path, session) / ab.RUN_DIRECTORY).glob("*.json"))
+
+
 def leaked(text: str, names: set[str]) -> set[str]:
   """Return which of `names` appear in `text`."""
   return {name for name in names if name in text}
@@ -1286,7 +1291,9 @@ def test_a_ledger_that_will_not_write_still_shows_the_comparison(
   assert SECOND in shown
   lines = diagnostics(tmp_path)
   assert len(lines) == 1
-  assert lines[0]["step"] == hook.AB
+  # Writing the record down is its own step: a ledger that will not
+  # write is not an engine that would not answer.
+  assert lines[0]["step"] == hook.RECORD
   assert lines[0]["kind"] == hook.CRASHED
 
 
@@ -1305,3 +1312,150 @@ def test_the_handbook_lists_every_kind_the_hook_can_write():
   )
   assert kinds - listed == set()
   assert len(kinds) == 13
+
+
+def test_an_ordinary_turn_writes_down_what_polish_did(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  # Until this existed, a single polish left nothing on disk: what went
+  # in and what came out could only be recovered from a screenshot,
+  # which makes the spec unmeasurable — the same input has come back
+  # anywhere from untouched to stripped of every emphasis marker, so one
+  # observation says nothing.
+  answering(tmp_path, SLOPPY)
+  answer = run_hook(display(LONG, cwd=tmp_path), tmp_path, monkeypatch, capsys)
+  assert answer is not None
+
+  written = runs(tmp_path)
+  assert len(written) == 1
+  assert written[0].stem == MESSAGE
+  record = json.loads(written[0].read_text(encoding="utf-8"))
+
+  # Three versions, kept apart, because they answer different questions:
+  # what the assistant wrote, what the model made of it, what the reader
+  # saw once the rules had cleaned up after the model.
+  assert record["original"] == LONG
+  assert record["text"] == SLOPPY
+  assert record["displayed"] == TIDIED
+  assert record["displayed"] in str(answer["displayContent"])
+  # A record that does not say what ran is not evidence of anything.
+  assert record["engine"] == "custom"
+  assert record["message_id"] == MESSAGE
+  assert record["at"]
+
+
+def test_the_run_record_is_this_user_s_alone_and_goes_nowhere_else(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  # It holds the assistant's own reply, so it lives under the same
+  # boundary as the A/B ledger: the session's directory, this user's
+  # permissions, and out of every repository (ADR-0009 五、八).
+  answering(tmp_path, TIDIED)
+  assert (
+      run_hook(display(LONG, cwd=tmp_path), tmp_path, monkeypatch, capsys)
+      is not None
+  )
+  written = runs(tmp_path)
+  assert len(written) == 1
+  assert written[0].stat().st_mode & 0o777 == hook.FILE_MODE
+  assert written[0].parent.stat().st_mode & 0o777 == hook.DIRECTORY_MODE
+  # Same session directory the ledger uses, so the same prune reaches it.
+  assert written[0].parent.parent == state(tmp_path)
+  assert not list(tmp_path.glob("**/.git"))
+
+
+def test_a_run_record_that_will_not_write_still_shows_the_rewrite(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  # Same trade the A/B ledger makes: losing the evidence is bad,
+  # throwing away a rewrite the user waited for is worse.
+  answering(tmp_path, TIDIED)
+
+  def refuse(*_args: object, **_kwargs: object) -> None:
+    raise OSError("no room")
+
+  monkeypatch.setattr(ab, "record_run", refuse)
+  answer = run_hook(display(LONG, cwd=tmp_path), tmp_path, monkeypatch, capsys)
+  assert answer is not None
+  assert TIDIED in str(answer["displayContent"])
+  lines = diagnostics(tmp_path)
+  assert len(lines) == 1
+  assert lines[0]["step"] == hook.RECORD
+  assert lines[0]["kind"] == hook.CRASHED
+
+
+def test_a_turn_that_is_not_polished_writes_no_run_record(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  # The record is of what polish did. A message too short to polish and
+  # an engine that would not answer both did nothing, so both write
+  # nothing — a directory of records has to mean what it says.
+  answering(tmp_path, TIDIED)
+  assert (
+      run_hook(display(SHORT, cwd=tmp_path), tmp_path, monkeypatch, capsys)
+      is None
+  )
+  assert runs(tmp_path) == []
+
+  gateway(tmp_path, "cat > /dev/null\nexit 1")
+  assert (
+      run_hook(
+          display(LONG, message="failed", cwd=tmp_path),
+          tmp_path,
+          monkeypatch,
+          capsys,
+      )
+      is None
+  )
+  assert runs(tmp_path) == []
+
+
+def test_each_message_gets_its_own_record_and_a_retry_replaces_it(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  # Sampling the spec means many runs side by side, so the file is named
+  # by the message rather than appended to one log.
+  answering(tmp_path, TIDIED)
+  for number in range(3):
+    assert (
+        run_hook(
+            display(LONG, message=f"m{number}", cwd=tmp_path),
+            tmp_path,
+            monkeypatch,
+            capsys,
+        )
+        is not None
+    )
+  written = runs(tmp_path)
+  assert len(written) == 3
+  assert {path.stem for path in written} == {"m0", "m1", "m2"}
+
+  # The same message polished again overwrites its own record rather
+  # than failing on the exclusive create the batches use.
+  answering(tmp_path, SLOPPY)
+  assert (
+      run_hook(
+          display(LONG, message="m0", cwd=tmp_path),
+          tmp_path,
+          monkeypatch,
+          capsys,
+      )
+      is not None
+  )
+  assert len(runs(tmp_path)) == 3
+  again = json.loads(
+      (state(tmp_path) / ab.RUN_DIRECTORY / "m0.json").read_text(
+          encoding="utf-8"
+      )
+  )
+  assert again["text"] == SLOPPY
