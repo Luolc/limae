@@ -586,6 +586,12 @@ def _grok(
   narrates a plan before the rewrite
   (``docs/research/polish-engine-cli-behavior.md`` section 二).
 
+  **This engine carries no boundary marker and no** :data:`BOUNDARY_NOTE`
+  — the prose is its own argument, so there is nothing for it to be
+  told apart from. The three deliveries are deliberately not alike here,
+  and a reader who assumes they are will look for a marker that was
+  never sent.
+
   Args:
     preset: The engine's preset.
     model: The model to run.
