@@ -20,9 +20,10 @@
 
 布局参考 [ruff](https://github.com/astral-sh/ruff) 仓：每种语言的实现都以仓根为项目根，源码进各自的子目录；规范与 fixture 独立于任何实现。
 
-- **规则规范与黄金 fixture 语言无关、所有实现共用**，放仓根 `spec/` (规范 `spec/rules.md`，黄金集 `spec/fixtures/`)；不放进任何单一实现的私有目录 (`src/`、`tests/`)。位置与理由见 `docs/adr/0001-standalone-repo-spec-first-shared-fixtures.md`。
-- **Python 参考实现 (reference implementation) 在仓根**：`pyproject.toml`、`src/limae/`、`tests/`；包 `limae`，命令 `limae` (过渡期保留 `lo-md-lint` 别名)；用 uv 管理，锁文件 `uv.lock` 全仓唯一。放仓根而不是 `python/` 子目录，是因为 pre-commit `language: python` 与 `uvx --from git+…` 都把仓根当作可安装的 Python 项目。
+- **规则规范与黄金 fixture 语言无关、所有实现共用**，放仓根 `spec/`：规范在 `spec/rules.md`，黄金集在 `spec/fixtures/`，AI 中文词典在 `spec/lexicon/zh.toml`，prompt spec 在 `spec/polish/`，规则词表在 `spec/wordlists/`；不放进任何单一实现的私有目录 (`src/`、`tests/`)。各部分的职责与格式见 `spec/README.md`，位置与理由见 `docs/adr/0001-standalone-repo-spec-first-shared-fixtures.md`。
+- **Python 参考实现 (reference implementation) 在仓根**：`pyproject.toml`、`src/limae/`、`tests/`；包 `limae`，命令 `limae`；用 uv 管理，锁文件 `uv.lock` 全仓唯一。放仓根而不是 `python/` 子目录，是因为 pre-commit `language: python` 与 `uvx --from git+…` 都把仓根当作可安装的 Python 项目。
 - **将来新增语言实现同样以仓根为项目根**，用该语言自己的原生工具链，都对着同一套 `spec/` 跑；具体布局等到真的写的时候再定。
+- **静态站点在 `site/`**：`tools/render_lexicon.py` 从 `spec/lexicon/zh.toml` 生成 `site/index.html`；`site/` 放生成产物，生成脚本放 `tools/`。
 - **内容类 Markdown 在 `docs/`**：`docs/adr/` (决策记录)、`docs/knowledge/` (操作手册)、`docs/research/` (调研)。
 - 项目级 skill 只放在 `.agents/skills/<name>/`，见 `.agents/skills/README.md`。
 
