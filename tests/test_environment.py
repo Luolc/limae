@@ -21,6 +21,7 @@ def test_external_limae_engine_does_not_affect_tests() -> None:
       check=False,
       capture_output=True,
       text=True,
+      timeout=30,
   )
 
   assert result.returncode == 0, result.stdout + result.stderr
