@@ -13,7 +13,6 @@ backlog 的正本，由 `limae-orchestra` 在合入后记账 (全局守则「多
 
 ## 实现与分发
 
-- **测试套件不隔离 `LIMAE_*` 环境变量**：`.claude/settings.local.json` 的 `env` 块给 `LIMAE_ENGINE` / `LIMAE_HOOK_AB_RATE` / `LIMAE_HOOK_MIN_CHARS` 赋了值 (polish hook 自试留下的，见 `docs/knowledge/polish-hook-self-trial.md`；该文件被 `.gitignore` 排除、未入库)，Claude Code 把 settings 的 `env` 注入它起的每个 Bash 子进程，在这样的会话里 `uv run pytest -q` 是 29 红。**盖过测试自己写的 `limae.toml` 的只有 `LIMAE_ENGINE` 一个**：它在 `src/limae/polish.py` 的优先级链里排在配置文件之前 (命令行 > `LIMAE_ENGINE` > 配置文件)，于是测试写的 `engine = "custom"` 失效，报错形如 `engine codex: not installed`；另两个是 hook 自己读的旋钮，不参与这条链。2026-09-03 三档实测：只设 `LIMAE_ENGINE` 29 红，只设那两个旋钮 171 绿，三个都不设 171 绿。**影响范围只到「在本仓目录里起的 Claude 会话」**：登录 shell、herdr server 与 Codex agent 的进程里这三个变量都不存在 (同日本机按变量名核，未打印值)，CI 同样没有，main 因此全绿。测试不该依赖外部环境，修法是 conftest 的 autouse fixture 清掉整个 `LIMAE_*` 命名空间，而不只是闯祸的那一个；`settings.local.json` 里那三项要不要留是另一件事 —— 自试还在跑就留着，靠 conftest 隔离。
 - **Rust 主实现 (ADR-0002)**：主实现转 Rust，对着同一套 `spec/` 与黄金集跑，Python 版留作参考实现；crate 布局与分发形态 (多语言 SDK、LSP、编辑器与 CI 集成，对标 AutoCorrect) 届时另起 ADR。
 
 ## 愿景 (正本 `docs/adr/0005-agent-native-positioning.md`，这里只记条目)
