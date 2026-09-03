@@ -218,21 +218,15 @@ skip_zh_units = "年月日天号时分秒"
   disable = ["zh-typography-3"]
   ```
 
-过渡期仍识别旧名 `lo-md-lint.toml` 与 `[tool.lo-md-lint]`，与新名语义完全相同 (见「发现顺序」)。
-
 ### 发现顺序
 
 从**当前工作目录 (cwd)** 开始逐级向上找，最近的一层生效，找到就停：
 
-1. 该层有独立文件 (`limae.toml`，或旧名 `lo-md-lint.toml`) → 用它。
-2. 否则该层的 `pyproject.toml` 有本工具的表 (`[tool.limae]`，或旧名 `[tool.lo-md-lint]`) → 用它。同一层两种载体都在时独立文件赢。
+1. 该层有独立文件 `limae.toml` → 用它。
+2. 否则该层的 `pyproject.toml` 有本工具的表 `[tool.limae]` → 用它。同一层两种载体都在时独立文件赢。
 3. 都没有 → 上一级重复。含 `.git` 的目录 (仓库根) 是最后一层，其上不再找；不在仓库里时找到文件系统根为止。一层都没找到就是默认集。
 
 没有本工具的表的 `pyproject.toml` 不是配置来源，遇到了继续向上找。**发现只看 cwd，不看被检文件的路径**：一次运行一套配置，被检文件在哪个目录都用同一套规则。
-
-**过渡期的旧名**：`lo-md-lint.toml` 与 `[tool.lo-md-lint]` 照旧识别，与新名语义完全相同 —— 一层只有旧名时就用旧名。新旧之间**没有优先级**：**同一层新旧同名并存是配置错误** —— 两个独立文件都在，或走到的那份 `pyproject.toml` 里两张表都在，一律报错退出 (见「配置错误」)，不静默挑一个。「新名优先」只适用于忽略文件 (见「忽略文件」)。
-
-两条并存规则看似相反，判据其实是同一条：**这种状态是不是一个长期合理的配置形态**。第 2 条是两种载体之争，独立文件优先于 `pyproject.toml` 表是明确且长期有效的规则，静默取胜没有问题；新旧同名并存则只可能是迁移做了一半，静默挑一个会让用户以为另一份也在生效。
 
 ### 配置错误
 
@@ -247,7 +241,6 @@ skip_zh_units = "年月日天号时分秒"
 7. **`severity` 不是表、键是未知规则 id、或取值不是 `"error"` / `"warning"`**，如 `severity = "warning"`、`severity = { R99 = "error" }`、`severity = { zh-typography-1 = "fatal" }`。
 8. **experimental 规则 id 出现在 `enable` 键或命令行 `--enable` 上**：成熟度只有 `enable_experimental` 一个总开关。
 9. **`enable_experimental` 不是布尔**，如 `enable_experimental = "true"`。
-10. **同一层新旧同名的配置源并存**：某一层同时有 `limae.toml` 与 `lo-md-lint.toml`，或发现走到的那份 `pyproject.toml` 同时有 `[tool.limae]` 与 `[tool.lo-md-lint]` 两张表 (理由见「发现顺序」)。独立文件在某一层赢下 `pyproject.toml` 时那份 `pyproject.toml` 不被读取，它里面有几张表都不算错。
 
 反过来，**没读到就不算错**：一层都没找到配置文件是正常情况，等于默认集。
 
@@ -285,7 +278,6 @@ skip_zh_units = "年月日天号时分秒"
 - **未知规则 id** (不在本文件里的字符串) 与配置错误同款：打印 `文件:行号` 与错误，并以配置错误的退出码结束 (见「退出码」)，不静默忽略。
 - **`disable-next-line` 后面紧跟另一条指令行或文件结束时是空操作**。
 - 与「全局豁免」正交：豁免是规则判定层的 (哪些字符不算行文)，指令是行 × 规则的开关层。
-- **过渡期仍识别旧前缀** `lo-md-lint-disable` / `lo-md-lint-enable` / `lo-md-lint-disable-next-line`：旧前缀只是同一条指令的另一个拼法，与新前缀语义完全相同，**可以在同一份文件里混用** —— `<!-- lo-md-lint-disable -->` 由 `<!-- limae-enable -->` 关掉是合法的，两个前缀共用上面那一个状态机。拼错的名字不论用哪个前缀都是普通文本。
 
 ```text
 <!-- limae-disable-next-line zh-typography-4 -->
@@ -294,10 +286,6 @@ skip_zh_units = "年月日天号时分秒"
 <!-- limae-disable zh-typography-4 zh-typography-5 -->
 成段的原样文本         → zh-typography-4、zh-typography-5 关到 enable 为止，其余规则照常
 <!-- limae-enable -->
-
-<!-- lo-md-lint-disable zh-typography-4 -->
-成段的原样文本         → 旧前缀语义相同，可与新前缀混用
-<!-- limae-enable -->
 ```
 
 ## 忽略文件
@@ -305,7 +293,6 @@ skip_zh_units = "年月日天号时分秒"
 整份文件不该被检查时用忽略文件 (ignore file) `.limae-ignore`，内容与 `.gitignore` 同语法 (git 的 pattern format：`#` 注释、空行、`!` 否定、`/` 锚定、`**`)，模式相对该文件所在目录。
 
 - **发现**：与配置文件同一套向上查找 (见「发现顺序」)，第一个命中的生效，一次运行一份。与配置文件相互独立 —— 某一层有配置文件而没有忽略文件，不影响继续向上找忽略文件。
-- **过渡期仍识别旧名 `.lo-md-lint-ignore`**，与新名语义完全相同；同一层两个都在时用新名，旧名忽略，**不报错**。这一点与配置文件的新旧同名并存 (那是配置错误，见「发现顺序」) 相反，判据仍是同一条 —— 忽略文件只决定哪些文件进入本次运行，多留一份旧的不会让人误以为行为不同；它又像 `.gitignore` 一样常被原样遗留，为此报错太吵。
 - **作用对象是本次运行的全部输入文件**，不论来自 `--all` 还是命令行显式列出 —— 显式传文件正是 pre-commit 的工作方式，忽略文件对它必须生效。
 - **被忽略的文件静默跳过**：不报违规、`--fix` 不改写、也不算错误；输入全被忽略就是零违规，退出码 0。
 - 没有对应的 CLI flag。

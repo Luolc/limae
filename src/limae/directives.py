@@ -18,11 +18,9 @@ import re
 # A directive is an HTML comment alone on its line (whitespace aside), the
 # rule ids after its name space- or comma-separated as on the command
 # line. The name must be followed by whitespace or the comment's end, so a
-# misspelled `limae-disabled` is a plain comment, not a directive. The
-# pre-rename prefix is another spelling of the same directive, so the two
-# mix freely in one file and drive the one state machine below.
+# misspelled `limae-disabled` is a plain comment, not a directive.
 DIRECTIVE = re.compile(
-    r"^\s*<!--\s*(?:limae|lo-md-lint)-(disable-next-line|disable|enable)"
+    r"^\s*<!--\s*limae-(disable-next-line|disable|enable)"
     r"(?:\s+([^>]*?))?\s*-->\s*$"
 )
 ID_SEPARATOR = re.compile(r"[\s,]+")

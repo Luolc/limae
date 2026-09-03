@@ -11,15 +11,6 @@ Markdown linter，从中文技术写作的排版规则起步。名字取自贺�
 
 决策记录在 `docs/adr/`；agent 守则在 `AGENTS.md`。
 
-## 更名说明
-
-本工具原名 `lo-md-lint`，现已更名为 `limae`。仓库、包名、命令名与 pre-commit hook id 都是新名，旧名在过渡期继续可用，消费方可以从容迁移：
-
-- **仓库**：已改名为 <https://github.com/Luolc/limae>，旧地址由 GitHub 永久重定向 (301)，`repo:` 与 `uvx --from git+…` 写旧地址仍然能用。
-- **命令名**：`limae` 是正名，`lo-md-lint` 保留为同一个入口的别名，两者行为完全一致。
-- **pre-commit hook id**：`limae` 是正名，`lo-md-lint` 保留为同一个 hook 的别名。
-- **配置语法**：配置文件名 `limae.toml`、表名 `[tool.limae]`、行内指令前缀 `limae-disable` 一族、忽略文件名 `.limae-ignore` 都是新名，旧名照旧识别、语义完全相同 —— 已有配置一个字不改也能继续跑。两处细节：同一层新旧两份**配置文件** (或同一份 `pyproject.toml` 里新旧两张表) 并存是配置错误，因为那只可能是迁移做了一半；而新旧两份**忽略文件**并存不报错，用新名。
-
 ## 现状
 
 Python 参考实现已就位。默认规则集是中文排版一套：宽度转换 (zh-typography-1 CJK 旁的半角标点含句号、zh-typography-2 全角括号、zh-typography-10 全角数字)、空格 (zh-typography-3 半角括号外侧、zh-typography-4 CJK–拉丁字母、zh-typography-5 CJK–数字、zh-typography-6 数字–单位、zh-typography-7 行内代码定界符、zh-typography-8 破折号两侧、zh-typography-11 全角标点旁去空格、zh-typography-9 链接前，默认关)，全是 fixable · error · stable。另有一批默认关闭的实验规则：中文 AI 腔 zh-tell-1 套话、zh-tell-2 否定平行、zh-tell-3 互联网黑话、zh-tell-4 聊天残留，英文 tell en-tell-1 AI 词汇、en-tell-2 否定平行、en-tell-3 Claudish 专用词、中文造词 zh-tell-5「零 + 名词」，与术语选词 zh-word-1、zh-word-2「秘密」误用 (ADR-0007)，全是 warning · experimental，判定用的词表在 `spec/wordlists/`。规则不分语言 (ADR-0006)：英文 tell 出现在中文文档里同样报。每条规则都可单独开关 (ADR-0003 / ADR-0004)，并按可修复性 / 严重度 / 成熟度三轴标注 (ADR-0006)。逃生口两个：行内指令按行 × 规则就地关掉，`.limae-ignore` 把整份文件排除在输入之外。`spec/` 已建起来：规则规范在 `spec/rules.md`，黄金 fixture 在 `spec/fixtures/`，格式与 runner 的判定见 `spec/README.md`；Python 的薄 runner 是 `tests/test_fixtures.py`。

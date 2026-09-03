@@ -47,10 +47,6 @@ CONFIG_FILENAME = "limae.toml"
 PYPROJECT_FILENAME = "pyproject.toml"
 IGNORE_FILENAME = ".limae-ignore"
 TOOL_TABLE = "limae"
-# The pre-rename spellings, still recognised through the transition.
-LEGACY_CONFIG_FILENAME = "lo-md-lint.toml"
-LEGACY_IGNORE_FILENAME = ".lo-md-lint-ignore"
-LEGACY_TOOL_TABLE = "lo-md-lint"
 DISABLE_KEY = "disable"
 ENABLE_KEY = "enable"
 SKIP_ZH_UNITS_KEY = "skip_zh_units"
@@ -114,54 +110,6 @@ def _load_toml(path: pathlib.Path) -> dict[str, object]:
     raise ConfigError(f"{path}: {e}") from e
 
 
-def _standalone(directory: pathlib.Path) -> pathlib.Path | None:
-  """Find the standalone config file of one directory.
-
-  Args:
-    directory: Directory to look in.
-
-  Returns:
-    ``limae.toml``, else the transitional ``lo-md-lint.toml``, else None.
-
-  Raises:
-    ConfigError: Both spellings are present.
-  """
-  current = directory / CONFIG_FILENAME
-  legacy = directory / LEGACY_CONFIG_FILENAME
-  if current.is_file() and legacy.is_file():
-    raise ConfigError(
-        f"{directory}: both {CONFIG_FILENAME} and {LEGACY_CONFIG_FILENAME}"
-        f" are present; keep only {CONFIG_FILENAME}"
-    )
-  if current.is_file():
-    return current
-  return legacy if legacy.is_file() else None
-
-
-def _tool_table(tools: Mapping[str, object], path: pathlib.Path) -> object:
-  """Find this tool's table in a ``pyproject.toml``'s ``[tool]`` table.
-
-  Args:
-    tools: The parsed ``[tool]`` table.
-    path: The ``pyproject.toml`` it came from, for the error message.
-
-  Returns:
-    The table under the current or the transitional name, or None when
-    neither is there.
-
-  Raises:
-    ConfigError: Both names are present.
-  """
-  if TOOL_TABLE in tools and LEGACY_TOOL_TABLE in tools:
-    raise ConfigError(
-        f"{path}: both [tool.{TOOL_TABLE}] and [tool.{LEGACY_TOOL_TABLE}]"
-        f" are present; keep only [tool.{TOOL_TABLE}]"
-    )
-  if TOOL_TABLE in tools:
-    return tools[TOOL_TABLE]
-  return tools.get(LEGACY_TOOL_TABLE)
-
-
 def find_config(start: pathlib.Path) -> tuple[pathlib.Path, object] | None:
   """Find the nearest config file at or above a directory.
 
@@ -177,16 +125,14 @@ def find_config(start: pathlib.Path) -> tuple[pathlib.Path, object] | None:
     The config file and its config table, or None when there is none.
   """
   for directory in [start, *start.parents]:
-    standalone = _standalone(directory)
-    if standalone is not None:
+    standalone = directory / CONFIG_FILENAME
+    if standalone.is_file():
       return standalone, _load_toml(standalone)
     pyproject = directory / PYPROJECT_FILENAME
     if pyproject.is_file():
       tools = _load_toml(pyproject).get("tool")
-      if isinstance(tools, dict):
-        table = _tool_table(tools, pyproject)
-        if table is not None:
-          return pyproject, table
+      if isinstance(tools, dict) and TOOL_TABLE in tools:
+        return pyproject, tools[TOOL_TABLE]
     if (directory / ".git").exists():
       break
   return None
@@ -553,9 +499,7 @@ def _find_ignore(start: pathlib.Path) -> pathlib.Path | None:
   """Find the nearest ignore file at or above a directory.
 
   Walks up like ``find_config`` but independently of it: a directory
-  holding a config file and no ignore file does not end the walk. In one
-  directory ``.limae-ignore`` wins over the transitional
-  ``.lo-md-lint-ignore``, and a leftover old file is not an error.
+  holding a config file and no ignore file does not end the walk.
 
   Args:
     start: Directory to start the upward walk from, normally the cwd.
@@ -564,10 +508,9 @@ def _find_ignore(start: pathlib.Path) -> pathlib.Path | None:
     The ignore file, or None when there is none.
   """
   for directory in [start, *start.parents]:
-    for name in (IGNORE_FILENAME, LEGACY_IGNORE_FILENAME):
-      candidate = directory / name
-      if candidate.is_file():
-        return candidate
+    candidate = directory / IGNORE_FILENAME
+    if candidate.is_file():
+      return candidate
     if (directory / ".git").exists():
       break
   return None

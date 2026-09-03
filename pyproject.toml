@@ -1,6 +1,6 @@
 [project]
 name = "limae"
-version = "0.12.0"
+version = "0.13.0"
 description = "Markdown linter, starting from Chinese technical-writing typography rules"
 requires-python = ">=3.13,<3.14"
 # gitignore pattern matching for the `.limae-ignore` file; the
@@ -9,9 +9,6 @@ dependencies = ["pathspec>=0.12.1"]
 
 [project.scripts]
 limae = "limae.zh_format:main"
-# Transitional alias for the old name; both entry points are the same
-# CLI, so consumers can migrate on their own schedule (README 「更名说明」).
-lo-md-lint = "limae.zh_format:main"
 
 [build-system]
 requires = ["hatchling"]
