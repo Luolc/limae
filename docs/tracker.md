@@ -9,10 +9,11 @@ backlog 的正本，由 `limae-orchestra` 在合入后记账 (全局守则「多
 - **裸日文段落的语言探测 (P2)**：v0.3.1 只豁免了含假名的引用 span (`spec/rules.md`「全局豁免」第 4 条)，没有括号包裹的裸日文段落照旧按中文排版规则处理；要不要按行 / 按段探测日文并整体豁免，待有实际需求再定案。现象：不在「」『』《》内的裸日文专名 (如自造例 `サンプルIT推進部` 这种形态) 仍被 zh-typography-4 报并插空格；消费方 wealth-management 2026-08-31 反馈，非阻塞，wm 暂以给专名补「」规避。单点逃生口已有：v0.5.0 的行内指令 `<!-- limae-disable-next-line zh-typography-4 -->` (`spec/rules.md`「行内指令」，黄金 case `inline-disable-next-line` 就带这个例子)。仍未定的候选修法 (wm 建议)：探测独立连续假名子串，跳过该子串邻接边界的 zh-typography-4 (日文正字法本就不在 CJK–拉丁边界空格)；随其它规则改动一并走 spec 先行流程，不单独定案。
 - **`quote_style` 实现**：检测与转换，语义已在 `spec/rules.md`「规划中的键」定案，新规则 id 届时分配。
 - **`quote_style` majority 档**：仿 pyink majority-quotes，按文档内多数引号风格统一，作 corner / curly 之外的第三档。
-- **仓内自用的词撞上词典自己的收词**：词典把「正本」收作要避免的 AI 中文 (`spec/lexicon/zh.toml`)，而本仓自己有 35 处在用它 (`README.md`、`spec/rules.md`、`docs/tracker.md`、多份 ADR)，包括 tracker 开头那句「backlog 的正本」。这是 dogfooding 上的自相矛盾：本仓用自己的 linter 检查自己的 Markdown，词典却没有对应的可执行规则来暴露它。两条路 —— 把词典条目做成 `zh-word` 家族的规则让它真能报，或者认定这个词在技术语境下可用、从词典里撤掉。**先定哪一条，再动那 35 处**，不要反过来。
+- **仓内自用的词撞上词典自己的收词**：词典把「正本」收作要避免的 AI 中文 (`spec/lexicon/zh.toml`)，而本仓自己的 Markdown 里有 38 处在用它 (2026-09-03 数，散在 35 行上；`README.md`、`spec/README.md`、`spec/rules.md`、`docs/tracker.md`、多份 ADR 与调研)，包括 tracker 开头那句「backlog 的正本」。计数只算 Markdown —— 词典条目自身、`site/index.html` 这份生成产物、`spec/wordlists/` 的注释与 fixture 不在内。这是 dogfooding 上的自相矛盾：本仓用自己的 linter 检查自己的 Markdown，词典却没有对应的可执行规则来暴露它。两条路 —— 把词典条目做成 `zh-word` 家族的规则让它真能报，或者认定这个词在技术语境下可用、从词典里撤掉。**先定哪一条，再动那 38 处**，不要反过来。
 
 ## 实现与分发
 
+- **测试套件不隔离 `LIMAE_*` 环境变量**：`.claude/settings.local.json` 的 `env` 块给 `LIMAE_ENGINE` / `LIMAE_HOOK_AB_RATE` / `LIMAE_HOOK_MIN_CHARS` 赋了值 (polish hook 自试留下的，见 `docs/knowledge/polish-hook-self-trial.md`；该文件被 `.gitignore` 排除、未入库)，Claude Code 把 settings 的 `env` 注入它起的每个 Bash 子进程，在这样的会话里 `uv run pytest -q` 是 29 红。**盖过测试自己写的 `limae.toml` 的只有 `LIMAE_ENGINE` 一个**：它在 `src/limae/polish.py` 的优先级链里排在配置文件之前 (命令行 > `LIMAE_ENGINE` > 配置文件)，于是测试写的 `engine = "custom"` 失效，报错形如 `engine codex: not installed`；另两个是 hook 自己读的旋钮，不参与这条链。2026-09-03 三档实测：只设 `LIMAE_ENGINE` 29 红，只设那两个旋钮 171 绿，三个都不设 171 绿。**影响范围只到「在本仓目录里起的 Claude 会话」**：登录 shell、herdr server 与 Codex agent 的进程里这三个变量都不存在 (同日本机按变量名核，未打印值)，CI 同样没有，main 因此全绿。测试不该依赖外部环境，修法是 conftest 的 autouse fixture 清掉整个 `LIMAE_*` 命名空间，而不只是闯祸的那一个；`settings.local.json` 里那三项要不要留是另一件事 —— 自试还在跑就留着，靠 conftest 隔离。
 - **Rust 主实现 (ADR-0002)**：主实现转 Rust，对着同一套 `spec/` 与黄金集跑，Python 版留作参考实现；crate 布局与分发形态 (多语言 SDK、LSP、编辑器与 CI 集成，对标 AutoCorrect) 届时另起 ADR。
 
 ## 愿景 (正本 `docs/adr/0005-agent-native-positioning.md`，这里只记条目)
