@@ -13,7 +13,7 @@ backlog 的正本，由 `limae-orchestra` 在合入后记账 (全局守则「多
 
 ## 实现与分发
 
-- **测试套件不隔离 `LIMAE_*` 环境变量**：装了 polish hook 的机器上，登录 shell 会导出 `LIMAE_ENGINE` / `LIMAE_HOOK_AB_RATE` / `LIMAE_HOOK_MIN_CHARS`，它们盖过测试自己写的 `limae.toml`，`uv run pytest -q` 因此 29 红 (2026-09-03 dev 机实测：同样这 29 条在 `a065990` 的干净 worktree 上一样红，而 main 的 CI 全绿；把这三个变量 `env -u` 掉再跑则 171 全过)。典型报错是 `engine codex: not installed`，而该测试配的是 `engine = "custom"`。CI 里没有这组变量，所以这道门在它自己的环境里永远不会暴露。修法是让测试自己清掉 `LIMAE_*` (conftest 的 autouse fixture)，而不是要求人先净化 shell。
+- **测试套件不隔离 `LIMAE_*` 环境变量**：`.claude/settings.local.json` 的 `env` 块给 `LIMAE_ENGINE` / `LIMAE_HOOK_AB_RATE` / `LIMAE_HOOK_MIN_CHARS` 赋了值 (polish hook 自试留下的，见 `docs/knowledge/polish-hook-self-trial.md`；该文件被 `.gitignore` 排除、未入库)，Claude Code 把 settings 的 `env` 注入它起的每个 Bash 子进程，这些值盖过测试自己写的 `limae.toml`，于是在这样的会话里 `uv run pytest -q` 是 29 红，报错形如 `engine codex: not installed`，而该测试配的是 `engine = "custom"`。**影响范围只到「在本仓目录里起的 Claude 会话」**：登录 shell、herdr server 与 Codex agent 的进程里这三个变量都不存在 (2026-09-03 本机按变量名核，未打印值)，CI 同样没有，main 因此全绿。测试不该依赖外部环境，修法是 conftest 的 autouse fixture 清掉 `LIMAE_*`；`settings.local.json` 里那三项要不要留是另一件事 —— 自试还在跑就留着，靠 conftest 隔离。
 - **Rust 主实现 (ADR-0002)**：主实现转 Rust，对着同一套 `spec/` 与黄金集跑，Python 版留作参考实现；crate 布局与分发形态 (多语言 SDK、LSP、编辑器与 CI 集成，对标 AutoCorrect) 届时另起 ADR。
 
 ## 愿景 (正本 `docs/adr/0005-agent-native-positioning.md`，这里只记条目)
