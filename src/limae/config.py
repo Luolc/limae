@@ -17,14 +17,6 @@ Sources, highest priority first:
 
 The two file carriers are isomorphic: same keys, different nesting.
 
-The pre-rename spellings are still recognised, with identical semantics.
-Which way the two spellings clash differs by file, and the criterion is
-whether the state is a config shape that makes long-term sense: two
-config sources of the same carrier in one directory can only be a
-half-finished migration, so that is a config error, while a leftover
-ignore file changes nothing about how the run reads and is simply
-ignored (``spec/rules.md`` sections 「发现顺序」 and 「忽略文件」).
-
 The ignore file ``.limae-ignore`` (``spec/rules.md`` section
 「忽略文件」) is found by the same upward walk, independently of the config
 file, and drops input files by gitignore patterns.
