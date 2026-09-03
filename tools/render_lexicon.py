@@ -1,8 +1,8 @@
 """Render the lexicon into one static page.
 
-The page is the reading end of ``spec/lexicon/zh.toml``: same content,
-laid out as a character primer rather than as data. Run it from the
-repository root; it writes ``site/index.html``.
+The page is the reading end of ``spec/lexicon/zh.toml``, the one and
+only source: same content, laid out as a character primer rather than
+as data. Run it from the repository root; it writes ``site/index.html``.
 """
 
 import html
@@ -75,6 +75,8 @@ h1 {
   text-align: center; color: var(--faded); letter-spacing: .2rem;
   margin: 0 0 3rem; font-size: .95rem;
 }
+.intro { margin: 0 0 2.6rem; }
+.intro p { margin: 0 0 1rem; }
 .preface {
   border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
   padding: 1.6rem 0; margin: 0 0 4rem; color: var(--faded); font-size: .95rem;
@@ -233,6 +235,9 @@ def render(data: dict[str, Any]) -> str:
         f'<p class="gloss"><span class="label">解</span>'
         f'{_inline(e["gloss"])}</p>{egs}</section>'
     )
+  intro = "".join(
+      f"<p>{_inline(p)}</p>" for p in cast(list[str], data["preface"])
+  )
   return (
       f"<title>AI 文言</title><style>{STYLE}</style>"
       '<div class="page"><nav><div class="toc-label">目次</div>'
@@ -243,6 +248,7 @@ def render(data: dict[str, Any]) -> str:
       )
       + '</nav><div class="sheet"><h1>AI 文言</h1>'
       '<p class="subtitle">机器写的中文里，读得懂却没人这么说的词</p>'
+      f'<div class="intro">{intro}</div>'
       f'<div class="preface"><p><b>判据</b>　{_inline(str(data["standard"]))}'
       f'</p><p><b>门槛</b>　{_inline(str(data["threshold"]).strip())}</p></div>'
       f'{"".join(entries)}'

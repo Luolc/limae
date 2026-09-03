@@ -9,6 +9,7 @@ backlog 的正本，由 `limae-orchestra` 在合入后记账 (全局守则「多
 - **裸日文段落的语言探测 (P2)**：v0.3.1 只豁免了含假名的引用 span (`spec/rules.md`「全局豁免」第 4 条)，没有括号包裹的裸日文段落照旧按中文排版规则处理；要不要按行 / 按段探测日文并整体豁免，待有实际需求再定案。现象：不在「」『』《》内的裸日文专名 (如自造例 `サンプルIT推進部` 这种形态) 仍被 zh-typography-4 报并插空格；消费方 wealth-management 2026-08-31 反馈，非阻塞，wm 暂以给专名补「」规避。单点逃生口已有：v0.5.0 的行内指令 `<!-- limae-disable-next-line zh-typography-4 -->` (`spec/rules.md`「行内指令」，黄金 case `inline-disable-next-line` 就带这个例子)。仍未定的候选修法 (wm 建议)：探测独立连续假名子串，跳过该子串邻接边界的 zh-typography-4 (日文正字法本就不在 CJK–拉丁边界空格)；随其它规则改动一并走 spec 先行流程，不单独定案。
 - **`quote_style` 实现**：检测与转换，语义已在 `spec/rules.md`「规划中的键」定案，新规则 id 届时分配。
 - **`quote_style` majority 档**：仿 pyink majority-quotes，按文档内多数引号风格统一，作 corner / curly 之外的第三档。
+- **仓内自用的词撞上词典自己的收词**：词典把「正本」收作要避免的 AI 中文 (`spec/lexicon/zh.toml`)，而本仓自己有 35 处在用它 (`README.md`、`spec/rules.md`、`docs/tracker.md`、多份 ADR)，包括 tracker 开头那句「backlog 的正本」。这是 dogfooding 上的自相矛盾：本仓用自己的 linter 检查自己的 Markdown，词典却没有对应的可执行规则来暴露它。两条路 —— 把词典条目做成 `zh-word` 家族的规则让它真能报，或者认定这个词在技术语境下可用、从词典里撤掉。**先定哪一条，再动那 35 处**，不要反过来。
 
 ## 实现与分发
 
