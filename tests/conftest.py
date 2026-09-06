@@ -37,26 +37,19 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
   metafunc.parametrize("limae_cli", names, indirect=True, ids=names)
 
 
-def pytest_collection_modifyitems(
-    config: pytest.Config, items: list[pytest.Item]
-) -> None:
-  """Reject a collection that silently drops a requested CLI arm."""
+def pytest_collection_finish(session: pytest.Session) -> None:
+  """Reject selected tests that silently drop a requested CLI arm."""
   expected = {"python"}
-  if _rust_artifacts(config) is not None:
+  if _rust_artifacts(session.config) is not None:
     expected.add("rust")
-  sentinel = [
-      item
-      for item in items
-      if item.name.startswith("test_cli_reports_then_fixes[")
-  ]
-  if not sentinel:
-    return
   collected = {
       name
-      for item in sentinel
+      for item in session.items
       for name in ("python", "rust")
       if item.name.endswith(f"[{name}]")
   }
+  if not collected:
+    return
   if collected != expected:
     raise pytest.UsageError(
         "CLI subprocess arms collected "

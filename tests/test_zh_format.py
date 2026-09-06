@@ -67,19 +67,12 @@ def test_invalid_ignore_keeps_a_named_failure_at_exit_one(
   assert completed.stderr == ""
 
 
-def run(
-    limae_cli: CliRunner, argv: list[str], cwd: pathlib.Path
-) -> subprocess.CompletedProcess[str]:
-  return limae_cli.run(argv, cwd)
-
-
 def test_cli_disable_flag_turns_a_rule_off(
     tmp_path: pathlib.Path, limae_cli: CliRunner
 ):
   p = tmp_path / "t.md"
   p.write_text("你好,世界", encoding="utf-8")
-  completed = run(
-      limae_cli,
+  completed = limae_cli.run(
       ["--fix", "--disable", "zh-typography-1", "t.md"],
       tmp_path,
   )
@@ -96,7 +89,7 @@ def test_standalone_config_file_turns_a_rule_off(
       'disable = ["zh-typography-1"]\n', encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
-  completed = run(limae_cli, ["t.md"], tmp_path)
+  completed = limae_cli.run(["t.md"], tmp_path)
   assert (completed.returncode, completed.stdout, completed.stderr) == (
       0,
       "OK: 1 file(s) clean\n",
@@ -111,7 +104,7 @@ def test_pyproject_table_turns_a_rule_off(
       '[tool.limae]\ndisable = ["zh-typography-1"]\n', encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
-  completed = run(limae_cli, ["t.md"], tmp_path)
+  completed = limae_cli.run(["t.md"], tmp_path)
   assert completed.returncode == 0
   assert completed.stdout == "OK: 1 file(s) clean\n"
   assert completed.stderr == ""
@@ -122,12 +115,11 @@ def test_cli_enable_turns_a_default_off_rule_on(
 ):
   p = tmp_path / "t.md"
   p.write_text("中文[链接](https://example.com/) 后文", encoding="utf-8")
-  assert run(limae_cli, ["t.md"], tmp_path).returncode == 0
-  completed = run(limae_cli, ["--enable", "zh-typography-9", "t.md"], tmp_path)
+  assert limae_cli.run(["t.md"], tmp_path).returncode == 0
+  completed = limae_cli.run(["--enable", "zh-typography-9", "t.md"], tmp_path)
   assert completed.returncode == 1
   assert "t.md:1: error: [zh-typography-9" in completed.stdout
-  completed = run(
-      limae_cli,
+  completed = limae_cli.run(
       ["--enable", "zh-typography-9", "--fix", "t.md"],
       tmp_path,
   )
@@ -146,7 +138,7 @@ def test_config_enable_key_turns_a_default_off_rule_on(
   (tmp_path / "t.md").write_text(
       "中文[链接](https://example.com/) 后文", encoding="utf-8"
   )
-  completed = run(limae_cli, ["t.md"], tmp_path)
+  completed = limae_cli.run(["t.md"], tmp_path)
   assert completed.returncode == 1
   assert "t.md:1: error: [zh-typography-9" in completed.stdout
   assert completed.stderr == ""
@@ -158,8 +150,7 @@ def test_same_id_disabled_and_enabled_is_a_config_error(
 ):
   p = tmp_path / "t.md"
   p.write_text("你好,世界", encoding="utf-8")
-  completed = run(
-      limae_cli,
+  completed = limae_cli.run(
       [
           "--disable",
           "zh-typography-9",
@@ -180,7 +171,7 @@ def test_unknown_rule_id_is_a_config_error(
 ):
   p = tmp_path / "t.md"
   p.write_text("你好,世界", encoding="utf-8")
-  completed = run(limae_cli, ["--disable", "R99", "t.md"], tmp_path)
+  completed = limae_cli.run(["--disable", "R99", "t.md"], tmp_path)
   assert completed.returncode == 2
   assert completed.stdout == ""
   assert "unknown rule id" in completed.stderr
@@ -195,7 +186,7 @@ def test_cli_disable_replaces_the_config_file(
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
   # Wholesale override, not a merge: zh-typography-3 goes off and
   # zh-typography-1 comes back on.
-  completed = run(limae_cli, ["--disable", "zh-typography-3", "t.md"], tmp_path)
+  completed = limae_cli.run(["--disable", "zh-typography-3", "t.md"], tmp_path)
   assert completed.returncode == 1
   assert "t.md:1: error: [zh-typography-1" in completed.stdout
 
@@ -210,7 +201,7 @@ def test_standalone_file_wins_over_pyproject_table(
       "[tool.limae]\ndisable = []\n", encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
-  completed = run(limae_cli, ["t.md"], tmp_path)
+  completed = limae_cli.run(["t.md"], tmp_path)
   assert completed.returncode == 0
   assert completed.stdout == "OK: 1 file(s) clean\n"
 
@@ -223,7 +214,7 @@ def test_invalid_toml_is_a_config_error(
   # the search rather than silently walking past a possible config.
   (tmp_path / "pyproject.toml").write_text("[project\n", encoding="utf-8")
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
-  completed = run(limae_cli, ["t.md"], tmp_path)
+  completed = limae_cli.run(["t.md"], tmp_path)
   assert completed.returncode == 2
   assert completed.stdout == ""
   assert "config error" in completed.stderr
@@ -238,7 +229,7 @@ def test_non_list_disable_is_a_config_error(
       'disable = "zh-typography-1"\n', encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
-  completed = run(limae_cli, ["t.md"], tmp_path)
+  completed = limae_cli.run(["t.md"], tmp_path)
   assert completed.returncode == 2
   assert completed.stdout == ""
   assert "limae.toml" in completed.stderr
@@ -254,7 +245,7 @@ def test_config_skip_zh_units_exempts_a_date(
   )
   p = tmp_path / "t.md"
   p.write_text("他2011年5月15日入职\n", encoding="utf-8")
-  completed = run(limae_cli, ["--fix", "t.md"], tmp_path)
+  completed = limae_cli.run(["--fix", "t.md"], tmp_path)
   assert completed.returncode == 0
   assert completed.stdout == "OK: 1 file(s) clean\n"
   assert p.read_text(encoding="utf-8") == "他2011年5月15日入职\n"
@@ -268,7 +259,7 @@ def test_cli_flag_drops_the_config_files_skip_zh_units(
   )
   (tmp_path / "t.md").write_text("共2011年\n", encoding="utf-8")
   # A CLI flag replaces the config file wholesale, this key included.
-  completed = run(limae_cli, ["--disable", "zh-typography-1", "t.md"], tmp_path)
+  completed = limae_cli.run(["--disable", "zh-typography-1", "t.md"], tmp_path)
   assert completed.returncode == 1
   assert "t.md:1: error: [zh-typography-5" in completed.stdout
 
@@ -281,7 +272,7 @@ def test_non_string_skip_zh_units_is_a_config_error(
       'skip_zh_units = ["年"]\n', encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
-  completed = run(limae_cli, ["t.md"], tmp_path)
+  completed = limae_cli.run(["t.md"], tmp_path)
   assert completed.returncode == 2
   assert completed.stdout == ""
   assert "`skip_zh_units`" in completed.stderr
@@ -296,7 +287,7 @@ def test_non_cjk_skip_zh_units_is_a_config_error(
       'skip_zh_units = "年 月"\n', encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
-  completed = run(limae_cli, ["t.md"], tmp_path)
+  completed = limae_cli.run(["t.md"], tmp_path)
   assert completed.returncode == 2
   assert completed.stdout == ""
   assert "`skip_zh_units`" in completed.stderr
@@ -312,7 +303,7 @@ def test_severity_key_downgrades_a_rule_to_warning(
   )
   (tmp_path / "t.md").write_text("你好,世界\n", encoding="utf-8")
   # Reported and told apart from an error, but the run still passes.
-  completed = run(limae_cli, ["t.md"], tmp_path)
+  completed = limae_cli.run(["t.md"], tmp_path)
   assert completed.returncode == 0
   assert completed.stderr == ""
   assert "t.md:1: warning: [zh-typography-1" in completed.stdout
@@ -328,7 +319,7 @@ def test_a_warning_rule_is_still_fixed(
   p = tmp_path / "t.md"
   p.write_text("你好,世界\n", encoding="utf-8")
   # Severity drives the exit code, never the fix.
-  completed = run(limae_cli, ["--fix", "t.md"], tmp_path)
+  completed = limae_cli.run(["--fix", "t.md"], tmp_path)
   assert completed.returncode == 0
   assert completed.stdout == "fixed: t.md\nOK: 1 file(s) clean\n"
   assert p.read_text(encoding="utf-8") == "你好，世界\n"
@@ -342,7 +333,7 @@ def test_bad_severity_value_is_a_config_error(
       'severity = { zh-typography-1 = "fatal" }\n', encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
-  completed = run(limae_cli, ["t.md"], tmp_path)
+  completed = limae_cli.run(["t.md"], tmp_path)
   assert completed.returncode == 2
   assert completed.stdout == ""
   assert "`severity`" in completed.stderr
@@ -358,7 +349,7 @@ def test_enable_experimental_joins_the_experimental_rules(
   )
   (tmp_path / "t.md").write_text("综上所述，这条路走不通。\n", encoding="utf-8")
   # The experimental rules are warnings, so the run still passes.
-  completed = run(limae_cli, ["t.md"], tmp_path)
+  completed = limae_cli.run(["t.md"], tmp_path)
   assert completed.returncode == 0
   assert completed.stderr == ""
   assert "t.md:1: warning: [zh-tell-1 formulaic phrase]" in completed.stdout
@@ -372,7 +363,7 @@ def test_experimental_id_in_enable_is_a_config_error(
       'enable = ["zh-tell-1"]\n', encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
-  completed = run(limae_cli, ["t.md"], tmp_path)
+  completed = limae_cli.run(["t.md"], tmp_path)
   assert completed.returncode == 2
   assert completed.stdout == ""
   assert "`enable`" in completed.stderr
@@ -387,7 +378,7 @@ def test_non_boolean_enable_experimental_is_a_config_error(
       'enable_experimental = "true"\n', encoding="utf-8"
   )
   (tmp_path / "t.md").write_text("你好,世界", encoding="utf-8")
-  completed = run(limae_cli, ["t.md"], tmp_path)
+  completed = limae_cli.run(["t.md"], tmp_path)
   assert completed.returncode == 2
   assert completed.stdout == ""
   assert "`enable_experimental`" in completed.stderr
@@ -400,7 +391,7 @@ def test_unknown_rule_id_in_a_directive_is_an_error(
 ):
   p = tmp_path / "t.md"
   p.write_text("<!-- limae-disable R99 -->\n你好,世界\n", encoding="utf-8")
-  completed = run(limae_cli, ["t.md"], tmp_path)
+  completed = limae_cli.run(["t.md"], tmp_path)
   assert completed.returncode == 2
   assert completed.stdout == ""
   assert "directive error" in completed.stderr
@@ -417,7 +408,7 @@ def test_ignore_file_skips_an_explicitly_listed_file(
   p = tmp_path / "vendor" / "t.md"
   p.write_text("你好,世界\n", encoding="utf-8")
   # Explicit, not --all: pre-commit passes the files it staged.
-  completed = run(limae_cli, ["--fix", "vendor/t.md"], tmp_path)
+  completed = limae_cli.run(["--fix", "vendor/t.md"], tmp_path)
   assert completed.returncode == 0
   assert completed.stdout == "OK: 0 file(s) clean\n"
   assert completed.stderr == ""
@@ -432,7 +423,7 @@ def test_ignore_file_is_found_above_the_cwd(
   sub = tmp_path / "sub"
   sub.mkdir()
   (sub / "t.md").write_text("你好,世界\n", encoding="utf-8")
-  completed = run(limae_cli, ["t.md"], sub)
+  completed = limae_cli.run(["t.md"], sub)
   assert completed.returncode == 0
   assert completed.stdout == "OK: 0 file(s) clean\n"
   assert completed.stderr == ""
@@ -446,7 +437,7 @@ def test_ignore_file_negation_keeps_a_file(
   (tmp_path / ".limae-ignore").write_text("*.md\n!keep.md\n", encoding="utf-8")
   (tmp_path / "skip.md").write_text("你好,世界\n", encoding="utf-8")
   (tmp_path / "keep.md").write_text("你好,世界\n", encoding="utf-8")
-  completed = run(limae_cli, ["skip.md", "keep.md"], tmp_path)
+  completed = limae_cli.run(["skip.md", "keep.md"], tmp_path)
   assert completed.returncode == 1
   assert completed.stderr == ""
   assert "keep.md:1" in completed.stdout

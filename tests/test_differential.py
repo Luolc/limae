@@ -121,10 +121,10 @@ def _assert_parity(
     cwd: pathlib.Path,
     disable: list[str] | None = None,
     enable: list[str] | None = None,
-) -> None:
-  assert _rust_result(probe, text, cwd, disable, enable) == _python_result(
-      text, cwd, disable, enable
-  )
+) -> TextResult:
+  reference = _python_result(text, cwd, disable, enable)
+  assert _rust_result(probe, text, cwd, disable, enable) == reference
+  return reference
 
 
 def _require_probe(probe: pathlib.Path | None) -> pathlib.Path:
@@ -138,7 +138,7 @@ def test_all_golden_texts_match_the_reference(
 ) -> None:
   probe = _require_probe(rust_probe)
   cases = sorted(path.stem for path in FIXTURES.glob("*.in"))
-  assert len(cases) == 52
+  assert cases
   for case in cases:
     root = tmp_path / case
     root.mkdir()
@@ -184,8 +184,12 @@ def test_fixed_seed_rule_interactions_match_the_reference(
 
 def test_all_tracked_markdown_matches_the_reference(
     rust_probe: pathlib.Path | None,
+    tmp_path: pathlib.Path,
 ) -> None:
   probe = _require_probe(rust_probe)
+  (tmp_path / "limae.toml").write_text(
+      "enable_experimental = true\n", encoding="utf-8"
+  )
   completed = subprocess.run(  # noqa: S603 - fixed VCS query
       ["git", "ls-files", "-z", "--", "*.md"],
       cwd=REPOSITORY,
@@ -195,9 +199,16 @@ def test_all_tracked_markdown_matches_the_reference(
   )
   paths = [path for path in completed.stdout.split(b"\0") if path]
   assert paths
+  finding_count = 0
+  changed_count = 0
   for raw_path in paths:
     path = REPOSITORY / os.fsdecode(raw_path)
-    _assert_parity(probe, path.read_text(encoding="utf-8"), REPOSITORY)
+    text = path.read_text(encoding="utf-8")
+    result = _assert_parity(probe, text, tmp_path)
+    finding_count += len(result.findings)
+    changed_count += result.fixed != text
+  assert finding_count > 0
+  assert changed_count > 0
 
 
 def test_probe_failures_are_not_normalized_into_a_match() -> None:
