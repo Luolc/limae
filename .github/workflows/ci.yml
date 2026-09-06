@@ -56,6 +56,25 @@ jobs:
       - name: Sync deps (creates .venv, installs dev group)
         run: uv sync
 
+      - name: Rust toolchain
+        run: rustup show
+
+      - name: Rust format
+        run: cargo fmt --check
+
+      - name: Rust lint
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Rust tests
+        env:
+          RUSTDOCFLAGS: -Dwarnings
+        run: cargo test --locked
+
+      - name: Rust docs
+        env:
+          RUSTDOCFLAGS: -Dwarnings
+        run: cargo doc --no-deps --locked
+
       - name: Tests
         run: uv run pytest -q
 

@@ -1,0 +1,31 @@
+[package]
+name = "limae"
+version = "0.13.0"
+edition = "2024"
+publish = false
+include = [
+  "Cargo.toml",
+  "Cargo.lock",
+  "README.md",
+  "rust-toolchain.toml",
+  "rust/**/*.rs",
+  "spec/**",
+]
+
+[lib]
+path = "rust/lib.rs"
+
+[[test]]
+name = "text"
+path = "rust/tests/text.rs"
+
+[lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
