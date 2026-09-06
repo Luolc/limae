@@ -29,9 +29,16 @@ pub struct ProcessRequest {
 /// Time and output bounds for one invocation.
 #[derive(Clone, Copy)]
 pub struct RunLimits {
-    /// Absolute deadline for writing input, reading output, and waiting.
+    /// Absolute deadline for child I/O and leader completion.
+    ///
+    /// Process-group cleanup starts afterward and can add `terminate_grace`
+    /// plus the final direct-child wait.
     pub deadline: Instant,
-    /// Time allowed between `SIGTERM` and `SIGKILL` during cleanup.
+    /// Delay after successful `SIGTERM` delivery and before `SIGKILL`.
+    ///
+    /// Every spawned invocation pays this full delay, whether capture succeeds
+    /// or fails. The direct child remains unreaped until the final wait to
+    /// reserve its process-group ID.
     pub terminate_grace: Duration,
     /// Maximum accepted standard output bytes, inclusive.
     pub stdout: usize,
@@ -151,7 +158,8 @@ pub enum ProcessError {
 /// A nonzero exit is a completed invocation and is returned in
 /// [`ProcessOutput`]. Timeout and cancellation are distinct errors. Every
 /// spawned path closes the pipes, terminates the Unix process group, and waits
-/// for the direct child before returning.
+/// for the direct child before returning. Cleanup happens outside `deadline`;
+/// if both capture and cleanup fail, [`ProcessError::Cleanup`] takes priority.
 pub fn run(
     request: &ProcessRequest,
     limits: RunLimits,
@@ -179,9 +187,7 @@ mod unix {
 
     use rustix::fs::{OFlags, fcntl_getfl, fcntl_setfl};
     use rustix::io::Errno;
-    use rustix::process::{
-        Pid, Signal, WaitId, WaitIdOptions, kill_process_group, test_kill_process_group, waitid,
-    };
+    use rustix::process::{Pid, Signal, WaitId, WaitIdOptions, kill_process_group, waitid};
 
     struct Captured {
         stdout: Vec<u8>,
@@ -409,22 +415,11 @@ mod unix {
         }
     }
 
-    fn group_exists(process: Pid) -> io::Result<bool> {
-        match test_kill_process_group(process) {
-            Ok(()) => Ok(true),
-            Err(Errno::SRCH) => Ok(false),
-            Err(source) => Err(source.into()),
-        }
-    }
-
     fn finish(child: &mut Child, terminate_grace: Duration) -> io::Result<ExitStatus> {
         let cleanup: io::Result<()> = (|| {
             let process = pid(child)?;
             if signal(process, Signal::TERM)? {
-                let deadline = Instant::now() + terminate_grace;
-                while Instant::now() < deadline && group_exists(process)? {
-                    thread::sleep(Duration::from_millis(2));
-                }
+                thread::sleep(terminate_grace);
                 let _ = signal(process, Signal::KILL)?;
             }
             Ok(())

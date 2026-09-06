@@ -28,6 +28,20 @@ fn limits() -> RunLimits {
 }
 
 #[test]
+fn empty_argv_is_rejected_before_spawning() {
+    let command = ProcessRequest {
+        argv: Vec::new(),
+        stdin: Vec::new(),
+        cwd: PathBuf::new(),
+        env: Vec::new(),
+    };
+    assert!(matches!(
+        run(&command, limits(), &CancellationToken::new()),
+        Err(ProcessError::EmptyArgv)
+    ));
+}
+
+#[test]
 fn argv_stdin_cwd_and_exact_environment_reach_the_child() -> TestResult {
     let cwd = std::env::current_dir()?;
     let mut command = request(
