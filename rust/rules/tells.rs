@@ -1,6 +1,5 @@
-//! Five wordlist tell rules, each reporting at most once per original line.
-//!
-//! Sentence shapes, coinages and document orchestration are separate consumers.
+//! Wordlist tells, sentence shapes and zero-noun coinages on original lines.
+//! Document orchestration remains a separate consumer.
 
 use regex::Regex;
 use std::cmp::Reverse;
@@ -9,8 +8,8 @@ use thiserror::Error;
 use super::LineMatch;
 use crate::config::{ResolvedConfig, RuleId};
 use crate::markdown::LineProtection;
-use crate::resources::{TELL_WORDLISTS, phrases};
-use crate::text::{char_at, char_before};
+use crate::resources::{TELL_WORDLISTS, ZERO_ALLOWLIST, phrases};
+use crate::text::{char_at, char_before, is_cjk};
 
 /// A built-in wordlist could not be compiled; initialization never drops it.
 #[derive(Debug, Error)]
@@ -127,9 +126,167 @@ fn compile(text: &str, english: bool) -> Result<Regex, regex::Error> {
     Regex::new(&pattern)
 }
 
+/// Reusable zh-tell-2, en-tell-2 and zh-tell-5 checker, without fixes.
+pub struct SentenceTells {
+    chinese: Regex,
+    english: [(Regex, Regex); 2],
+    allowed_zero: Vec<&'static str>,
+}
+
+impl SentenceTells {
+    /// Compile sentence patterns and parse the embedded zero-noun allowlist.
+    ///
+    /// # Errors
+    /// Returns the compilation error of an invalid built-in sentence pattern.
+    pub fn new() -> Result<Self, regex::Error> {
+        // Only literal I tokens are expanded. The other ASCII equivalents use
+        // regex's case folding; Python whitespace additionally includes 1C–1F.
+        let english = |body: &str| Regex::new(&format!("(?i:({body}))(?:[^A-Za-z0-9_İıſK]|$)"));
+        Ok(Self {
+            chinese: Regex::new("不是.{0,20}?而是")?,
+            english: [
+                (english(r"not[\s\x1c-\x1f]+just")?, english(r"\Abut")?),
+                (
+                    english(concat!(
+                        r"(?:(?:[iİı]t|that)['’]s|they['’]re|[iİı]s|are|was|were)",
+                        r"[\s\x1c-\x1f]+not|(?:[iİı]s|are|was|were)n['’]t"
+                    ))?,
+                    english(concat!(
+                        r"\A(?:(?:[iİı]t|that)['’]s|they['’]re",
+                        r"|(?:[iİı]t|that)[\s\x1c-\x1f]+[iİı]s|they[\s\x1c-\x1f]+are)"
+                    ))?,
+                ),
+            ],
+            allowed_zero: phrases(ZERO_ALLOWLIST),
+        })
+    }
+
+    /// Check these three rules in RuleId / start order on an unmodified line.
+    ///
+    /// Each sentence pattern consumes non-overlapping matches independently,
+    /// including protected matches. Every zero is judged against the remainder
+    /// of its CJK run; allowlist evidence uses the entire original line.
+    /// Protection must belong to this line. Splitting and directives belong to
+    /// the caller; this primitive is not integrated into `Typography`.
+    #[must_use]
+    pub fn check_line(
+        &self,
+        line: &str,
+        protection: &LineProtection,
+        config: &ResolvedConfig,
+    ) -> Vec<LineMatch> {
+        let mut found = Vec::new();
+        if config.is_enabled(RuleId::ZH_TELL_2) {
+            for matched in self.chinese.find_iter(line) {
+                if !protection.is_exempt(matched.range()) {
+                    found.push(LineMatch {
+                        rule: RuleId::ZH_TELL_2,
+                        name: "zh-tell-2 negative parallelism",
+                        range: matched.range(),
+                    });
+                }
+            }
+        }
+        if config.is_enabled(RuleId::EN_TELL_2) {
+            for (opening, ending) in &self.english {
+                found.extend(english_sentences(line, protection, opening, ending));
+            }
+        }
+        if config.is_enabled(RuleId::ZH_TELL_5) {
+            for (start, zero) in line.match_indices('零') {
+                let length = line[start..].chars().take_while(|&ch| is_cjk(ch)).count();
+                let range = start..start + zero.len();
+                if (2..=5).contains(&length)
+                    && !covered(line, start, &self.allowed_zero)
+                    && !protection.is_exempt(range.clone())
+                {
+                    found.push(LineMatch {
+                        rule: RuleId::ZH_TELL_5,
+                        name: "zh-tell-5 zero-noun coinage",
+                        range,
+                    });
+                }
+            }
+        }
+        found.sort_by_key(|m| (m.rule, m.range.start));
+        found
+    }
+}
+
+fn english_sentences(
+    line: &str,
+    protection: &LineProtection,
+    opening: &Regex,
+    ending: &Regex,
+) -> Vec<LineMatch> {
+    let mut found = Vec::new();
+    let mut offset = 0;
+    while let Some(captures) = opening.captures_at(line, offset) {
+        let Some(start) = captures.get(1) else {
+            unreachable!("sentence patterns always capture the keyword match");
+        };
+        // Invalid boundaries or a missing ending allow overlapping openers.
+        offset = start.start() + char_at(line, start.start()).map_or(0, char::len_utf8);
+        if char_before(line, start.start()).is_some_and(english_word_char) {
+            continue;
+        }
+        // Try at most 41 ending positions, from a zero- to a 40-scalar gap.
+        // The slice extends to the real line end so right boundaries stay real.
+        for (gap, _) in line[start.end()..]
+            .char_indices()
+            .take(41)
+            .take_while(|&(_, ch)| ch != '\n')
+        {
+            let position = start.end() + gap;
+            if char_before(line, position).is_some_and(english_word_char) {
+                continue;
+            }
+            let Some(end) = ending.captures(&line[position..]).and_then(|c| c.get(1)) else {
+                continue;
+            };
+            offset = position + end.end();
+            let range = start.start()..offset;
+            if !protection.is_exempt(range.clone()) {
+                found.push(LineMatch {
+                    rule: RuleId::EN_TELL_2,
+                    name: "en-tell-2 English negative parallelism",
+                    range,
+                });
+            }
+            // Protection consumes the complete legal sentence, like finditer.
+            break;
+        }
+    }
+    found
+}
+
+fn covered(line: &str, start: usize, allowed: &[&str]) -> bool {
+    allowed.iter().any(|word| {
+        // Every character boundary may begin an occurrence, even when two
+        // allowlist occurrences overlap. Only the hit's first character counts.
+        std::iter::once(start)
+            .chain(
+                line[..start]
+                    .char_indices()
+                    .rev()
+                    .map(|(position, _)| position),
+            )
+            .take_while(|&position| start - position < word.len())
+            .any(|position| line[position..].starts_with(word))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::compile;
+
+    #[test]
+    fn allowlist_coverage_includes_overlapping_occurrences_and_only_the_hit_start() {
+        assert!(super::covered("零零零", "零零".len(), &["零零"]));
+        assert!(super::covered("从零秘密", "从".len(), &["从零"]));
+        assert!(!super::covered("零零", "零".len(), &["零甲"]));
+        assert!(!super::covered("零售 零秘密", "零售 ".len(), &["零售"]));
+    }
 
     #[test]
     fn rejected_left_boundary_and_protection_consume_different_ranges()
