@@ -3,7 +3,7 @@ import sys
 
 import pytest
 
-from limae import wordlists, zh_format
+from limae import config, wordlists, zh_format
 
 
 # The rule behaviour itself lives in the language-agnostic golden set; see
@@ -380,6 +380,29 @@ def test_ignore_file_negation_keeps_a_file(
   out = capsys.readouterr().out
   assert "keep.md:1" in out
   assert "skip.md" not in out
+
+
+@pytest.mark.parametrize(
+    ("pattern", "names", "kept"),
+    [
+        ("[ab].md", ["a.md", "b.md", "c.md"], ["c.md"]),
+        ("a/b.md", ["a/b.md", "a/c.md"], ["a/c.md"]),
+        ("[ab.md", ["[ab.md", "a.md"], ["[ab.md", "a.md"]),
+        (
+            "[a/]b.md",
+            ["ab.md", "[a/]b.md", "a/b.md"],
+            ["ab.md", "[a/]b.md", "a/b.md"],
+        ),
+    ],
+)
+def test_ignore_character_classes_stay_within_path_segments(
+    tmp_path: pathlib.Path, pattern: str, names: list[str], kept: list[str]
+):
+  (tmp_path / ".limae-ignore").write_text(pattern + "\n", encoding="utf-8")
+  paths = [tmp_path / name for name in names]
+  assert config.not_ignored(paths, tmp_path) == [
+      tmp_path / name for name in kept
+  ]
 
 
 def test_wordlists_load_from_the_packaged_spec_directory():
