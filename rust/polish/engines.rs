@@ -58,10 +58,12 @@ pub const RUN_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// Time between process-group `SIGTERM` and `SIGKILL`.
 ///
-/// ADR-0015 section 六 requires a finite graceful termination interval. One
-/// second gives CLI wrappers time to exit while respecting the C1 contract that
-/// every spawned invocation pays the full interval.
-pub const TERMINATE_GRACE: Duration = Duration::from_secs(1);
+/// ADR-0015 section 六 requires a finite graceful termination interval. This
+/// reuses the 50 ms interval exercised by C1's process-tree adapter tests; those
+/// tests do not establish how quickly real CLI wrappers exit, which remains a C3
+/// smoke-test question. Under C1's contract this interval is a fixed cost paid
+/// even after a successful leader exit.
+pub const TERMINATE_GRACE: Duration = Duration::from_millis(50);
 
 /// Default cap for each captured process stream and a file-based answer.
 pub const OUTPUT_LIMIT: usize = 1024 * 1024;
@@ -484,6 +486,7 @@ fn read_limited(path: &Path, limit: usize) -> Result<Vec<u8>, EngineError> {
 
 fn normalize(answer: Vec<u8>) -> Result<String, EngineError> {
     let answer = String::from_utf8(answer).map_err(|_| EngineError::AnswerEncoding)?;
+    let answer = answer.replace("\r\n", "\n").replace('\r', "\n");
     let answer = answer.trim_matches(crate::text::is_python_whitespace);
     if answer.is_empty() {
         return Err(EngineError::EmptyAnswer);

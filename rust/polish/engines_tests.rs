@@ -289,12 +289,17 @@ fn codex_stub_supplies_the_file_answer_instead_of_process_stdout() -> TestResult
         &bin,
         "codex",
         &format!(
-            "cat > '{}'; printf '%s\\n' \"$@\" >> '{}'; shift 8; printf ' answer from file ' > \"$1\"; printf 'process progress'",
+            "cat > '{}'; printf '%s\\n' \"$@\" >> '{}'; env >> '{}'; shift 8; printf ' answer from file ' > \"$1\"; printf 'process progress'",
+            observed.display(),
             observed.display(),
             observed.display()
         ),
     )?;
-    let env = environment(&bin);
+    let mut env = environment(&bin);
+    env.extend([
+        ("OPENAI_API_KEY".into(), SYNTHETIC_VALUE.into()),
+        ("ANTHROPIC_API_KEY".into(), SYNTHETIC_VALUE.into()),
+    ]);
     let engine = Engine::Codex;
     let answer = polish(
         &request(&engine, "gpt-synthetic", root.path(), &env),
@@ -307,7 +312,9 @@ fn codex_stub_supplies_the_file_answer_instead_of_process_stdout() -> TestResult
     assert!(seen.contains("exec\n--skip-git-repo-check\n--ephemeral\n"));
     assert!(seen.contains("model=gpt-synthetic"));
     assert!(seen.contains("model_reasoning_effort=low"));
-    assert!(seen.ends_with("-\n"));
+    assert!(seen.contains("-\n"));
+    assert!(seen.contains("OPENAI_API_KEY="));
+    assert!(!seen.contains("ANTHROPIC_API_KEY"));
     Ok(())
 }
 
@@ -321,11 +328,16 @@ fn grok_stub_consumes_the_spec_and_text_as_distinct_arguments() -> TestResult {
         &bin,
         "grok",
         &format!(
-            "printf '%s\\n' \"$@\" > '{}'; printf 'grok answer'",
+            "printf '%s\\n' \"$@\" > '{}'; env >> '{}'; printf 'grok answer'",
+            observed.display(),
             observed.display()
         ),
     )?;
-    let env = environment(&bin);
+    let mut env = environment(&bin);
+    env.extend([
+        ("GROK_CODE_XAI_API_KEY".into(), SYNTHETIC_VALUE.into()),
+        ("OPENAI_API_KEY".into(), SYNTHETIC_VALUE.into()),
+    ]);
     let engine = Engine::Grok;
     assert_eq!(
         polish(
@@ -335,10 +347,12 @@ fn grok_stub_consumes_the_spec_and_text_as_distinct_arguments() -> TestResult {
         )?,
         "grok answer\n"
     );
-    assert_eq!(
-        fs::read_to_string(observed)?,
-        format!("--system-prompt-override\n{SPEC}\n-m\ngrok-4.6\n--verbatim\n-p\n{TEXT}\n")
-    );
+    let seen = fs::read_to_string(observed)?;
+    assert!(seen.starts_with(&format!(
+        "--system-prompt-override\n{SPEC}\n-m\ngrok-4.6\n--verbatim\n-p\n{TEXT}\n"
+    )));
+    assert!(seen.contains("GROK_CODE_XAI_API_KEY="));
+    assert!(!seen.contains("OPENAI_API_KEY"));
     Ok(())
 }
 
@@ -461,9 +475,72 @@ fn failures_and_debug_output_do_not_echo_request_or_child_content() -> TestResul
         .ok_or("failing command unexpectedly succeeded")?;
     assert!(!error.to_string().contains(SYNTHETIC_VALUE));
     assert!(!format!("{error:?}").contains(SYNTHETIC_VALUE));
-    if let Some(source) = error.source() {
-        assert!(!source.to_string().contains(SYNTHETIC_VALUE));
+    assert!(error.source().is_none());
+
+    let missing = Engine::Custom(vec![
+        root.path()
+            .join(SYNTHETIC_VALUE)
+            .to_string_lossy()
+            .into_owned(),
+    ]);
+    let request = EngineRequest {
+        engine: &missing,
+        model: SYNTHETIC_VALUE,
+        spec: SYNTHETIC_VALUE,
+        text: SYNTHETIC_VALUE,
+        cwd: root.path(),
+        env: &env,
+    };
+    let error = polish(&request, limits(), &CancellationToken::new())
+        .err()
+        .ok_or("missing command unexpectedly succeeded")?;
+    assert!(!error.to_string().contains(SYNTHETIC_VALUE));
+    assert!(!format!("{error:?}").contains(SYNTHETIC_VALUE));
+    let mut source = error.source();
+    assert!(source.is_some());
+    while let Some(current) = source {
+        assert!(!current.to_string().contains(SYNTHETIC_VALUE));
+        assert!(!format!("{current:?}").contains(SYNTHETIC_VALUE));
+        source = current.source();
     }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn stdout_and_file_answers_use_python_universal_newlines() -> TestResult {
+    let root = TempDir::new("newlines")?;
+    let bin = root.path().join("bin");
+    let env = environment(&bin);
+    let custom_script = stub(
+        &bin,
+        "custom",
+        "printf 'line one\\r\\nline two\\rline three\\n'",
+    )?;
+    let custom = Engine::Custom(vec![custom_script.to_string_lossy().into_owned()]);
+    assert_eq!(
+        polish(
+            &request(&custom, "", root.path(), &env),
+            limits(),
+            &CancellationToken::new(),
+        )?,
+        "line one\nline two\nline three\n"
+    );
+
+    stub(
+        &bin,
+        "codex",
+        "cat > /dev/null; shift 8; printf 'line one\\r\\nline two\\rline three\\n' > \"$1\"",
+    )?;
+    let codex = Engine::Codex;
+    assert_eq!(
+        polish(
+            &request(&codex, "", root.path(), &env),
+            limits(),
+            &CancellationToken::new(),
+        )?,
+        "line one\nline two\nline three\n"
+    );
     Ok(())
 }
 
