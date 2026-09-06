@@ -1,4 +1,5 @@
 mod config;
+mod files;
 mod markdown;
 mod pipeline;
 mod spacing;

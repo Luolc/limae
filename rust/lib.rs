@@ -2,6 +2,7 @@
 
 pub mod config;
 pub mod directives;
+pub mod files;
 pub mod markdown;
 pub mod pipeline;
 mod resources;
