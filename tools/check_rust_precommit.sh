@@ -69,8 +69,6 @@ printf '%s\n' '#!/usr/bin/env bash' 'exit 98' >"$poison_dir/limae"
 chmod +x "$poison_dir/limae-rs" "$poison_dir/limae"
 
 git -C "$consumer" init -q
-git -C "$consumer" config user.name 'ACME Test'
-git -C "$consumer" config user.email 'test@example.invalid'
 printf '%s\n' \
   'repos:' \
   "  - repo: $source_repo" \

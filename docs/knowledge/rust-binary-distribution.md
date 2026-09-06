@@ -34,7 +34,7 @@ Rust 命令当前仍名为 `limae-rs`。它是迁移期入口，不取代 Python
 
 ## 验收 pre-commit opt-in
 
-Rust hook 使用独立 id `limae-rs`；既有 `limae` 仍是默认 Python hook。消费仓要试用 Rust 实现时，将 hook id 显式改为 `limae-rs`，pre-commit 会在自己的缓存中用 Cargo 安装 binary，不要求预装全局 `limae-rs`。迁移期不会在 Rust 安装失败时静默调用 Python。
+Rust hook 使用独立 id `limae-rs`；既有 `limae` 仍是默认 Python hook。消费仓要试用 Rust 实现时，将 hook id 显式改为 `limae-rs`。[pre-commit 的 Rust language 合同](https://pre-commit.com/#rust) 会在自己的缓存中用 Cargo 安装 binary，不要求预装全局 `limae-rs`。迁移期不会在 Rust 安装失败时静默调用 Python。
 
 1. 在 Linux 开发机的仓库根目录、提交待验收改动后执行：
 
