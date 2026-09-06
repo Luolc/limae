@@ -1,5 +1,6 @@
 mod config;
 mod markdown;
+mod pipeline;
 mod spacing;
 mod structural;
 mod typography;
