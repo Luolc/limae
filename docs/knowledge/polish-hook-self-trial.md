@@ -14,13 +14,13 @@
 
 ### Codex
 
-本仓已经把 hook 写进 `.codex/config.toml`，不会改 `~/.codex/config.toml`，也不会影响其它仓库。试用配置把 A/B 采样率固定为 0，所以每条回复最多追加一份润色版。
+本仓已经把 hook 写进 `.codex/config.toml`，不会改 `~/.codex/config.toml`，也不会影响其它仓库；所有安装了 limae 并信任 limae checkout 的 clone 都会启用。试用配置把 A/B 采样率固定为 0，所以每条回复最多追加一份润色版。
 
 1. 在运行 Codex 的开发机终端进入 limae checkout，执行 `uv sync`。看到结尾没有 error，且 `.venv/bin/limae` 存在，即为完成。
 2. 在同一终端从这个 checkout 启动一个新的 Codex 会话。若出现 hook trust 界面，先确认正文列出的命令来自本仓 `.codex/config.toml`，再选择信任；进入输入框即为完成。
 3. 在 Codex 输入一段超过 200 个非空白字符的合成中文正文。原回复下方出现 `── 润色 ──` warning 块，或会话态诊断记录了失败原因，即为 hook 已触发。
 
-Codex 的 `Stop` 一次给出完整的 `last_assistant_message`，所以不走下面的分批缓存。hook 只返回 `systemMessage`，不返回官方明定会续跑的 `decision: "block"` 或 `reason`。原回复字段没有被 hook 改写；Codex 是否另存 warning 事件不由这件事推出。
+Codex 的 `Stop` 一次给出完整的 `last_assistant_message`，所以不走下面的分批缓存。hook 只返回 `systemMessage`，不返回官方明定会续跑的 `decision: "block"` 或 `reason`。原回复字段没有被 hook 改写；Codex 是否另存 warning 事件不由这件事推出。Codex 没有 Claude Code 的 `additionalContext` 回注通道，不能把 `systemMessage` 上的 A/B 编号当成模型已经收到的上下文；本仓配置因此关闭 A/B。
 
 `codex-cli 0.153.0` 在 2026-09-05 的 linked-worktree 实测没有加载该 worktree 自己的 hook。需要在合入前的 linked worktree 试验时，把 `.codex/config.toml` 的 `hooks.Stop` 作为会话级配置传入；正常安装与最终试用应在主 checkout 或普通 clone 中验收。已有 Codex 会话是否热加载合入后的配置也要单独确认，没确认前就按「新开或 resume 一次会话」处理。
 
@@ -124,10 +124,10 @@ jq -r '.code, (.candidates[] | "\(.label) = \(.engine) \(.model)")' \
 
 ```sh
 ls "${TMPDIR:-/tmp}"/limae-hook/*/polish/
-jq -r '.engine, .model' "${TMPDIR:-/tmp}"/limae-hook/*/polish/<message_id>.json
+jq -r '.engine, .model' "${TMPDIR:-/tmp}"/limae-hook/*/polish/<reply_id>.json
 ```
 
-一轮一个 JSON，**文件名就是 `message_id`**，同一条消息重跑会覆盖它自己那份。里面有六项：时间、`message_id`、引擎与型号，以及三份文本 —— **它们是三份不是两份，这一点是有用的**：
+一轮一个 JSON，**文件名就是宿主给的回复 id**：Claude Code 用 `message_id`，Codex 用 `turn_id`；同一条回复重跑会覆盖它自己那份。JSON 内的字段名仍是 `message_id`，值采用同一个宿主 id。里面有六项：时间、`message_id`、引擎与型号，以及三份文本 —— **它们是三份不是两份，这一点是有用的**：
 
 | 字段 | 是什么 |
 | --- | --- |
@@ -162,7 +162,7 @@ tail "${TMPDIR:-/tmp}"/limae-hook/*/diagnostics.jsonl
 | 字段 | 是什么 |
 | --- | --- |
 | `at` | UTC 时间 |
-| `message_id` | 是哪条消息，用来跟屏幕上的回复对上 |
+| `message_id` | 是哪条回复：Claude Code 记 `message_id`，Codex 记 `turn_id`，用来跟屏幕上的回复对上 |
 | `step` | 哪一步：`assemble` 拼分片、`single` 单跑润色、`ab` A/B 对照、`fix` 确定性修复、`record` 落台账、`display` hook 自己崩了 |
 | `kind` | 哪一类，见下表 |
 

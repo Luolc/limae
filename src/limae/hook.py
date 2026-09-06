@@ -920,7 +920,9 @@ def _codex_stop(payload: Mapping[str, object], env: Mapping[str, str]) -> str:
   # ``ab.record`` leaves a pending note for Claude Code's second Stop
   # hook. Codex has only this one event, and returning decision:block to
   # manufacture another would run the model again. Consume the note here;
-  # the comparison and its code remain in the ledger and on screen.
+  # the comparison and its code remain in the ledger and on screen. A
+  # ``systemMessage`` is not ADR-0009's model-context channel, so this
+  # preserves the reader's code without claiming the model received it.
   context = ab.context(directory)
   return f"{block.rstrip()}\n\n{context}" if context else block.rstrip()
 

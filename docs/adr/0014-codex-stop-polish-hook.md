@@ -25,7 +25,7 @@ Claude Code 的 `MessageDisplay` 批缓存与 `Stop` 回注路径不变。两种
 
 把 Codex hook 配置提交在 `.codex/config.toml`，只由信任这个 checkout 的 Codex 会话加载；不改 `~/.codex/config.toml`。试用配置固定 `LIMAE_HOOK_AB_RATE=0`，每条合格回复只追加一份润色版。A/B 能力仍留在实现中，但不是本轮 Codex 试用的界面。
 
-配置通过 `git rev-parse --show-toplevel` 找到本 checkout 的 `.venv/bin/limae`。新 checkout 须先 `uv sync`；缺少可执行文件时沿用失败放行，只显示原回复。
+配置通过 `git rev-parse --show-toplevel` 找到本 checkout 的 `.venv/bin/limae`。新 checkout 须先 `uv sync`；命令会先检查该文件可执行，缺少时直接退出 0，只显示原回复。
 
 ### 三、润色子进程带禁用标记
 
@@ -37,6 +37,8 @@ Codex 输入没有 Claude Code 的 `message_id`，单路记录改用同一事件
 
 - Codex 用户会看到原回复与下面一块 warning 样式的润色版，而不是屏幕内替换。hook 没有改 `last_assistant_message`；Codex 是否另把 warning 事件保存在会话记录里，是另一个问题，本 ADR 不作断言。
 - `systemMessage` 在官方合同里是 warning。本适配不返回官方明定会续跑的 `decision: "block"` / `reason`；是否出现额外模型轮次以本仓真实试用的事件流为准。
+- Codex 没有 ADR-0009 §五那条把编号送入模型上下文的 `additionalContext` 通道。即使另行打开 A/B，`systemMessage` 里的编号与提示也只按用户可见信息处理，不能声称模型已收到回注；本仓配置因此保持 A/B 关闭。
+- `.codex/config.toml` 是入库文件：任何 clone 只要安装了 limae 并信任该 checkout，都会启用这项试用。这比 Claude Code 的 gitignored 本地配置影响面更大，是本仓 repo-local opt-in 的明知选择。
 - 本仓试用稳定后，是否推广到用户级配置仍须在 `machine-setup` 另走 PR，本 ADR 不授权推广。
 
 ## 实测
