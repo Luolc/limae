@@ -29,11 +29,17 @@
 
 ## 质量标准 (quality bar)
 
-CI (`.github/workflows/ci.yml`，required check 名为 `check`) 在 PR 与 main 上跑同一套检查；本地就是这两条：
+CI (`.github/workflows/ci.yml`，required check 名为 `check`) 在 PR 与 main 上跑同一套检查；本地 push 前按 CI 的检查顺序裸跑以下完整命令序列：
 
 ```sh
-uv run pre-commit run --all-files   # gitleaks + ruff + pyink + isort + basedpyright + pydoclint + uv-lock + 用本仓 linter lint 本仓的 Markdown
-uv run pytest -q                    # 测试套件 (含对 `spec/fixtures/` 黄金集的比对)
+cargo fmt --check
+cargo clippy --all-targets --locked -- -D warnings
+RUSTDOCFLAGS=-Dwarnings cargo test --locked
+RUSTDOCFLAGS=-Dwarnings cargo doc --no-deps --locked
+uv run pytest -q
+cargo build --locked --bin limae-rs --example diff-probe
+uv run pytest -q --rust-bin target/debug/limae-rs
+uv run pre-commit run --all-files --show-diff-on-failure
 ```
 
 - 首次 clone 后先 `uv run pre-commit install`：钩子是本地状态，不随仓库分发，漏装则 commit 无任何拦截。
@@ -41,7 +47,7 @@ uv run pytest -q                    # 测试套件 (含对 `spec/fixtures/` 黄�
 - 它扫的是**暂存区** (`--staged`)，也就是正要提交的这份内容：扫历史看不见它，而历史里的凭证已经跑掉了，只剩轮换与清史。命中时 `--redact` 只打印规则名与文件行号，不把命中的值打进终端或会话记录，这样验证凭证泄漏时也不会二次泄漏。版本钉在 `.pre-commit-config.yaml` 的 `rev`，pre-commit 用 Go 从源码装：首次约两分钟，之后每次约 2 秒。**升这个 `rev` 时必须重新核对上游 entry 仍带 `--staged`**：entry 会随 tag 变，`--staged` 一旦丢掉，钩子就退化成扫历史 —— 而扫历史看不见刚 `git add` 的 token，绿得像样却什么也没防住，正是这套配置要堵的那个洞。
 - CI 的 `Credential scan` 那一步是同一把扫描的另一半：CI 没有暂存区，它改扫已经落进历史的内容 (整份 clone，`fetch-depth: 0`)，兜住漏装钩子、或绕过钩子推上来的分支。它的版本与校验和跟 `.pre-commit-config.yaml` 的 `rev` 一起动，两处必须同版本。
 - 本仓用自己的 linter 检查自己的 Markdown (dogfooding)。规则一改、文档标红时，先判断是文档错还是规则错：检查器必然存在误报与漏报，判断是检查器错了就直接修它 (commit message 里说明理由)，规则确实错了就改规则与 `spec/` 下的规范和黄金集，不改文档迁就；拿不准的案例交给维护者裁决。
-- **Rust 质量门从 A1 的首个 Rust 代码 PR 起启用**：现有两条 Python 裸门继续保留，并新增 `cargo fmt --check`、`cargo clippy --all-targets --locked -- -D warnings`、`RUSTDOCFLAGS=-Dwarnings cargo test --locked` 与 `RUSTDOCFLAGS=-Dwarnings cargo doc --no-deps --locked`；本地 push 前与现有 required check 同步执行。`cargo test --locked` 验收 doctest，`cargo doc` 单独验收文档构建。A8b 差分门随其集成任务同步接入，不预写尚不可运行的接口；完整 Cargo 构建与 Rust 重检查不进 commit hook。
+- **Rust 质量门**：四道 Rust 门与两道 Python 裸门均在上面的 push 前全量序列中执行。默认 `uv run pytest -q` 保持 Python-only；差分臂先构建 `limae-rs` 与 `diff-probe`，再以 `--rust-bin target/debug/limae-rs` 显式运行 Python / Rust 双臂。`cargo test --locked` 验收 doctest，`cargo doc` 单独验收文档构建；完整 Cargo 构建与 Rust 重检查不进 commit hook。
 - **Rust lint 默认**：根 `[lints.rust]` 设 `unsafe_code = "forbid"` 与 `unused_must_use = "deny"`，根 `[lints.clippy]` deny `unwrap_used`、`expect_used`、`dbg_macro`、`print_stdout` 与 `print_stderr`。测试默认返回 `Result`，不开全局 `unwrap` / `expect` 例外；确需窄范围例外时，只包住所需表达式，并写明 lint 名与理由。
 
 ## 合并
