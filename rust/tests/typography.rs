@@ -122,18 +122,20 @@ fn periods_use_abbreviation_and_ascii_adjacency_exemptions() -> TestResult {
     for abbreviation in [
         "e.g.", "i.e.", "etc.", "cf.", "vs.", "Mr.", "Mrs.", "Ms.", "Dr.", "Prof.", "St.",
     ] {
-        for prefix in ["", "中", "3", "é", "a"] {
+        for prefix in ["", "中", "3", "é", "a", "（", "１"] {
             let line = format!("{prefix}{abbreviation}中");
             let protected = markdown.protect(&[&line]);
-            assert_eq!(
-                rules.check_line(&line, &protected[0], &config).len(),
-                usize::from(prefix == "a"),
-                "{line}"
-            );
+            let periods = rules
+                .check_line(&line, &protected[0], &config)
+                .into_iter()
+                .filter(|m| m.rule == RuleId::ZH_TYPOGRAPHY_1)
+                .count();
+            assert_eq!(periods, usize::from(prefix == "a"), "{line}");
+            let converted = line.replace('（', "(").replace('１', "1");
             let expected = if prefix == "a" {
-                format!("{}。中", &line[..line.len() - ".中".len()])
+                format!("{}。中", &converted[..converted.len() - ".中".len()])
             } else {
-                line.clone()
+                converted
             };
             assert_eq!(rules.fix_fragment(&line, &config), expected);
         }
