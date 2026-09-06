@@ -88,3 +88,15 @@ jobs:
       # basedpyright type-checks against .venv, so this runs after `uv sync`.
       - name: Format / lint / type-check
         run: uv run pre-commit run --all-files --show-diff-on-failure
+
+      - name: Install Rust distribution targets
+        run: rustup target add x86_64-unknown-linux-musl
+
+      - name: Cargo source package
+        run: tools/check_rust_package.sh package
+
+      - name: Linux GNU binary
+        run: tools/check_rust_package.sh target x86_64-unknown-linux-gnu
+
+      - name: Linux musl binary
+        run: tools/check_rust_package.sh target x86_64-unknown-linux-musl
