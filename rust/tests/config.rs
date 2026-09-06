@@ -266,20 +266,20 @@ fn any_cli_flag_wholly_replaces_the_file_even_when_its_value_is_empty() -> TestR
     assert_eq!(from_cli.skip_zh_units(), "");
     assert_eq!(from_cli.severity(RuleId::ZH_TYPOGRAPHY_2), Severity::Error);
 
-    let repeated = vec![
-        "zh-typography-1, zh-typography-3".to_owned(),
-        "zh-typography-2".to_owned(),
+    let padded = vec![
+        " zh-typography-1 ".to_owned(),
+        "\u{1c}zh-typography-2\u{1f}".to_owned(),
     ];
     let selected = resolve(
         temp.path(),
         CliOverrides {
-            disable: Some(&repeated),
+            disable: Some(&padded),
             enable: None,
         },
     )?;
     assert!(!selected.is_enabled(RuleId::ZH_TYPOGRAPHY_1));
     assert!(!selected.is_enabled(RuleId::ZH_TYPOGRAPHY_2));
-    assert!(!selected.is_enabled(RuleId::ZH_TYPOGRAPHY_3));
+    assert!(selected.is_enabled(RuleId::ZH_TYPOGRAPHY_3));
     Ok(())
 }
 
@@ -425,7 +425,14 @@ fn malformed_pyproject_stops_before_a_valid_parent_and_keeps_source_details() ->
     };
     assert!(Error::source(&error).is_some());
     let diagnostic = error.to_string();
+    let debug_diagnostic = format!("{error:?}");
+    let source_diagnostic = Error::source(&error)
+        .ok_or("expected a TOML parser source")?
+        .to_string();
     assert!(!diagnostic.contains("synthetic-command-value"));
+    assert!(!debug_diagnostic.contains("synthetic-command-value"));
+    assert!(!source_diagnostic.contains("synthetic-command-value"));
+    assert!(!source_diagnostic.is_empty());
     let ConfigError::Parse {
         path,
         line,

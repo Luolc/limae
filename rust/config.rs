@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 use toml::Value;
 
-use crate::text::is_cjk;
+use crate::text::{is_cjk, is_python_whitespace};
 
 const CONFIG_FILENAME: &str = "limae.toml";
 const PYPROJECT_FILENAME: &str = "pyproject.toml";
@@ -361,10 +361,11 @@ fn load_toml(path: &Path) -> Result<Value, ConfigError> {
         path: path.to_owned(),
         source,
     })?;
-    toml::from_str(&input).map_err(|source| {
+    toml::from_str(&input).map_err(|mut source| {
         let (line, column) = source
             .span()
             .map_or((1, 1), |span| line_column(&input, span.start));
+        source.set_input(None);
         ConfigError::Parse {
             path: path.to_owned(),
             line,
@@ -398,7 +399,7 @@ fn cli_rule_ids(
     for value in values.into_iter().flatten() {
         for name in value
             .split(',')
-            .map(str::trim)
+            .map(|name| name.trim_matches(is_python_whitespace))
             .filter(|name| !name.is_empty())
         {
             let id = rule_id(name).ok_or_else(|| ConfigError::UnknownRule {
