@@ -1,5 +1,6 @@
 mod config;
 mod markdown;
+mod spacing;
 mod typography;
 
 use limae::text::{
