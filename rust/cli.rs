@@ -174,11 +174,7 @@ fn execute(options: &Options, cwd: &Path, stdout: &mut dyn Write) -> Result<u8, 
     let pipeline = Pipeline::new()?;
     let mut messages = Vec::new();
     for path in &paths {
-        let actual_path = if path.is_absolute() {
-            path.clone()
-        } else {
-            cwd.join(path)
-        };
+        let actual_path = cwd.join(path);
         if options.fix
             && fix_file(&actual_path, &pipeline, &config)
                 .map_err(|error| relabel_file_error(error, path))?
@@ -279,20 +275,17 @@ enum RunError {
 impl RunError {
     const fn exit_code(&self) -> u8 {
         match self {
-            Self::Config(_) | Self::Ignore(IgnoreError::Pattern { .. }) => USAGE,
+            Self::NoFiles | Self::Config(_) => USAGE,
             Self::File(FileError::Directive { .. }) => USAGE,
-            Self::NoFiles
-            | Self::Git(_)
-            | Self::Ignore(_)
-            | Self::Init(_)
-            | Self::File(_)
-            | Self::Output(_) => FINDINGS,
+            Self::Git(_) | Self::Ignore(_) | Self::Init(_) | Self::File(_) | Self::Output(_) => {
+                FINDINGS
+            }
         }
     }
 
     const fn label(&self) -> &'static str {
         match self {
-            Self::Config(_) | Self::Ignore(IgnoreError::Pattern { .. }) => "config error",
+            Self::Config(_) => "config error",
             Self::File(FileError::Directive { .. }) => "directive error",
             Self::NoFiles
             | Self::Git(_)

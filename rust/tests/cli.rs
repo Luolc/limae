@@ -1,9 +1,11 @@
 use std::error::Error;
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU64, Ordering};
+
+use limae::cli::run_from;
 
 type TestResult = Result<(), Box<dyn Error>>;
 
@@ -86,13 +88,17 @@ fn reports_configured_error_and_warning_in_source_order() -> TestResult {
 }
 
 #[test]
-fn fix_reports_write_then_rechecks_the_file() -> TestResult {
+fn warning_only_exits_zero_and_fix_rechecks_the_file() -> TestResult {
     let root = TempDir::new()?;
     fs::write(
         root.path().join("limae.toml"),
         "severity = { zh-typography-1 = 'warning' }\n",
     )?;
     fs::write(root.path().join("t.md"), "你好,世界")?;
+
+    let (code, stdout, stderr) = output_text(run(root.path(), &["t.md"])?)?;
+    assert_eq!((code, stderr.as_str()), (0, ""));
+    assert!(stdout.ends_with("\n0 error(s), 1 warning(s). --fix auto-fixes most.\n"));
 
     let (code, stdout, stderr) = output_text(run(root.path(), &["--fix", "t.md"])?)?;
     assert_eq!((code, stderr.as_str()), (0, ""));
@@ -115,8 +121,19 @@ fn raw_empty_flag_replaces_an_unreadable_file_config() -> TestResult {
 }
 
 #[test]
-fn repeatable_comma_flags_and_double_dash_keep_a_hyphen_path() -> TestResult {
+fn enable_repeatable_comma_flags_and_double_dash_are_parsed() -> TestResult {
     let root = TempDir::new()?;
+    fs::write(
+        root.path().join("--all"),
+        "中文[链接](https://example.com/) 后文",
+    )?;
+    let (code, stdout, stderr) = output_text(run(
+        root.path(),
+        &["--enable", "zh-typography-9", "--", "--all"],
+    )?)?;
+    assert_eq!((code, stderr.as_str()), (1, ""));
+    assert!(stdout.contains("--all:1: error: [zh-typography-9"));
+
     fs::write(root.path().join("--all"), "你好,世界")?;
 
     let (code, stdout, stderr) = output_text(run(
@@ -132,6 +149,54 @@ fn repeatable_comma_flags_and_double_dash_keep_a_hyphen_path() -> TestResult {
     )?)?;
     assert_eq!((code, stderr.as_str()), (0, ""));
     assert_eq!(stdout, "OK: 1 file(s) clean\n");
+    Ok(())
+}
+
+#[test]
+fn run_from_uses_explicit_cwd_and_keeps_relative_error_paths() -> TestResult {
+    let root = TempDir::new()?;
+    fs::write(root.path().join("t.md"), "你好,世界")?;
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = run_from(
+        ["limae-rs", "--fix", "t.md"].map(OsString::from),
+        root.path(),
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!((code, stderr.as_slice()), (0, &[][..]));
+    assert_eq!(stdout, b"fixed: t.md\nOK: 1 file(s) clean\n");
+
+    stdout.clear();
+    let code = run_from(
+        ["limae-rs", "missing.md"].map(OsString::from),
+        root.path(),
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!((code, stdout.as_slice()), (1, &[][..]));
+    let stderr = String::from_utf8(stderr)?;
+    assert!(stderr.starts_with("error: cannot read missing.md:"));
+    assert!(!stderr.contains(&root.path().display().to_string()));
+    Ok(())
+}
+
+#[test]
+fn invalid_ignore_is_execution_error_and_unclosed_class_is_a_noop() -> TestResult {
+    let invalid = TempDir::new()?;
+    fs::write(invalid.path().join(".limae-ignore"), "!\n")?;
+    fs::write(invalid.path().join("t.md"), "ACME\n")?;
+    let (code, stdout, stderr) = output_text(run(invalid.path(), &["t.md"])?)?;
+    assert_eq!((code, stdout.as_str()), (1, ""));
+    assert!(stderr.contains(".limae-ignore:1: invalid ignore pattern"));
+    assert!(!stderr.contains("clean"));
+
+    let control = TempDir::new()?;
+    fs::write(control.path().join(".limae-ignore"), "[abc\n")?;
+    fs::write(control.path().join("t.md"), "你好,世界\n")?;
+    let (code, stdout, stderr) = output_text(run(control.path(), &["t.md"])?)?;
+    assert_eq!((code, stderr.as_str()), (1, ""));
+    assert!(stdout.contains("t.md:1: error: [zh-typography-1"));
     Ok(())
 }
 
