@@ -13,7 +13,9 @@ backlog 的正本，由 `limae-orchestra` 在合入后记账 (全局守则「多
 
 ## 实现与分发
 
-- **Rust 主实现 (ADR-0002)**：主实现转 Rust，对着同一套 `spec/` 与黄金集跑，Python 版留作参考实现；crate 布局与分发形态 (多语言 SDK、LSP、编辑器与 CI 集成，对标 AutoCorrect) 届时另起 ADR。
+- **Rust 全量迁移**：[ADR-0015](adr/0015-rust-migration.md) 已经 PR #66 合入，仓级布局与质量门约定 (G) 经 PR #67 合入；下一项为 A1。按 ADR 的 A–E 自动推进、agent 互审，直到正式 `limae` 为 Rust、Python deprecated 且参考实现与测试保留；实际 tag / release / publish 前停止。进度仅在此记，任务依赖与验收合同见 ADR。
+- **Rust 迁移收尾补项**：E 的默认 pre-commit id 切换必须包含 `.pre-commit-hooks.yaml` 的 `language` / `entry` 与全新消费仓安装验收 (PR #66 复审 P2)。现有 `tools/render_lexicon.py` 的 HTML 生成功能也须迁为 Rust 开发工具，以同源生成产物字节一致验收；Python 脚本保留作参考，不增加 rubrics 等新输出。
+- **Rust 发版准备** (2026-09-06)：许可证尚未选定；认证等待 machine-setup 的本机发布手册及用户创建 scoped token，经 1Password / op 在 dev-oregon 注入，首发后配置 GitHub Actions Trusted Publishing。当前不视为已取得可用凭据，也不阻塞代码迁移与无需认证的发布预演。实际发布仍在本轮授权停止点之外。
 
 ## 愿景 (正本 `docs/adr/0005-agent-native-positioning.md`，这里只记条目)
 
