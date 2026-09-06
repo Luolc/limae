@@ -3,6 +3,7 @@ use std::fs;
 
 use limae::config::{CliOverrides, ResolvedConfig, RuleId, Severity, resolve};
 use limae::markdown::{LineProtection, Markdown};
+use limae::pipeline::Pipeline;
 use limae::rules::words::WordRules;
 use limae::text::snippet;
 
@@ -106,23 +107,8 @@ fn fragment_fixes_reuse_original_line_evidence_across_markdown_interiors() -> Te
     let config = configured("fragments", "enable_experimental = true")?;
     let rules = WordRules::new()?;
     let line = "秘钥 `token 秘钥` 代币 [x](cache 快取) 快取「かな 秘钥」秘密";
-    let protected = Markdown::new()?.protect(&[line]);
-    let LineProtection::Inline { code, prose } = &protected[0] else {
-        return Err("expected inline protection".into());
-    };
-    let active = rules.active_terms(line, &config);
-    let mut ranges: Vec<_> = code.iter().chain(prose).collect();
-    ranges.sort_by_key(|r| (r.start, r.end));
-    let mut fixed = String::new();
-    let mut cursor = 0;
-    for range in ranges {
-        fixed.push_str(&active.fix_fragment(&line[cursor..range.start]));
-        fixed.push_str(&line[range.clone()]);
-        cursor = range.end;
-    }
-    fixed.push_str(&active.fix_fragment(&line[cursor..]));
     assert_eq!(
-        fixed,
+        Pipeline::new()?.fix(line, &config),
         "密钥 `token 秘钥` 令牌 [x](cache 快取) 缓存「かな 秘钥」秘密"
     );
     assert_eq!(
@@ -186,8 +172,8 @@ fn secrets_use_whole_line_allowlist_coverage_per_occurrence_without_fixes() -> T
 
 #[test]
 fn unicode_fixture_checks_only_the_term_primitive_contract() -> TestResult {
-    // This mixed fixture also needs tells and document orchestration. Only the
-    // five anchor lines are primitive inputs here, not a whole-golden verdict.
+    // These five anchor lines exercise the single terminology stage.
+    // The document runner compares the complete mixed fixture.
     let text = include_str!("../../spec/fixtures/experimental-english-unicode.in");
     let config = configured("unicode-fixture", "enable_experimental = true")?;
     let rules = WordRules::new()?;

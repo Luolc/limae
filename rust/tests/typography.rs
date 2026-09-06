@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::fs;
 use std::path::Path;
 
 use limae::config::{CliOverrides, ResolvedConfig, RuleId, resolve};
@@ -10,51 +9,25 @@ use limae::text::snippet;
 type TestResult = Result<(), Box<dyn Error>>;
 
 #[test]
-fn width_fixtures_check_original_lines_and_fix_prose_fragments() -> TestResult {
+fn width_only_fixes_leave_spacing_to_later_stages() -> TestResult {
     let rules = WidthRules::new()?;
-    let markdown = Markdown::new()?;
     let config = ResolvedConfig::default();
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/fixtures");
-    for (case, width_only) in [
-        ("zh-typography-1-cjk-punct", None),
-        ("zh-typography-1-fullstop", None),
+    for (input, expected) in [
         (
-            "zh-typography-2-fullwidth-parens",
-            Some("(测试)\n\n术语(covered call)策略\n\n[链接](https://example.com)(注)\n"),
+            include_str!("../../spec/fixtures/zh-typography-2-fullwidth-parens.in"),
+            "(测试)\n\n术语(covered call)策略\n\n[链接](https://example.com)(注)\n",
         ),
         (
-            "zh-typography-10-fullwidth-digits",
-            Some("2011年\n\n全角0也转\n\n半角 0 不动\n"),
+            include_str!("../../spec/fixtures/zh-typography-10-fullwidth-digits.in"),
+            "2011年\n\n全角0也转\n\n半角 0 不动\n",
         ),
     ] {
-        let input = fs::read_to_string(root.join(format!("{case}.in")))?;
-        let expected_findings = fs::read_to_string(root.join(format!("{case}.findings")))?;
-        let expected_fixed = match width_only {
-            Some(fixed) => fixed.to_owned(),
-            None => fs::read_to_string(root.join(format!("{case}.fixed")))?,
-        };
-        let lines: Vec<_> = input.split('\n').collect();
-        let protected = markdown.protect(&lines);
-        let mut findings = String::new();
-        for (i, (line, protection)) in lines.iter().zip(&protected).enumerate() {
-            for matched in rules.check_line(line, protection, &config) {
-                findings.push_str(&format!("{} {}\n", i + 1, matched.rule));
-            }
-        }
-        assert_eq!(findings, expected_findings, "{case}");
-        // These width fixtures have no width violations in protected interiors.
-        let fixed = lines
-            .iter()
-            .map(|line| rules.fix_fragment(line, &config))
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert_eq!(fixed, expected_fixed, "{case}");
-        let twice = fixed
+        let fixed = input
             .split('\n')
             .map(|line| rules.fix_fragment(line, &config))
             .collect::<Vec<_>>()
             .join("\n");
-        assert_eq!(twice, fixed, "{case}");
+        assert_eq!(fixed, expected);
     }
     Ok(())
 }

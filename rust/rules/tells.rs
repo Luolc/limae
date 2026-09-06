@@ -167,7 +167,7 @@ impl SentenceTells {
     /// including protected matches. Every zero is judged against the remainder
     /// of its CJK run; allowlist evidence uses the entire original line.
     /// Protection must belong to this line. Splitting and directives belong to
-    /// the caller; this primitive is not integrated into `Typography`.
+    /// the caller; document processing is provided by [`crate::pipeline::Pipeline`].
     #[must_use]
     pub fn check_line(
         &self,
