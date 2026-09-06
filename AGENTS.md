@@ -21,8 +21,8 @@
 布局参考 [ruff](https://github.com/astral-sh/ruff) 仓：每种语言的实现都以仓根为项目根，源码进各自的子目录；规范与 fixture 独立于任何实现。
 
 - **规则规范与黄金 fixture 语言无关、所有实现共用**，放仓根 `spec/`：规范在 `spec/rules.md`，黄金集在 `spec/fixtures/`，AI 中文词典在 `spec/lexicon/zh.toml`，prompt spec 在 `spec/polish/`，规则词表在 `spec/wordlists/`；不放进任何单一实现的私有目录 (`src/`、`tests/`)。各部分的职责与格式见 `spec/README.md`，位置与理由见 `docs/adr/0001-standalone-repo-spec-first-shared-fixtures.md`。
-- **Python 参考实现 (reference implementation) 在仓根**：`pyproject.toml`、`src/limae/`、`tests/`；包 `limae`，命令 `limae`；用 uv 管理，锁文件 `uv.lock` 全仓唯一。放仓根而不是 `python/` 子目录，是因为 pre-commit `language: python` 与 `uvx --from git+…` 都把仓根当作可安装的 Python 项目。
-- **将来新增语言实现同样以仓根为项目根**，用该语言自己的原生工具链，都对着同一套 `spec/` 跑；具体布局等到真的写的时候再定。
+- **Python 参考实现 (reference implementation) 在仓根**：`pyproject.toml`、`src/limae/`、`tests/`；包 `limae`，命令 `limae`；用 uv 管理，锁文件 `uv.lock` 全仓唯一。Rust 迁移期间继续保留此入口与测试，不在 Rust 完成前声称已迁完。放仓根而不是 `python/` 子目录，是因为 pre-commit `language: python` 与 `uvx --from git+…` 都把仓根当作可安装的 Python 项目。
+- **Rust 在 A1 引入后是仓根 Cargo package**：根 `Cargo.toml`、`Cargo.lock` 与 `rust-toolchain.toml` 配套，源码在 `rust/`，集成测试在 `rust/tests/`；Rust 的 unit test、integration test 与 doctest 使用 Cargo 内建测试框架，仍对着同一套 `spec/` 与黄金 fixture 跑。toolchain pin 的唯一配置来源是 `rust-toolchain.toml`，不在此重复版本值，详见 ADR-0015 §六。根 Cargo manifest / lock、`rust/lib.rs` 接线、CI 与共享测试入口由当时的集成任务单独持有；加依赖与接线串行。
 - **静态站点在 `site/`**：`tools/render_lexicon.py` 从 `spec/lexicon/zh.toml` 生成 `site/index.html`；`site/` 放生成产物，生成脚本放 `tools/`。
 - **内容类 Markdown 在 `docs/`**：`docs/adr/` (决策记录)、`docs/knowledge/` (操作手册)、`docs/research/` (调研)。
 - 项目级 skill 只放在 `.agents/skills/<name>/`，见 `.agents/skills/README.md`。
@@ -41,6 +41,8 @@ uv run pytest -q                    # 测试套件 (含对 `spec/fixtures/` 黄�
 - 它扫的是**暂存区** (`--staged`)，也就是正要提交的这份内容：扫历史看不见它，而历史里的凭证已经跑掉了，只剩轮换与清史。命中时 `--redact` 只打印规则名与文件行号，不把命中的值打进终端或会话记录，这样验证凭证泄漏时也不会二次泄漏。版本钉在 `.pre-commit-config.yaml` 的 `rev`，pre-commit 用 Go 从源码装：首次约两分钟，之后每次约 2 秒。**升这个 `rev` 时必须重新核对上游 entry 仍带 `--staged`**：entry 会随 tag 变，`--staged` 一旦丢掉，钩子就退化成扫历史 —— 而扫历史看不见刚 `git add` 的 token，绿得像样却什么也没防住，正是这套配置要堵的那个洞。
 - CI 的 `Credential scan` 那一步是同一把扫描的另一半：CI 没有暂存区，它改扫已经落进历史的内容 (整份 clone，`fetch-depth: 0`)，兜住漏装钩子、或绕过钩子推上来的分支。它的版本与校验和跟 `.pre-commit-config.yaml` 的 `rev` 一起动，两处必须同版本。
 - 本仓用自己的 linter 检查自己的 Markdown (dogfooding)。规则一改、文档标红时，先判断是文档错还是规则错：检查器必然存在误报与漏报，判断是检查器错了就直接修它 (commit message 里说明理由)，规则确实错了就改规则与 `spec/` 下的规范和黄金集，不改文档迁就；拿不准的案例交给维护者裁决。
+- **Rust 质量门从 A1 的首个 Rust 代码 PR 起启用**：现有两条 Python 裸门继续保留，并新增 `cargo fmt --check`、`cargo clippy --all-targets --locked -- -D warnings`、`RUSTDOCFLAGS=-Dwarnings cargo test --locked` 与 `RUSTDOCFLAGS=-Dwarnings cargo doc --no-deps --locked`；本地 push 前与现有 required check 同步执行。`cargo test --locked` 验收 doctest，`cargo doc` 单独验收文档构建。A8b 差分门随其集成任务同步接入，不预写尚不可运行的接口；完整 Cargo 构建与 Rust 重检查不进 commit hook。
+- **Rust lint 默认**：根 `[lints.rust]` 设 `unsafe_code = "forbid"` 与 `unused_must_use = "deny"`，根 `[lints.clippy]` deny `unwrap_used`、`expect_used`、`dbg_macro`、`print_stdout` 与 `print_stderr`。测试默认返回 `Result`，不开全局 `unwrap` / `expect` 例外；确需窄范围例外时，只包住所需表达式，并写明 lint 名与理由。
 
 ## 合并
 
@@ -52,4 +54,5 @@ LGTM 后从评论取 approved SHA，确认本地 tip 与之相同 (`git rev-pars
 - backlog 写在 `docs/tracker.md`，合入后记账，别处不重复。
 - 依赖锁文件是 `uv.lock` (对应仓根 `pyproject.toml`)，同一时刻只允许一个改依赖的任务在跑。
 - 如果你的运行环境里已经配置了通用的 PR review / Python review 一类审查规范，审查本仓改动时可以直接参照使用；本仓目前没有额外的仓库专属加严规则。
+- Rust 设计、实现 brief、自审与正式审查均加载用户级 `rust-review` 与 `pr-review`，再叠加本仓适用规则；不复制 skill 正文或引用其它仓库路径。
 - 如果用 herdr 一类工具在多个 agent 间协调：终端 tab 的标签保持简洁 (`orchestra`、`shell`，或一个裸任务名)，而实际跑 agent 的 pane 标签则加上仓库简称前缀 (如 `limae-orchestra`、`limae-shell`)，这样多个仓库的 agent 混跑时才分得清哪个进程属于哪个仓。
