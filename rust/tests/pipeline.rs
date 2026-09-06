@@ -9,6 +9,10 @@ type TestResult = Result<(), Box<dyn Error>>;
 
 // Whole cases awaiting their actual pipeline integration, never filtered findings.
 const UNSUPPORTED: &[(&str, &str)] = &[
+    (
+        "experimental-english-unicode",
+        "A4: experimental English rules and terminology await document integration",
+    ),
     ("experimental-en-ai-tells", "A4: experimental English rules"),
     ("experimental-zh-ai-tells", "A4: experimental Chinese rules"),
     (
