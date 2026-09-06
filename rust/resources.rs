@@ -3,6 +3,8 @@
 use crate::config::RuleId;
 use crate::text::is_python_whitespace;
 
+pub(crate) const ZERO_ALLOWLIST: &str = include_str!("../spec/wordlists/zh-tell-5-allow.txt");
+
 pub(crate) const TELL_WORDLISTS: [(RuleId, &str, &str); 5] = [
     (
         RuleId::ZH_TELL_1,
