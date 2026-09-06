@@ -14,7 +14,7 @@
 
 `wordlists/zh-tell-1.txt`、`zh-tell-3.txt`、`zh-tell-4.txt`、`en-tell-1.txt`、`en-tell-3.txt` 一行一条 (`#` 注释、空行忽略)，`wordlists/zh-word-1.toml` 是 `wrong` / `right` / `anchors` 的 `entries` 数组。中文词表按字面子串匹配，英文词表 (`en-tell-1` / `en-tell-3`) 按整词、大小写不敏感。`wordlists/zh-tell-5-allow.txt` 与 `zh-word-2-allow.txt` 格式相同但方向相反，是**豁免表**：命中它才不报 —— 语义的正本都在 `rules.md`「词表」。
 
-**各实现在运行时从这些文件读词表，不把词表内联进代码**：词表是规范的一部分，加一条词只改这里，任何实现都不用重新发版逻辑。Python 参考实现的读取在 `src/limae/wordlists.py`；`src/limae/wordlists` 是指向本目录的目录级软链，editable 安装与打好的 wheel 都能经 `importlib.resources` 找到同一份文件。
+**各实现从同一份 `spec/wordlists/` 获取词表，不在代码里手抄词条**。Python 参考实现运行时读取，入口在 `src/limae/wordlists.py`；`src/limae/wordlists` 是指向本目录的目录级软链，editable 安装与打好的 wheel 都能经 `importlib.resources` 找到同一份文件。Rust 已接入的词表由 `rust/resources.rs` 用 `include_str!` 在构建时嵌入，文件缺席则构建失败，运行时不发现资源路径。修改词表只改这里；Rust 需重新构建发行，规则逻辑不变，见 [ADR-0015 §三](../docs/adr/0015-rust-migration.md#三共享资源与必要依赖)。
 
 ## fixture 文件格式
 
