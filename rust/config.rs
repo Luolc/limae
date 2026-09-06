@@ -215,8 +215,11 @@ pub enum ConfigError {
     },
     #[error("{origin}: a rule id appears in both `disable` and `enable`")]
     ConflictingRule { origin: ConfigOrigin },
-    #[error("{origin}: an experimental rule cannot be enabled one by one")]
-    ExperimentalRuleEnabled { origin: ConfigOrigin },
+    #[error("{origin}: `{key}` contains an experimental rule that cannot be enabled one by one")]
+    ExperimentalRuleEnabled {
+        origin: ConfigOrigin,
+        key: &'static str,
+    },
     #[error("{origin}: `severity` value must be 'error' or 'warning'")]
     InvalidSeverity { origin: ConfigOrigin },
     #[error("{origin}: `skip_zh_units` must be a string of CJK characters")]
@@ -312,7 +315,7 @@ fn resolve_cli(cli: CliOverrides<'_>) -> Result<ResolvedConfig, ConfigError> {
     let origin = ConfigOrigin::CommandLine;
     let disabled = cli_rule_ids(cli.disable, "--disable", &origin)?;
     let enabled = cli_rule_ids(cli.enable, "--enable", &origin)?;
-    validate_selection(&disabled, &enabled, &origin)?;
+    validate_selection(&disabled, &enabled, &origin, "--enable")?;
     let mut config = ResolvedConfig::default();
     apply_selection(&mut config.enabled, disabled, enabled);
     Ok(config)
@@ -321,7 +324,7 @@ fn resolve_cli(cli: CliOverrides<'_>) -> Result<ResolvedConfig, ConfigError> {
 fn resolve_table(table: &toml::Table, origin: ConfigOrigin) -> Result<ResolvedConfig, ConfigError> {
     let disabled = table_rule_ids(table, "disable", &origin)?;
     let enabled = table_rule_ids(table, "enable", &origin)?;
-    validate_selection(&disabled, &enabled, &origin)?;
+    validate_selection(&disabled, &enabled, &origin, "enable")?;
 
     let experimental = optional_bool(table, "enable_experimental", &origin)?;
     let mut config = ResolvedConfig::default();
@@ -461,6 +464,7 @@ fn validate_selection(
     disabled: &BTreeSet<RuleId>,
     enabled: &BTreeSet<RuleId>,
     origin: &ConfigOrigin,
+    enable_key: &'static str,
 ) -> Result<(), ConfigError> {
     if !disabled.is_disjoint(enabled) {
         return Err(ConfigError::ConflictingRule {
@@ -473,6 +477,7 @@ fn validate_selection(
     {
         return Err(ConfigError::ExperimentalRuleEnabled {
             origin: origin.clone(),
+            key: enable_key,
         });
     }
     Ok(())
