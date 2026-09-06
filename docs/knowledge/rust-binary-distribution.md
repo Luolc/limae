@@ -12,7 +12,7 @@ Rust 命令当前仍名为 `limae-rs`。它是迁移期入口，不取代 Python
    tools/check_rust_package.sh package
    ```
 
-   命令会创建 Cargo 源码包、解包、验证缺词表构建反臂，再从解包目录执行 `cargo install`。安装出的 binary 随后被移到全新目录，原解包路径也会被移走；它须在空 `PATH` 下命中实验规则并完成术语修复。命令退出 0 即完成；临时目录会自动清理。
+   命令会创建 Cargo 源码包、解包、运行包内显式 targets 与共享 fixture 的测试、验证缺词表构建反臂，再从解包目录执行 `cargo install`。安装出的 binary 随后被移到全新目录，原解包路径也会被移走；它须在空 `PATH` 下命中实验规则并完成术语修复。命令退出 0 即完成；临时目录会自动清理。
 
 ## 验收独立 Linux binary
 

@@ -83,6 +83,12 @@ check_package() {
     [[ -f "$package_root/$required" ]] || fail "Cargo archive omitted $required"
   done
 
+  (
+    cd "$package_root"
+    CARGO_TARGET_DIR="$consumer_target" cargo test --locked
+  )
+  printf '%s\n' 'Cargo package: declared targets and packaged fixtures passed their tests'
+
   cp -a "$package_root" "$work_dir/missing-wordlist"
   missing_root="$work_dir/missing-wordlist"
   mv "$missing_root/spec/wordlists/zh-word-1.toml" "$work_dir/removed-wordlist"
