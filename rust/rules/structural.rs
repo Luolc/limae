@@ -67,14 +67,14 @@ impl StructuralRules {
             if let Some(left) = char_before(line, dash.start()).filter(|&c| dash_neighbor(c)) {
                 found.push(LineMatch {
                     rule: RuleId::ZH_TYPOGRAPHY_8,
-                    name: "zh-typography-8 no space before dash",
+                    name: "zh-typography-8 no space before dash".into(),
                     range: dash.start() - left.len_utf8()..dash.end(),
                 });
             }
             if let Some(right) = char_at(line, dash.end()).filter(|&c| dash_neighbor(c)) {
                 found.push(LineMatch {
                     rule: RuleId::ZH_TYPOGRAPHY_8,
-                    name: "zh-typography-8 no space after dash",
+                    name: "zh-typography-8 no space after dash".into(),
                     range: dash.start()..dash.end() + right.len_utf8(),
                 });
             }
@@ -87,7 +87,7 @@ impl StructuralRules {
             }
             found.push(LineMatch {
                 rule: RuleId::ZH_TYPOGRAPHY_9,
-                name: "zh-typography-9 no space between CJK and link",
+                name: "zh-typography-9 no space between CJK and link".into(),
                 range: link.range(),
             });
             offset = link.end();
@@ -104,7 +104,7 @@ impl StructuralRules {
         ] {
             found.extend(pattern.find_iter(line).map(|m| LineMatch {
                 rule: RuleId::ZH_TYPOGRAPHY_11,
-                name,
+                name: name.into(),
                 range: m.range(),
             }));
         }
@@ -212,7 +212,7 @@ fn code_matches(line: &str, code: &[Range<usize>]) -> Vec<LineMatch> {
         if start < interior.start && char_before(line, start).is_some_and(is_cjk) {
             found.push(LineMatch {
                 rule: RuleId::ZH_TYPOGRAPHY_7,
-                name: "zh-typography-7 no space before inline code",
+                name: "zh-typography-7 no space before inline code".into(),
                 range: start..interior.start,
             });
         }
@@ -220,7 +220,7 @@ fn code_matches(line: &str, code: &[Range<usize>]) -> Vec<LineMatch> {
         if end > interior.end && char_at(line, end).is_some_and(is_cjk) {
             found.push(LineMatch {
                 rule: RuleId::ZH_TYPOGRAPHY_7,
-                name: "zh-typography-7 no space after inline code",
+                name: "zh-typography-7 no space after inline code".into(),
                 range: interior.end..end,
             });
         }

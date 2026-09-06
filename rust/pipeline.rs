@@ -18,6 +18,7 @@
 //! # Ok::<(), regex::Error>(())
 //! ```
 
+use std::borrow::Cow;
 use std::ops::Range;
 
 use crate::config::{ResolvedConfig, RuleId};
@@ -35,7 +36,7 @@ pub struct TypographyFinding<'text> {
     /// One-based line number in the checker's Python `splitlines()` view.
     pub line: usize,
     pub rule: RuleId,
-    pub name: &'static str,
+    pub name: Cow<'static, str>,
     /// UTF-8 byte range within that check line, excluding its line separator.
     /// Zero-width ranges denote insertion boundaries, not scalar columns.
     pub range: Range<usize>,

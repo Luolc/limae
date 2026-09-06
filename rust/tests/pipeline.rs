@@ -102,14 +102,14 @@ fn check_and_fix_have_distinct_python_line_views() -> TestResult {
                 TypographyFinding {
                     line: 1,
                     rule: RuleId::ZH_TYPOGRAPHY_4,
-                    name: "zh-typography-4 no space between CJK and Latin",
+                    name: "zh-typography-4 no space between CJK and Latin".into(),
                     range: 3..3,
                     snippet: "中A"
                 },
                 TypographyFinding {
                     line: 2,
                     rule: RuleId::ZH_TYPOGRAPHY_4,
-                    name: "zh-typography-4 no space between CJK and Latin",
+                    name: "zh-typography-4 no space between CJK and Latin".into(),
                     range: 3..3,
                     snippet: "文B"
                 },
@@ -127,7 +127,7 @@ fn check_and_fix_have_distinct_python_line_views() -> TestResult {
             [TypographyFinding {
                 line: 4,
                 rule: RuleId::ZH_TYPOGRAPHY_4,
-                name: "zh-typography-4 no space between CJK and Latin",
+                name: "zh-typography-4 no space between CJK and Latin".into(),
                 range: 3..3,
                 snippet: "文B"
             }]
@@ -152,14 +152,14 @@ fn check_and_fix_have_distinct_python_line_views() -> TestResult {
                 TypographyFinding {
                     line: 1,
                     rule: RuleId::ZH_TYPOGRAPHY_4,
-                    name: "zh-typography-4 no space between CJK and Latin",
+                    name: "zh-typography-4 no space between CJK and Latin".into(),
                     range: 3..3,
                     snippet: &original
                 },
                 TypographyFinding {
                     line: 1,
                     rule: RuleId::ZH_TYPOGRAPHY_4,
-                    name: "zh-typography-4 no space between CJK and Latin",
+                    name: "zh-typography-4 no space between CJK and Latin".into(),
                     range: second..second,
                     snippet: &original
                 },
@@ -236,7 +236,7 @@ fn original_findings_keep_order_ranges_and_scalar_windows() -> TestResult {
     .map(|(line, rule, name, range, snippet)| TypographyFinding {
         line,
         rule,
-        name,
+        name: name.into(),
         range,
         snippet,
     });
@@ -254,7 +254,7 @@ fn original_findings_keep_order_ranges_and_scalar_windows() -> TestResult {
         [TypographyFinding {
             line: 1,
             rule: RuleId::ZH_TYPOGRAPHY_10,
-            name: "zh-typography-10 fullwidth digit",
+            name: "zh-typography-10 fullwidth digit".into(),
             range: 51..54,
             snippet: &format!("{left}１{right}"),
         }]
@@ -282,7 +282,7 @@ fn destination_reclassification_requires_another_pass() -> TestResult {
         [TypographyFinding {
             line: 1,
             rule: RuleId::ZH_TYPOGRAPHY_3,
-            name: "zh-typography-3 no space after )",
+            name: "zh-typography-3 no space after )".into(),
             range: 0..2,
             snippet: ")https://examp",
         }]

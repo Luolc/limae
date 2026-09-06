@@ -174,7 +174,8 @@ fn punctuation_directions_consume_independently_and_merge_stably() -> TestResult
                     "zh-typography-11 space before fullwidth punct"
                 } else {
                     "zh-typography-11 space after fullwidth punct"
-                },
+                }
+                .into(),
                 range,
             })
             .collect();

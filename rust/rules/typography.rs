@@ -50,7 +50,7 @@ impl WidthRules {
             .find_iter(line)
             .map(|matched| LineMatch {
                 rule: RuleId::ZH_TYPOGRAPHY_1,
-                name: "zh-typography-1 halfwidth punct next to CJK",
+                name: "zh-typography-1 halfwidth punct next to CJK".into(),
                 range: matched.range(),
             })
             .collect();
@@ -67,7 +67,7 @@ impl WidthRules {
             };
             found.push(LineMatch {
                 rule,
-                name,
+                name: name.into(),
                 range: start..start + ch.len_utf8(),
             });
         }

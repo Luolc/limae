@@ -31,10 +31,10 @@ fn wordlist_rules_report_once_in_rule_order_after_protected_occurrences() -> Tes
         "https://example.com/pivotal pivotal",
     ];
     let protected = Markdown::new()?.protect(&lines);
-    let actual: Vec<_> = rules
-        .check_line(lines[0], &protected[0], &config)
-        .into_iter()
-        .map(|m| (m.rule, m.name, &lines[0][m.range]))
+    let found = rules.check_line(lines[0], &protected[0], &config);
+    let actual: Vec<_> = found
+        .iter()
+        .map(|m| (m.rule, m.name.as_ref(), &lines[0][m.range.clone()]))
         .collect();
     assert_eq!(
         actual,

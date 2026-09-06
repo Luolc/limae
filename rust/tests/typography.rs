@@ -65,10 +65,16 @@ fn punctuation_check_consumes_pairs_but_fix_converts_each_character() -> TestRes
     let config = ResolvedConfig::default();
     let line = "（１）,中,.文;字!";
     let protected = Markdown::new()?.protect(&[line]);
-    let actual: Vec<_> = rules
-        .check_line(line, &protected[0], &config)
-        .into_iter()
-        .map(|matched| (matched.rule, matched.name, &line[matched.range]))
+    let found = rules.check_line(line, &protected[0], &config);
+    let actual: Vec<_> = found
+        .iter()
+        .map(|matched| {
+            (
+                matched.rule,
+                matched.name.as_ref(),
+                &line[matched.range.clone()],
+            )
+        })
         .collect();
     assert_eq!(
         actual,
