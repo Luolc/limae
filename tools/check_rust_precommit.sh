@@ -5,9 +5,8 @@ set -euo pipefail
 shopt -s nullglob
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-source_revision=${1:-HEAD}
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/limae-precommit.XXXXXX")
-pre_commit=$(command -v pre-commit)
+pre_commit="$repo_root/.venv/bin/pre-commit"
 
 cleanup() {
   local original_status=$?
@@ -53,7 +52,8 @@ run_pre_commit_expect() {
   fi
 }
 
-revision=$(git -C "$repo_root" rev-parse --verify "$source_revision^{commit}")
+[[ -x $pre_commit ]] || fail 'run uv sync before the pre-commit distribution check'
+revision=$(git -C "$repo_root" rev-parse --verify 'HEAD^{commit}')
 source_repo="$work_dir/source.git"
 consumer="$work_dir/consumer"
 pre_commit_home="$work_dir/pre-commit-home"
