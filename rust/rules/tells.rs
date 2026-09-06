@@ -94,6 +94,8 @@ fn english(rule: RuleId) -> bool {
 }
 
 fn english_word_char(ch: char) -> bool {
+    // spec/rules.md's wordlist contract adds U+0130/U+0131, U+017F and U+212A
+    // to the ASCII-letter equivalence classes.
     ch.is_ascii_alphanumeric() || matches!(ch, '_' | 'İ' | 'ı' | 'ſ' | 'K')
 }
 
@@ -104,8 +106,8 @@ fn compile(text: &str, english: bool) -> Result<Regex, regex::Error> {
         .iter()
         .map(|phrase| {
             let escaped = regex::escape(phrase);
-            // Python IGNORECASE unifies all four I forms; Unicode simple folding
-            // in regex already handles ASCII case, long S and the Kelvin sign.
+            // The wordlist contract in spec/rules.md unifies all four I forms;
+            // regex already handles ASCII case, long S and the Kelvin sign.
             if english {
                 escaped.replace(['i', 'I'], "[iIİı]")
             } else {
@@ -128,6 +130,35 @@ fn compile(text: &str, english: bool) -> Result<Regex, regex::Error> {
 #[cfg(test)]
 mod tests {
     use super::compile;
+
+    #[test]
+    fn rejected_left_boundary_and_protection_consume_different_ranges()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use crate::config::{CliOverrides, RuleId, resolve};
+        use crate::markdown::LineProtection;
+        let root = std::env::temp_dir().join(format!("limae-tells-overlap-{}", std::process::id()));
+        std::fs::create_dir(&root)?;
+        std::fs::write(root.join("limae.toml"), "enable_experimental = true")?;
+        let config = resolve(&root, CliOverrides::default());
+        std::fs::remove_dir_all(root)?;
+        let config = config?;
+        let checker = super::WordlistTells {
+            patterns: vec![(
+                RuleId::EN_TELL_1,
+                "synthetic overlap",
+                compile("a-a", true)?,
+            )],
+        };
+        for (line, span, expected) in [("za-a-a", 0..0, Some(3..6)), ("a-a-a", 0..1, None)] {
+            let protection = LineProtection::Inline {
+                code: vec![span],
+                prose: vec![],
+            };
+            let found = checker.check_line(line, &protection, &config);
+            assert_eq!(found.first().map(|m| m.range.clone()), expected, "{line}");
+        }
+        Ok(())
+    }
 
     #[test]
     fn alternatives_are_literal_longest_first_and_boundary_aware() -> Result<(), regex::Error> {
