@@ -116,7 +116,7 @@ fn code_delimiters_use_equal_runs_and_zero_length_multiline_interiors() -> TestR
         assert!(found.iter().all(|m| m.rule == RuleId::ZH_TYPOGRAPHY_7));
     }
     assert_eq!(
-        Pipeline::new()?.fix(&lines.join("\n"), &config),
+        Pipeline::new()?.fix(&lines.join("\n"), &config)?,
         [
             "🙂中 ``",
             "`` 文 A",
@@ -208,7 +208,7 @@ fn links_check_consuming_openers_and_fix_fragment_local_lookahead() -> TestResul
             slices,
             "{line}"
         );
-        assert_eq!(Pipeline::new()?.fix(line, &config), expected, "{line}");
+        assert_eq!(Pipeline::new()?.fix(line, &config)?, expected, "{line}");
     }
     Ok(())
 }
@@ -237,7 +237,7 @@ fn protection_preserves_code_urls_destinations_and_kana_quotations() -> TestResu
         .collect();
     assert_eq!(counts, [2, 1, 1, 1, 1, 0, 0, 0, 0, 0]);
     assert_eq!(
-        Pipeline::new()?.fix(&lines.join("\n"), &config),
+        Pipeline::new()?.fix(&lines.join("\n"), &config)?,
         [
             "中 `——， 文` 后",
             "https://example.com—— 文",
@@ -298,13 +298,13 @@ fn config_switches_and_width_spacing_interactions_are_real() -> TestResult {
                 .collect::<Vec<_>>(),
         )?;
         assert_eq!(rules.check_line(line, &p[0], &config).len(), count);
-        assert_eq!(Pipeline::new()?.fix(line, &config), expected);
+        assert_eq!(Pipeline::new()?.fix(line, &config)?, expected);
     }
     let line = "🙂中 ， 文";
     let config = configured(&["zh-typography-11".into()], &[])?;
     let p = Markdown::new()?.protect(&[line]);
     assert_eq!(rules.check_line(line, &p[0], &config), []);
-    assert_eq!(Pipeline::new()?.fix(line, &config), line);
+    assert_eq!(Pipeline::new()?.fix(line, &config)?, line);
     Ok(())
 }
 

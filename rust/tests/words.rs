@@ -108,7 +108,7 @@ fn fragment_fixes_reuse_original_line_evidence_across_markdown_interiors() -> Te
     let rules = WordRules::new()?;
     let line = "秘钥 `token 秘钥` 代币 [x](cache 快取) 快取「かな 秘钥」秘密";
     assert_eq!(
-        Pipeline::new()?.fix(line, &config),
+        Pipeline::new()?.fix(line, &config)?,
         "密钥 `token 秘钥` 令牌 [x](cache 快取) 缓存「かな 秘钥」秘密"
     );
     assert_eq!(

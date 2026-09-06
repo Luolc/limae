@@ -16,34 +16,8 @@ fn configured(name: &str, contents: &str) -> Result<ResolvedConfig, Box<dyn Erro
     Ok(config?)
 }
 
-// Whole cases awaiting their actual pipeline integration, never filtered findings.
-const UNSUPPORTED: &[(&str, &str)] = &[
-    (
-        "experimental-en-ai-tells",
-        "A6: active disable-next-line en-tell-1",
-    ),
-    (
-        "experimental-zh-ai-tells",
-        "A6: active disable-next-line zh-tell-1",
-    ),
-    (
-        "experimental-zh-secret",
-        "A6: active disable-next-line zh-word-2",
-    ),
-    (
-        "experimental-zh-zero-noun",
-        "A6: active disable-next-line zh-tell-5",
-    ),
-    (
-        "inline-disable-config-boundary",
-        "A6: inline directive masks",
-    ),
-    ("inline-disable-next-line", "A6: inline directive masks"),
-    ("inline-disable-range", "A6: inline directive masks"),
-];
-
 #[test]
-fn all_applicable_golden_cases_use_the_document_api() -> TestResult {
+fn all_golden_cases_use_the_document_api() -> TestResult {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/fixtures");
     let mut inputs = fs::read_dir(&root)?
         .map(|entry| entry.map(|e| e.path()))
@@ -54,16 +28,11 @@ fn all_applicable_golden_cases_use_the_document_api() -> TestResult {
     let pipeline = Pipeline::new()?;
     let temporary = std::env::temp_dir().join(format!("limae-pipeline-{}", std::process::id()));
     fs::create_dir(&temporary)?;
-    let mut pending = UNSUPPORTED.to_vec();
     for input in inputs {
         let case = input
             .file_stem()
             .and_then(|s| s.to_str())
             .ok_or("case name")?;
-        if let Some(index) = pending.iter().position(|(name, _)| *name == case) {
-            pending.remove(index);
-            continue;
-        }
         let config_path = input.with_extension("conf");
         let config = if config_path.try_exists()? {
             fs::copy(config_path, temporary.join("limae.toml"))?;
@@ -74,7 +43,7 @@ fn all_applicable_golden_cases_use_the_document_api() -> TestResult {
         let original = fs::read_to_string(&input)?;
         let expected = fs::read_to_string(input.with_extension("fixed"))?;
         let findings: String = pipeline
-            .check(&original, &config)
+            .check(&original, &config)?
             .iter()
             .map(|f| format!("{} {}\n", f.line, f.rule))
             .collect();
@@ -83,18 +52,14 @@ fn all_applicable_golden_cases_use_the_document_api() -> TestResult {
             fs::read_to_string(input.with_extension("findings"))?,
             "{case}: original findings"
         );
-        assert_eq!(pipeline.fix(&original, &config), expected, "{case}: fix");
+        assert_eq!(pipeline.fix(&original, &config)?, expected, "{case}: fix");
         assert_eq!(
-            pipeline.fix(&expected, &config),
+            pipeline.fix(&expected, &config)?,
             expected,
             "{case}: idempotence"
         );
     }
     fs::remove_dir_all(temporary)?;
-    assert!(
-        pending.is_empty(),
-        "stale unsupported case names: {pending:?}"
-    );
     Ok(())
 }
 
@@ -108,7 +73,7 @@ fn check_and_fix_have_distinct_python_line_views() -> TestResult {
     ] {
         let original = format!("中A{separator}文B{separator}");
         assert_eq!(
-            pipeline.check(&original, &config),
+            pipeline.check(&original, &config)?,
             [
                 Finding {
                     line: 1,
@@ -128,11 +93,11 @@ fn check_and_fix_have_distinct_python_line_views() -> TestResult {
             "{separator:?}"
         );
         assert_eq!(
-            pipeline.fix(&original, &config),
+            pipeline.fix(&original, &config)?,
             format!("中 A{separator}文 B{separator}")
         );
         let fenced = format!("```{separator}中A{separator}~~~{separator}文B");
-        let found = pipeline.check(&fenced, &config);
+        let found = pipeline.check(&fenced, &config)?;
         assert_eq!(
             found,
             [Finding {
@@ -149,7 +114,7 @@ fn check_and_fix_have_distinct_python_line_views() -> TestResult {
             fenced.clone()
         };
         assert_eq!(
-            pipeline.fix(&fenced, &config),
+            pipeline.fix(&fenced, &config)?,
             expected,
             "fence: {separator:?}"
         );
@@ -158,7 +123,7 @@ fn check_and_fix_have_distinct_python_line_views() -> TestResult {
         let original = format!("中A{whitespace}文B");
         let second = "中A".len() + whitespace.len() + "文".len();
         assert_eq!(
-            pipeline.check(&original, &config),
+            pipeline.check(&original, &config)?,
             [
                 Finding {
                     line: 1,
@@ -177,14 +142,137 @@ fn check_and_fix_have_distinct_python_line_views() -> TestResult {
             ]
         );
         assert_eq!(
-            pipeline.fix(&original, &config),
+            pipeline.fix(&original, &config)?,
             format!("中 A{whitespace}文 B")
         );
     }
     for original in ["", "\n", "\r\n", "\n\n", "\r", "\u{2028}", "中", "中\n\n"] {
-        assert_eq!(pipeline.check(original, &config), []);
-        assert_eq!(pipeline.fix(original, &config), original);
+        assert_eq!(pipeline.check(original, &config)?, []);
+        assert_eq!(pipeline.fix(original, &config)?, original);
     }
+    Ok(())
+}
+
+#[test]
+fn directives_use_each_pipeline_line_view_and_consume_pending_once() -> TestResult {
+    let pipeline = Pipeline::new()?;
+    let config = ResolvedConfig::default();
+
+    let unit_separator = "<!-- limae-disable\u{1f}zh-typography-4 -->\n你好,世界与中文English混排";
+    let found = pipeline.check(unit_separator, &config)?;
+    assert_eq!(found.len(), 1);
+    assert_eq!((found[0].line, found[0].rule), (2, RuleId::ZH_TYPOGRAPHY_1));
+    assert_eq!(
+        pipeline.fix(unit_separator, &config)?,
+        "<!-- limae-disable\u{1f}zh-typography-4 -->\n你好，世界与中文English混排"
+    );
+
+    let file_separator = "<!-- limae-disable\u{1c}zh-typography-4 -->\n你好,世界与中文English混排";
+    let found = pipeline.check(file_separator, &config)?;
+    assert_eq!(found.len(), 3);
+    assert!(found.iter().all(|finding| finding.line == 3));
+    assert_eq!(
+        found.iter().map(|finding| finding.rule).collect::<Vec<_>>(),
+        [
+            RuleId::ZH_TYPOGRAPHY_1,
+            RuleId::ZH_TYPOGRAPHY_4,
+            RuleId::ZH_TYPOGRAPHY_4,
+        ]
+    );
+    assert_eq!(
+        pipeline.fix(file_separator, &config)?,
+        "<!-- limae-disable\u{1c}zh-typography-4 -->\n你好，世界与中文English混排"
+    );
+
+    let blank_consumes = "<!-- limae-disable-next-line zh-typography-4 -->\n\n中A";
+    let found = pipeline.check(blank_consumes, &config)?;
+    assert_eq!(found.len(), 1);
+    assert_eq!((found[0].line, found[0].rule), (3, RuleId::ZH_TYPOGRAPHY_4));
+    assert_eq!(
+        pipeline.fix(blank_consumes, &config)?,
+        "<!-- limae-disable-next-line zh-typography-4 -->\n\n中 A"
+    );
+
+    let fenced = concat!(
+        "<!-- limae-disable-next-line zh-typography-4 -->\n",
+        "```\n",
+        "<!-- limae-disable unknown -->\n",
+        "```\n",
+        "中A",
+    );
+    let found = pipeline.check(fenced, &config)?;
+    assert_eq!(found.len(), 1);
+    assert_eq!((found[0].line, found[0].rule), (5, RuleId::ZH_TYPOGRAPHY_4));
+    assert_eq!(
+        pipeline.fix(fenced, &config)?,
+        concat!(
+            "<!-- limae-disable-next-line zh-typography-4 -->\n",
+            "```\n",
+            "<!-- limae-disable unknown -->\n",
+            "```\n",
+            "中 A",
+        )
+    );
+    Ok(())
+}
+
+#[test]
+fn directives_cannot_enable_rules_outside_configuration() -> TestResult {
+    let config = configured(
+        "directive-config-boundary",
+        concat!(
+            "enable_experimental = true\n",
+            "disable = ['zh-typography-1']\n",
+            "skip_zh_units = '年'\n",
+            "[severity]\nzh-tell-1 = 'error'\n",
+        ),
+    )?;
+    let pipeline = Pipeline::new()?;
+    let original = concat!(
+        "<!-- limae-disable -->\n",
+        "综上所述你好,世界2011年 中[链](x)\n",
+        "<!-- limae-enable -->\n",
+        "综上所述你好,世界2011年 中[链](x)",
+    );
+    let found = pipeline.check(original, &config)?;
+    assert_eq!(found.len(), 1);
+    assert_eq!((found[0].line, found[0].rule), (4, RuleId::ZH_TELL_1));
+    assert_eq!(config.severity(found[0].rule), Severity::Error);
+    assert_eq!(pipeline.fix(original, &config)?, original);
+    Ok(())
+}
+
+#[test]
+fn directive_errors_propagate_from_check_and_fix_with_line_numbers() -> TestResult {
+    let pipeline = Pipeline::new()?;
+    let config = ResolvedConfig::default();
+    let original = "plain\n<!-- limae-disable fake, zh-typography-4 other -->\n中A";
+    let check_error = match pipeline.check(original, &config) {
+        Err(error) => error,
+        Ok(_) => return Err("check must reject an unknown directive".into()),
+    };
+    let fix_error = match pipeline.fix(original, &config) {
+        Err(error) => error,
+        Ok(_) => return Err("fix must reject an unknown directive".into()),
+    };
+    for error in [check_error, fix_error] {
+        assert_eq!(error.line(), 2);
+        assert_eq!(error.unknown_ids(), ["fake", "other"]);
+        assert!(error.to_string().contains("unknown rule id(s) fake, other"));
+    }
+
+    let similar = concat!(
+        "<!-- limae-disabled -->\n",
+        "prefix <!-- limae-disable -->\n",
+        "中A",
+    );
+    let found = pipeline.check(similar, &config)?;
+    assert_eq!(found.len(), 1);
+    assert_eq!((found[0].line, found[0].rule), (3, RuleId::ZH_TYPOGRAPHY_4));
+    assert_eq!(
+        pipeline.fix(similar, &config)?,
+        "<!-- limae-disabled -->\nprefix <!-- limae-disable -->\n中 A"
+    );
     Ok(())
 }
 
@@ -251,17 +339,17 @@ fn original_findings_keep_order_ranges_and_scalar_windows() -> TestResult {
         range,
         snippet,
     });
-    assert_eq!(pipeline.check(original, &config), expected);
-    let fixed = pipeline.fix(original, &config);
+    assert_eq!(pipeline.check(original, &config)?, expected);
+    let fixed = pipeline.fix(original, &config)?;
     assert_eq!(fixed, "中 (1)\n，，，，");
-    assert_eq!(pipeline.check(&fixed, &config), []);
-    assert_eq!(pipeline.check(original, &config), expected);
+    assert_eq!(pipeline.check(&fixed, &config)?, []);
+    assert_eq!(pipeline.check(original, &config)?, expected);
 
     let left = "🙂".repeat(12);
     let right = "e\u{301}".repeat(6);
     let original = format!("前{left}１{right}后");
     assert_eq!(
-        pipeline.check(&original, &config),
+        pipeline.check(&original, &config)?,
         [Finding {
             line: 1,
             rule: RuleId::ZH_TYPOGRAPHY_10,
@@ -282,14 +370,14 @@ fn destination_reclassification_requires_another_pass() -> TestResult {
     let expected = ") https://example.com/x[x](A)";
     assert_eq!(
         pipeline
-            .check(original, &config)
+            .check(original, &config)?
             .iter()
             .map(|f| f.rule)
             .collect::<Vec<_>>(),
         [RuleId::ZH_TYPOGRAPHY_2; 2]
     );
     assert_eq!(
-        pipeline.check(first_pass, &config),
+        pipeline.check(first_pass, &config)?,
         [Finding {
             line: 1,
             rule: RuleId::ZH_TYPOGRAPHY_3,
@@ -298,10 +386,10 @@ fn destination_reclassification_requires_another_pass() -> TestResult {
             snippet: ")https://examp",
         }]
     );
-    assert_eq!(pipeline.fix(original, &config), expected);
-    assert_eq!(pipeline.fix(first_pass, &config), expected);
-    assert_eq!(pipeline.fix(expected, &config), expected);
-    assert_eq!(pipeline.check(expected, &config), []);
+    assert_eq!(pipeline.fix(original, &config)?, expected);
+    assert_eq!(pipeline.fix(first_pass, &config)?, expected);
+    assert_eq!(pipeline.fix(expected, &config)?, expected);
+    assert_eq!(pipeline.check(expected, &config)?, []);
     Ok(())
 }
 
@@ -311,9 +399,9 @@ fn protected_interiors_and_unedited_code_edges_survive_all_stages() -> TestResul
     let config = ResolvedConfig::default();
     let original = "中（１６GB）用``\n``字——文, 字[链](中A， 文)后\n\n中`中A， 文`后\n「かな中A， 文」\nhttps://example.com/x,中文\n```\n中（１６GB）\n~~~";
     let fixed = "中 (16 GB) 用 ``\n`` 字 —— 文，字[链](中A， 文) 后\n\n中 `中A， 文` 后\n「かな中A， 文」\nhttps://example.com/x，中文\n```\n中（１６GB）\n~~~";
-    assert_eq!(pipeline.fix(original, &config), fixed);
-    assert_eq!(pipeline.fix(fixed, &config), fixed);
-    assert_eq!(pipeline.check(fixed, &config), []);
+    assert_eq!(pipeline.fix(original, &config)?, fixed);
+    assert_eq!(pipeline.fix(fixed, &config)?, fixed);
+    assert_eq!(pipeline.check(fixed, &config)?, []);
     Ok(())
 }
 
@@ -335,7 +423,7 @@ fn supplied_configuration_bounds_all_rules_and_keeps_configured_severity() -> Te
     let original = "综上所述中（２０１１年）用A， 文";
     assert_eq!(
         pipeline
-            .check(original, &config)
+            .check(original, &config)?
             .iter()
             .map(|f| f.rule)
             .collect::<Vec<_>>(),
@@ -351,11 +439,11 @@ fn supplied_configuration_bounds_all_rules_and_keeps_configured_severity() -> Te
         ]
     );
     assert_eq!(
-        pipeline.fix(original, &config),
+        pipeline.fix(original, &config)?,
         "综上所述中 (2011年) 用A，文"
     );
     assert_eq!(
-        pipeline.fix(original, &ResolvedConfig::default()),
+        pipeline.fix(original, &ResolvedConfig::default())?,
         "综上所述中 (2011 年) 用 A，文"
     );
     Ok(())
@@ -453,11 +541,14 @@ fn experimental_families_keep_complete_original_and_fixed_findings() -> TestResu
     });
     let pipeline = Pipeline::new()?;
     // The finding owns dynamic names even when its checker has been dropped.
-    let found = Pipeline::new()?.check(original, &config);
+    let found = Pipeline::new()?.check(original, &config)?;
     assert_eq!(found, expected);
-    assert_eq!(pipeline.check(original, &ResolvedConfig::default()), []);
-    assert_eq!(pipeline.fix(original, &ResolvedConfig::default()), original);
-    let fixed = pipeline.fix(original, &config);
+    assert_eq!(pipeline.check(original, &ResolvedConfig::default())?, []);
+    assert_eq!(
+        pipeline.fix(original, &ResolvedConfig::default())?,
+        original
+    );
+    let fixed = pipeline.fix(original, &config)?;
     assert_eq!(
         fixed,
         "综上所述\n不是甲而是乙\n赋能 赋能\n希望对你有帮助\npİvotal\nIt's not just X, but it's Y\nload-bearing\n零重复\n密钥 秘密 `token`"
@@ -467,12 +558,12 @@ fn experimental_families_keep_complete_original_and_fixed_findings() -> TestResu
         snippet: "密钥 秘密 `token`",
         ..expected[10].clone()
     });
-    assert_eq!(pipeline.check(&fixed, &config), remaining);
-    assert_eq!(pipeline.fix(&fixed, &config), fixed);
-    assert_eq!(pipeline.check(original, &config), expected);
+    assert_eq!(pipeline.check(&fixed, &config)?, remaining);
+    assert_eq!(pipeline.fix(&fixed, &config)?, fixed);
+    assert_eq!(pipeline.check(original, &config)?, expected);
     let mixed = "不是甲而是乙 pİvotal";
     assert_eq!(
-        pipeline.check(mixed, &config),
+        pipeline.check(mixed, &config)?,
         [
             Finding {
                 line: 1,
@@ -513,23 +604,23 @@ fn terms_use_whole_fix_lines_and_protected_anchors_through_typography() -> TestR
         ("`秘钥 token` 秘钥", "`秘钥 token` 密钥"),
         ("秘钥\r`token`", "密钥\r`token`"),
     ] {
-        assert_eq!(pipeline.fix(original, &config), expected);
-        assert_eq!(pipeline.fix(expected, &config), expected);
+        assert_eq!(pipeline.fix(original, &config)?, expected);
+        assert_eq!(pipeline.fix(expected, &config)?, expected);
     }
     // Check uses two lines here, while fix sees one line with anchor evidence.
-    assert_eq!(pipeline.check("秘钥\r`token`", &config), []);
+    assert_eq!(pipeline.check("秘钥\r`token`", &config)?, []);
     let disabled = configured(
         "terms-disabled",
         "enable_experimental = true\ndisable = ['zh-word-1', 'en-tell-1']",
     )?;
     let original = "秘钥（１６GB）`token` pİvotal";
     assert_eq!(
-        pipeline.fix(original, &disabled),
+        pipeline.fix(original, &disabled)?,
         "秘钥 (16 GB) `token` pİvotal"
     );
     assert_eq!(
         pipeline
-            .check(original, &disabled)
+            .check(original, &disabled)?
             .iter()
             .map(|f| f.rule)
             .collect::<Vec<_>>(),

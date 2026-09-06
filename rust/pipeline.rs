@@ -1,22 +1,16 @@
 //! Document checks and fixed-point fixes for all implemented rules.
 //!
-//! The supplied configuration bounds enabled rules; experimental rules default
-//! to off. Inline directives (A6) are not parsed, validated or applied: their text
-//! is processed as ordinary Markdown and does not disable rules on other lines.
-//! This API therefore does not provide Python's complete directive-aware
-//! `check_text` / `fix_text` behavior or CLI compatibility.
-//!
 //! ```
 //! use limae::{config::ResolvedConfig, pipeline::Pipeline};
 //!
 //! let pipeline = Pipeline::new()?;
 //! let config = ResolvedConfig::default();
 //! let original = "中（１６GB）";
-//! assert_eq!(pipeline.check(original, &config).len(), 4);
-//! let fixed = pipeline.fix(original, &config);
+//! assert_eq!(pipeline.check(original, &config)?.len(), 4);
+//! let fixed = pipeline.fix(original, &config)?;
 //! assert_eq!(fixed, "中 (16 GB)");
-//! assert!(pipeline.check(&fixed, &config).is_empty());
-//! # Ok::<(), limae::pipeline::InitError>(())
+//! assert!(pipeline.check(&fixed, &config)?.is_empty());
+//! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
 use std::borrow::Cow;
@@ -24,6 +18,7 @@ use std::ops::Range;
 use thiserror::Error;
 
 use crate::config::{ResolvedConfig, RuleId};
+use crate::directives::{DirectiveError, rule_masks};
 use crate::markdown::{LineProtection, Markdown};
 use crate::rules::{
     spacing::SpacingRules,
@@ -94,18 +89,31 @@ impl Pipeline {
     /// Lines follow Python `splitlines()`: LF, CR, CRLF, VT, FF, U+001C–U+001E,
     /// U+0085 and U+2028–U+2029. CRLF is one boundary; a terminal separator adds
     /// no empty check line. TAB, U+001F and NBSP are not line separators.
-    #[must_use]
-    pub fn check<'text>(&self, text: &'text str, config: &ResolvedConfig) -> Vec<Finding<'text>> {
+    ///
+    /// # Errors
+    /// Returns [`DirectiveError`] when an inline directive names an unknown rule.
+    pub fn check<'text>(
+        &self,
+        text: &'text str,
+        config: &ResolvedConfig,
+    ) -> Result<Vec<Finding<'text>>, DirectiveError> {
         let lines = check_lines(text);
         let protected = self.markdown.protect(&lines);
+        let verbatim = protected
+            .iter()
+            .map(|protection| matches!(protection, LineProtection::Verbatim))
+            .collect::<Vec<_>>();
+        let masks = rule_masks(&lines, &verbatim)?;
         let mut findings = Vec::new();
-        for (i, (line, protection)) in lines.iter().zip(&protected).enumerate() {
-            let mut matches = self.width.check_line(line, protection, config);
-            matches.extend(self.spacing.check_line(line, protection, config));
-            matches.extend(self.structural.check_line(line, protection, config));
-            matches.extend(self.wordlists.check_line(line, protection, config));
-            matches.extend(self.sentences.check_line(line, protection, config));
-            matches.extend(self.words.check_line(line, protection, config));
+        for (i, ((line, protection), mask)) in lines.iter().zip(&protected).zip(&masks).enumerate()
+        {
+            let line_config = config.without_rules(mask);
+            let mut matches = self.width.check_line(line, protection, &line_config);
+            matches.extend(self.spacing.check_line(line, protection, &line_config));
+            matches.extend(self.structural.check_line(line, protection, &line_config));
+            matches.extend(self.wordlists.check_line(line, protection, &line_config));
+            matches.extend(self.sentences.check_line(line, protection, &line_config));
+            matches.extend(self.words.check_line(line, protection, &line_config));
             matches.sort_by_key(|m| (m.rule, m.range.start));
             findings.extend(matches.into_iter().map(|m| {
                 let Some(snippet) = snippet(line, m.range.clone()) else {
@@ -120,7 +128,7 @@ impl Pipeline {
                 }
             }));
         }
-        findings
+        Ok(findings)
     }
 
     /// Fix until the string is unchanged, rescanning Markdown on every pass.
@@ -131,20 +139,30 @@ impl Pipeline {
     /// prose fragments run through terminology, width, prose spacing, then
     /// structural spacing / cleanup with their original Markdown boundaries.
     /// Fixes are independent of the original finding list.
-    #[must_use]
-    pub fn fix(&self, text: &str, config: &ResolvedConfig) -> String {
+    ///
+    /// # Errors
+    /// Returns [`DirectiveError`] when an inline directive names an unknown rule.
+    pub fn fix(&self, text: &str, config: &ResolvedConfig) -> Result<String, DirectiveError> {
         let mut current = text.to_owned();
         loop {
             let lines: Vec<_> = current.split('\n').collect();
             let protected = self.markdown.protect(&lines);
+            let verbatim = protected
+                .iter()
+                .map(|protection| matches!(protection, LineProtection::Verbatim))
+                .collect::<Vec<_>>();
+            let masks = rule_masks(&lines, &verbatim)?;
             let fixed = lines
                 .iter()
                 .zip(&protected)
-                .map(|(line, protection)| self.fix_line(line, protection, config))
+                .zip(&masks)
+                .map(|((line, protection), mask)| {
+                    self.fix_line(line, protection, &config.without_rules(mask))
+                })
                 .collect::<Vec<_>>()
                 .join("\n");
             if fixed == current {
-                return fixed;
+                return Ok(fixed);
             }
             current = fixed;
         }
@@ -223,7 +241,11 @@ fn check_lines(text: &str) -> Vec<&str> {
 
 #[cfg(test)]
 mod tests {
-    use super::check_lines;
+    use std::error::Error;
+
+    use super::{Pipeline, check_lines};
+    use crate::config::{CliOverrides, resolve};
+    use crate::rules::words::WordRules;
 
     #[test]
     fn check_line_edges_match_splitlines() {
@@ -238,5 +260,28 @@ mod tests {
         ] {
             assert_eq!(check_lines(text), expected, "{text:?}");
         }
+    }
+
+    #[test]
+    fn terminology_precedes_width_and_spacing_in_one_pass() -> Result<(), Box<dyn Error>> {
+        let root =
+            std::env::temp_dir().join(format!("limae-pipeline-order-{}", std::process::id()));
+        std::fs::create_dir(&root)?;
+        std::fs::write(root.join("limae.toml"), "enable_experimental = true")?;
+        let config = resolve(&root, CliOverrides::default());
+        std::fs::remove_dir_all(root)?;
+        let config = config?;
+
+        let mut pipeline = Pipeline::new()?;
+        pipeline.words = WordRules::from_test_resource(concat!(
+            "[[entries]]\n",
+            "wrong = '术'\n",
+            "right = '（１６GB）'\n",
+            "anchors = ['术']\n",
+        ))?;
+        let line = "术";
+        let protection = pipeline.markdown.protect(&[line]);
+        assert_eq!(pipeline.fix_line(line, &protection[0], &config), "(16 GB)");
+        Ok(())
     }
 }

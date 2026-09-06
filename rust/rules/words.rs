@@ -26,6 +26,14 @@ impl WordRules {
         })
     }
 
+    #[cfg(test)]
+    pub(crate) fn from_test_resource(source: &str) -> Result<Self, TermResourceError> {
+        Ok(Self {
+            terms: terms(source)?,
+            allowed_secret: phrases(SECRET_ALLOWLIST),
+        })
+    }
+
     /// Check both rules in RuleId / start order on the unmodified line.
     ///
     /// Anchors and allowlist evidence use the entire line, including protected
