@@ -13,7 +13,7 @@ backlog 的正本，由 `limae-orchestra` 在合入后记账 (全局守则「多
 
 ## 实现与分发
 
-- **Rust 全量迁移**：[ADR-0015](adr/0015-rust-migration.md) 经 PR #66 合入，仓级约定 (G) 经 PR #67 合入；A1 文本基础与 Rust CI (#69)、A2 Markdown 保护范围 (#73)、A5 配置解析 (#75) 已完成，A2 前的引用配对基线修正见 #71。A3a 宽度规则 (zh-typography-1 / 2 / 10，#77) 已完成行检查与正文片段修复；下一项 A3b 正文间距，再接 A3c 结构间距与排版编排，分批边界见 #77 PR 描述。按 ADR 的 A–E 自动推进、agent 互审，直到正式 `limae` 为 Rust、Python deprecated 且参考实现与测试保留；实际 tag / release / publish 前停止。进度仅在此记，任务依赖与验收合同见 ADR。
+- **Rust 全量迁移**：[ADR-0015](adr/0015-rust-migration.md) 经 PR #66 合入，仓级约定 (G) 经 PR #67 合入；A1 文本基础与 Rust CI (#69)、A2 Markdown 保护范围 (#73)、A5 配置解析 (#75) 已完成，A2 前的引用配对基线修正见 #71。A3a 宽度规则 (zh-typography-1 / 2 / 10，#77) 与 A3b 正文间距 (3 / 4 / 5 / 6，#79) 已完成行检查与正文片段修复；下一项先补齐规则 11 计数规范，再接 A3c 结构间距与排版编排，分批边界见 #77 PR 描述。按 ADR 的 A–E 自动推进、agent 互审，直到正式 `limae` 为 Rust、Python deprecated 且参考实现与测试保留；实际 tag / release / publish 前停止。进度仅在此记，任务依赖与验收合同见 ADR。
 - **A3c 前置规范补齐**：zh-typography-11 的计数措辞与 Python 在连续交替标点 / 空格时不符。按 [PR #77 的协调决定](https://github.com/Luolc/limae/pull/77#issuecomment-5558499778)，先独立提交规范 / fixture PR，明确两个方向分别作消费型非重叠匹配，保留当前 Python 计数；新增合成样例，不改 Python 或既有黄金期望。该前置项不阻塞 A3b。
 - **A8b 配置错误差分**：按 [PR #75 的协调决定](https://github.com/Luolc/limae/pull/75#issuecomment-5558344043)，复用既有手写消息子串，比较退出码、错误类别、来源路径与配置键；自有校验错误不要求全文逐字相同，因为 Rust 不回显未校验的配置值。须在成对错误用例中体现这项差异，不能删除整条 stderr；正常 finding、warning 与成功输出仍按 ADR 的完整差分合同。
 - **Rust 迁移收尾补项**：E 的默认 pre-commit id 切换必须包含 `.pre-commit-hooks.yaml` 的 `language` / `entry` 与全新消费仓安装验收 (PR #66 复审 P2)。orchestra 按用户「当前 Python 全部功能迁移」的范围对账 (2026-09-06)，补入现有 `tools/render_lexicon.py` 的 HTML 生成功能：迁为 Rust 开发工具，以同源生成产物字节一致验收；Python 脚本保留作参考，不增加 rubrics 等新输出。
