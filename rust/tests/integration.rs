@@ -1,6 +1,5 @@
 use limae::text::{
-    char_at, char_before, halfwidth_digit, is_ascii_digit, is_ascii_letter, is_cjk,
-    is_python_whitespace, is_word, snippet,
+    char_at, char_before, halfwidth_digit, is_cjk, is_python_whitespace, is_word, snippet,
 };
 
 #[test]
@@ -27,8 +26,15 @@ fn snippet_counts_scalars_around_a_byte_range() -> Result<(), &'static str> {
     let start = text.find('Ａ').ok_or("missing fullwidth letter")?;
     let end = start + 'Ａ'.len_utf8();
     let expected = format!("{left}Ａ{right}");
+    let zero_text = format!("前{left}{right}后");
+    let boundary = "前".len() + left.len();
+    let zero_expected = format!("{left}{right}");
 
     assert_eq!(snippet(&text, start..end), Some(expected.as_str()));
+    assert_eq!(
+        snippet(&zero_text, boundary..boundary),
+        Some(zero_expected.as_str())
+    );
     assert_eq!(snippet(&text, start + 1..end), None);
     assert_eq!(snippet(&text, end..start), None);
     Ok(())
@@ -45,12 +51,11 @@ fn character_classes_match_the_rule_and_python_boundaries() -> Result<(), &'stat
     assert!(is_cjk('鿿'));
     assert!(!is_cjk('㐀'));
     assert!(!is_cjk('\u{a000}'));
-    assert!(is_ascii_letter('Z'));
-    assert!(!is_ascii_letter('é'));
-    assert!(is_ascii_digit('7'));
-    assert!(!is_ascii_digit('７'));
     assert!(is_word('文'));
     assert!(is_word('A'));
+    assert!(is_word('7'));
+    assert!(!is_word('é'));
+    assert!(!is_word('７'));
     assert!(!is_word('_'));
     assert!(PYTHON_WHITESPACE.chars().all(is_python_whitespace));
     assert!(!is_python_whitespace('\u{001b}'));

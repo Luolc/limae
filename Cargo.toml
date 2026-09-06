@@ -16,8 +16,8 @@ include = [
 path = "rust/lib.rs"
 
 [[test]]
-name = "text"
-path = "rust/tests/text.rs"
+name = "integration"
+path = "rust/tests/integration.rs"
 
 [lints.rust]
 unsafe_code = "forbid"

@@ -37,18 +37,6 @@ pub const fn is_cjk(character: char) -> bool {
     matches!(character, '\u{4e00}'..='\u{9fff}')
 }
 
-/// Return whether a character is an ASCII letter.
-#[must_use]
-pub const fn is_ascii_letter(character: char) -> bool {
-    character.is_ascii_alphabetic()
-}
-
-/// Return whether a character is an ASCII digit.
-#[must_use]
-pub const fn is_ascii_digit(character: char) -> bool {
-    character.is_ascii_digit()
-}
-
 /// Return whether a character is a limae word character.
 #[must_use]
 pub const fn is_word(character: char) -> bool {
