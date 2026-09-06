@@ -190,6 +190,10 @@ OUTPUT_FILENAME = "output.txt"
 # `custom`, which is the user's own command and the user's own boundary.
 SHARED_ENV = ("PATH", "HOME", "TMPDIR", "LANG", "TZ")
 LOCALE_PREFIX = "LC_"
+# A polish engine can itself be an agent host. The hook sets this marker
+# before invoking one so a project or user hook inherited by the child
+# does not polish the polisher's answer recursively.
+HOOK_DISABLE_VARIABLE = "LIMAE_HOOK_DISABLE"
 # Set to the throwaway directory rather than passed through: the
 # caller's `PWD` is the path of the repository they are standing in.
 DIRECTORY_ENV = ("PWD", "OLDPWD")
@@ -703,7 +707,11 @@ def _child_env(
   """
   if engine not in PRESETS:
     return dict(env)
-  allowed = {*SHARED_ENV, *PRESETS[engine].credential_env}
+  allowed = {
+      *SHARED_ENV,
+      *PRESETS[engine].credential_env,
+      HOOK_DISABLE_VARIABLE,
+  }
   child = {
       name: value
       for name, value in env.items()

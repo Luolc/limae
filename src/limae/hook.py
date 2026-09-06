@@ -9,11 +9,17 @@ One process handles one hook event: the payload arrives as JSON on
 stdin, at most one JSON object goes to stdout, and the exit code is
 always 0.
 
-``MessageDisplay`` fires once per batch of newly completed lines while
-an assistant message streams, so this subcommand caches the batches by
-``message_id`` and calls a model once, on the batch marked ``final``,
-over the whole message (ADR-0009 section 二). Middle batches produce no
-output at all, which is how the host displays the original.
+Claude Code's ``MessageDisplay`` fires once per batch of newly completed
+lines while an assistant message streams, so this subcommand caches the
+batches by ``message_id`` and calls a model once, on the batch marked
+``final``, over the whole message (ADR-0009 section 二). Middle batches
+produce no output at all, which is how the host displays the original.
+
+Codex has no display-replacement event. Its ``Stop`` event supplies the
+whole ``last_assistant_message`` instead, so that host needs no batch
+cache: the rewrite is returned as a ``systemMessage`` warning below the
+original reply. It does not replace the input message or return any
+continuation field (ADR-0014).
 
 **Failure is silence on screen, and only there.** A missing engine, a
 timeout, an empty answer, a malformed payload, a bug in this file: every
@@ -68,7 +74,7 @@ BAD_USAGE = 2
 # The knobs ADR-0009 leaves open, all read from the environment because
 # that is what a hook has: Claude Code starts it with the environment of
 # the session, and `settings.json` can set these per project.
-DISABLE_VARIABLE = "LIMAE_HOOK_DISABLE"
+DISABLE_VARIABLE = engines.HOOK_DISABLE_VARIABLE
 MIN_CHARS_VARIABLE = "LIMAE_HOOK_MIN_CHARS"
 RATE_VARIABLE = "LIMAE_HOOK_AB_RATE"
 TIMEOUT_VARIABLE = "LIMAE_HOOK_TIMEOUT"
@@ -177,6 +183,13 @@ def _identifier(value: object) -> str:
   if not isinstance(value, str) or not value:
     return ""
   return UNSAFE.sub("_", value)[:NAME_LIMIT]
+
+
+def _message(payload: Mapping[str, object]) -> str:
+  """Return the host's safe per-message identifier."""
+  return _identifier(payload.get("message_id")) or _identifier(
+      payload.get("turn_id")
+  )
 
 
 def _in_work_tree(path: pathlib.Path) -> bool:
@@ -534,7 +547,7 @@ def _single(
       settings.model,
       polish.assemble(text),
       text,
-      env,
+      dict(env) | {DISABLE_VARIABLE: "1"},
       settings.command,
       _number(env, TIMEOUT_VARIABLE, TIMEOUT),
   )
@@ -743,7 +756,10 @@ def _trial(
     The two columns, empty when either candidate did not answer.
   """
   answers, reason = ab.run(
-      trial, text, env, _number(env, TIMEOUT_VARIABLE, TIMEOUT)
+      trial,
+      text,
+      dict(env) | {DISABLE_VARIABLE: "1"},
+      _number(env, TIMEOUT_VARIABLE, TIMEOUT),
   )
   if answers is None:
     # One candidate short is not a comparison, and a second round of
@@ -866,6 +882,89 @@ def _stop(payload: Mapping[str, object], env: Mapping[str, str]) -> str:
   return ab.context(_session(root, session))
 
 
+def _codex_stop(payload: Mapping[str, object], env: Mapping[str, str]) -> str:
+  """Polish the complete reply carried by a Codex ``Stop`` event.
+
+  Args:
+    payload: The Codex hook input.
+    env: The environment of the run.
+
+  Returns:
+    The warning to append below the original reply, empty when the
+    payload is incomplete or polishing fails open.
+  """
+  session = _identifier(payload.get("session_id"))
+  message = _message(payload)
+  text = payload.get("last_assistant_message")
+  root = _root(env)
+  if (
+      not session
+      or not message
+      or not isinstance(text, str)
+      or not text
+      or root is None
+  ):
+    return ""
+  directory = _session(root, session)
+  _prune(root, time.time())
+  where = payload.get("cwd")
+  block = _block(
+      text,
+      directory,
+      message,
+      env,
+      pathlib.Path(where) if isinstance(where, str) else pathlib.Path.cwd(),
+  )
+  if not block:
+    return ""
+  # ``ab.record`` leaves a pending note for Claude Code's second Stop
+  # hook. Codex has only this one event, and returning decision:block to
+  # manufacture another would run the model again. Consume the note here;
+  # the comparison and its code remain in the ledger and on screen. A
+  # ``systemMessage`` is not ADR-0009's model-context channel, so this
+  # preserves the reader's code without claiming the model received it.
+  context = ab.context(directory)
+  return f"{block.rstrip()}\n\n{context}" if context else block.rstrip()
+
+
+def _is_codex_stop(payload: Mapping[str, object]) -> bool:
+  """Return whether a ``Stop`` payload carries Codex's extensions."""
+  return (
+      isinstance(payload.get("model"), str)
+      and "last_assistant_message" in payload
+  )
+
+
+def _output(
+    payload: Mapping[str, object], env: Mapping[str, str]
+) -> dict[str, object] | None:
+  """Handle one supported host event and build its wire output."""
+  event = payload.get("hook_event_name")
+  if event == MESSAGE_DISPLAY:
+    answer = _display(payload, env)
+    if answer:
+      return {
+          "hookSpecificOutput": {
+              "hookEventName": event,
+              "displayContent": answer,
+          }
+      }
+  elif event == STOP and _is_codex_stop(payload):
+    answer = _codex_stop(payload, env)
+    if answer:
+      return {"systemMessage": answer}
+  elif event == STOP:
+    answer = _stop(payload, env)
+    if answer:
+      return {
+          "hookSpecificOutput": {
+              "hookEventName": event,
+              "additionalContext": answer,
+          }
+      }
+  return None
+
+
 def main(argv: Sequence[str]) -> int:
   """Run the ``hook`` subcommand.
 
@@ -895,14 +994,8 @@ def main(argv: Sequence[str]) -> int:
   if not isinstance(payload, dict):
     return OK
 
-  event = payload.get("hook_event_name")
   try:
-    if event == MESSAGE_DISPLAY:
-      key, answer = "displayContent", _display(payload, env)
-    elif event == STOP:
-      key, answer = "additionalContext", _stop(payload, env)
-    else:
-      return OK
+    output = _output(payload, env)
   except Exception:
     # Fail open, and mean it: nothing this file can go wrong at is worth
     # showing the user instead of their own reply (ADR-0009 section 六).
@@ -914,17 +1007,12 @@ def main(argv: Sequence[str]) -> int:
     if session and root is not None:
       _note(
           root / session,
-          _identifier(payload.get("message_id")),
+          _message(payload),
           DISPLAY,
           CRASHED,
       )
     return OK
-  if not answer:
+  if output is None:
     return OK
-  print(
-      json.dumps(
-          {"hookSpecificOutput": {"hookEventName": event, key: answer}},
-          ensure_ascii=False,
-      )
-  )
+  print(json.dumps(output, ensure_ascii=False))
   return OK

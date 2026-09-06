@@ -1,0 +1,7 @@
+[[hooks.Stop]]
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = 'limae="$(git rev-parse --show-toplevel)/.venv/bin/limae"; if test -x "$limae"; then LIMAE_HOOK_AB_RATE=0 "$limae" hook; fi'
+timeout = 120
+statusMessage = "Polishing the response"

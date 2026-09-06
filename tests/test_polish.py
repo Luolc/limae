@@ -479,7 +479,11 @@ def test_a_preset_sees_no_repository_or_session_context(
     tmp_path: pathlib.Path,
 ):
   env = environment(
-      tmp_path, **CALLER_CONTEXT, ANTHROPIC_API_KEY=SYNTHETIC_VALUE
+      tmp_path,
+      **CALLER_CONTEXT,
+      ANTHROPIC_API_KEY=SYNTHETIC_VALUE,
+      LIMAE_HOOK_DISABLE="1",
+      LIMAE_HOOK_MIN_CHARS="17",
   )
   stub(pathlib.Path(env["PATH"].split(":")[0]), "claude", DUMP)
   seen = engines.polish("claude", "", SPEC, TEXT, env)
@@ -498,6 +502,10 @@ def test_a_preset_sees_no_repository_or_session_context(
   assert "HOME=" in seen
   assert "ANTHROPIC_API_KEY=" in seen
   assert "OPENAI_API_KEY" not in seen
+  # The one hook marker needed to stop recursive polishing survives the
+  # allowlist; an unrelated limae setting still does not.
+  assert "LIMAE_HOOK_DISABLE=1" in seen
+  assert "LIMAE_HOOK_MIN_CHARS" not in seen
   # The directory variables point at the throwaway directory the engine
   # actually runs in.
   workdir = next(

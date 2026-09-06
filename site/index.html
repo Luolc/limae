@@ -1,4 +1,4 @@
-<title>AI 文言</title><style>
+<title>机器文言</title><style>
 :root {
   --paper: #f6f2e9;
   --ink: #24211c;
@@ -134,7 +134,7 @@ footer {
   --paper: #191714; --ink: #e6e0d4; --faded: #9a9184;
   --rule: #3b362e; --cinnabar: #c2695d;
 }
-</style><div class="page"><nav><div class="toc-label">目次</div><a href="#w0">按住不动<span class="sound">ànzhùbùdòng</span></a><a href="#w1">测量装置<span class="sound">cèliàngzhuāngzhì</span></a><a href="#w2">电报体<span class="sound">diànbàotǐ</span></a><a href="#w3">扶正<span class="sound">fúzhèng</span></a><a href="#w4">格言式收尾<span class="sound">géyánshìshōuwěi</span></a><a href="#w5">夹具<span class="sound">jiājù</span></a><a href="#w6">探针预注册<span class="sound">tànzhēnyùzhùcè</span></a><a href="#w7">正本<span class="sound">zhèngběn</span></a><a href="#w8">质量门<span class="sound">zhìliàngmén</span></a></nav><div class="sheet"><h1>AI 文言</h1><p class="subtitle">机器写的中文里，读得懂却没人这么说的词</p><div class="intro"><p>一部给机器写的中文里的怪词典。收的不是错字，是读得懂却没人这么说的词 —— 从英文逐字译来的、把两个熟词硬凑的、为了显得干脆而压掉成分的。</p><p>它们难被发现，正因为读得懂：读者能从「探针」反推回 probe、从「正本」反推回 canonical，于是确实读懂了，读懂了就不会报错，于是它以「读起来怪，但能懂，算了」的形式一路通过。看不懂的词活不过一天，读得懂的怪词能在一个仓库里铺开几十处。</p><p>每个词条给三样：它实际想说什么、中文里怎么说、几个带上下文的例子。用法有二：喂给润色模型当判据，或者转成词表交给 linter 直接报。</p></div><div class="preface"><p><b>判据</b>　看一个词该不该收，只问一句：说中文的人会不会这么说。不问「读者看不看得懂」——看得懂的怪词多了去了，这部词典收的正是这一类。</p><p><b>门槛</b>　只觉得别扭还不能收，得去真的中文技术写作里找证据。但要问的是「中文写到这个意思时怎么写」，不是「有没有人这么写过」—— 有人写过的怪词多了。
+</style><div class="page"><nav><div class="toc-label">目次</div><a href="#w0">按住不动<span class="sound">ànzhùbùdòng</span></a><a href="#w1">测量装置<span class="sound">cèliàngzhuāngzhì</span></a><a href="#w2">电报体<span class="sound">diànbàotǐ</span></a><a href="#w3">扶正<span class="sound">fúzhèng</span></a><a href="#w4">格言式收尾<span class="sound">géyánshìshōuwěi</span></a><a href="#w5">夹具<span class="sound">jiājù</span></a><a href="#w6">探针预注册<span class="sound">tànzhēnyùzhùcè</span></a><a href="#w7">正本<span class="sound">zhèngběn</span></a><a href="#w8">质量门<span class="sound">zhìliàngmén</span></a></nav><div class="sheet"><h1>机器文言</h1><p class="subtitle">机器写的中文里，读得懂却没人这么说的词</p><div class="intro"><p>一部给机器写的中文里的怪词典。收的不是错字，是读得懂却没人这么说的词 —— 从英文逐字译来的、把两个熟词硬凑的、为了显得干脆而压掉成分的。</p><p>它们难被发现，正因为读得懂：读者能从「探针」反推回 probe、从「正本」反推回 canonical，于是确实读懂了，读懂了就不会报错，于是它以「读起来怪，但能懂，算了」的形式一路通过。看不懂的词活不过一天，读得懂的怪词能在一个仓库里铺开几十处。</p><p>每个词条给三样：它实际想说什么、中文里怎么说、几个带上下文的例子。用法有二：喂给润色模型当判据，或者转成词表交给 linter 直接报。</p></div><div class="preface"><p><b>判据</b>　看一个词该不该收，只问一句：说中文的人会不会这么说。不问「读者看不看得懂」——看得懂的怪词多了去了，这部词典收的正是这一类。</p><p><b>门槛</b>　只觉得别扭还不能收，得去真的中文技术写作里找证据。但要问的是「中文写到这个意思时怎么写」，不是「有没有人这么写过」—— 有人写过的怪词多了。
 收词分三步。先看一句：用它表达这个意思，中文里本来有没有。没有，收 —— 中文里的「正本」是原件，不是「唯一权威的那份」。
 本来就有，那要问的只剩一种词：这个用法是不是只靠某个英文词才活着，抽掉那个英文词它就不存在。不是，到此为止，别收 —— 中文自己长出来的说法，怪也轮不到这部词典管。
 靠英文活着的，再看中文写到这个意思时是不是都写它。都写它，那它已经是这个意思在中文里的名字 ——「数据库」也是译来的，今天没人再想起 database —— 不收。

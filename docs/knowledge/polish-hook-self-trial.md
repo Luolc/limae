@@ -2,7 +2,7 @@
 
 本文是操作手册，不是决策记录 —— 挂哪个 hook、为什么按批缓存、A/B 怎么呈现、为什么先在本仓自试，正本都在 `docs/adr/0009-polish-hook-contract.md`，本文不重复。
 
-一句话：`limae hook` 把 Claude Code 每条助手回复的**显示**交给一个模型重写一次，屏幕之外什么都不变 —— transcript 与模型自己看到的内容都是原文。任何一步出问题都直接显示原文 (fail-open)。
+一句话：`limae hook` 让模型重写一次助手回复，但不改 transcript。Claude Code 在原位置改显示，Codex 保留原回复、再在下方用 warning 追加润色版；任何一步出问题都只留下原回复 (fail-open)。两种宿主为什么不同，见 `docs/adr/0014-codex-stop-polish-hook.md`。
 
 回复下方那一块是**表头加完整的改写**：表头写这一轮有几处实质改动 (「── 润色 ── 3 处改动」)，下面是整段改写后的文字。处数回答「它到底动没动」，完整文本回答「读起来有没有更好」 —— 后者只有人能判断，所以要给全文，不能只给摘要。
 
@@ -11,6 +11,20 @@
 本仓 2026-09-02T03:31:04-07:00 读到的这个会话的记录 (37 条，全部计入，未筛选) 给出的量级：`original` 与 `text` 逐字相同的 7 条 (19%)；按引擎分组的归一化编辑距离 (`difflib.SequenceMatcher` 的 ratio 取补) 是 claude/sonnet n=32、中位 0.017、范围 0–0.274，codex/gpt-5.6-terra n=5、中位 0.047、范围 0.029–0.122。**分布长尾且两组样本量悬殊，这些数只描述这一个会话这一个作者，不能当作型号之间的比较结论。**
 
 ## 一、怎么开
+
+### Codex
+
+本仓已经把 hook 写进 `.codex/config.toml`，不会改 `~/.codex/config.toml`，也不会影响其它仓库；所有安装了 limae 并信任 limae checkout 的 clone 都会启用。试用配置把 A/B 采样率固定为 0，所以每条回复最多追加一份润色版。
+
+1. 在运行 Codex 的开发机终端进入 limae checkout，执行 `uv sync`。看到结尾没有 error，且 `.venv/bin/limae` 存在，即为完成。
+2. 在同一终端从这个 checkout 启动一个新的 Codex 会话。若出现 hook trust 界面，先确认正文列出的命令来自本仓 `.codex/config.toml`，再选择信任；进入输入框即为完成。
+3. 在 Codex 输入一段超过 200 个非空白字符的合成中文正文。原回复下方出现 `── 润色 ──` warning 块，或会话态诊断记录了失败原因，即为 hook 已触发。
+
+Codex 的 `Stop` 一次给出完整的 `last_assistant_message`，所以不走下面的分批缓存。hook 只返回 `systemMessage`，不返回官方明定会续跑的 `decision: "block"` 或 `reason`。原回复字段没有被 hook 改写；Codex 是否另存 warning 事件不由这件事推出。Codex 没有 Claude Code 的 `additionalContext` 回注通道，不能把 `systemMessage` 上的 A/B 编号当成模型已经收到的上下文；本仓配置因此关闭 A/B。
+
+`codex-cli 0.153.0` 在 2026-09-05 的 linked-worktree 实测没有加载该 worktree 自己的 hook。需要在合入前的 linked worktree 试验时，把 `.codex/config.toml` 的 `hooks.Stop` 作为会话级配置传入；正常安装与最终试用应在主 checkout 或普通 clone 中验收。已有 Codex 会话是否热加载合入后的配置也要单独确认，没确认前就按「新开或 resume 一次会话」处理。
+
+### Claude Code
 
 hook 配置写进 `.claude/settings.local.json`。这个文件不入库 (见 `.gitignore`)，只影响在本仓开的会话。
 
@@ -49,11 +63,13 @@ hook 配置写进 `.claude/settings.local.json`。这个文件不入库 (见 `.g
 - **两个事件用同一条命令**：进程按 stdin 里的 `hook_event_name` 自己分流，不需要参数。
 - **走 `.venv/bin/limae` 而不是 `uv run limae`**：这条命令每批新行都要起一次进程 (一条回复约十次)，本机实测前者约 150 ms、后者约 190 ms。没有 `.venv` 就先 `uv sync`。
 
-改完**重开一个会话**才生效。
+改完**重开一个 Claude Code 会话**才生效。
 
 ## 二、怎么关
 
-按影响面从小到大：
+Codex 只关本次时，在启动 Codex 前给进程环境设置 `LIMAE_HOOK_DISABLE=1`；完成判据是长回复下方不再出现 `── 润色 ──`。要关掉本仓 Codex 试用，须另提 PR 删除 `.codex/config.toml`，不直接改 main。
+
+Claude Code 按影响面从小到大：
 
 1. **只关本次**：把 `LIMAE_HOOK_DISABLE=1` 加进 `.claude/settings.local.json` 的 `env` 表 (或在启动 agent 的环境里设)，进程一进来就退出，一个模型都不调。
 2. **关掉这台机器上的本仓**：删掉上面那段 `hooks`，重开会话。
@@ -61,7 +77,7 @@ hook 配置写进 `.claude/settings.local.json`。这个文件不入库 (见 `.g
 
 ## 三、旋钮
 
-都是环境变量 —— hook 拿得到的就是会话的环境。写错值 (不是数字) 一律回落到默认值，不会因此打断显示。
+都是环境变量 —— hook 拿得到的就是会话的环境。写错值 (不是数字) 一律回落到默认值，不会因此打断显示。Codex 的本仓配置在 hook 命令上固定 `LIMAE_HOOK_AB_RATE=0`；其余默认值与 Claude Code 相同。
 
 | 变量 | 默认 | 管什么 |
 | --- | --- | --- |
@@ -70,7 +86,7 @@ hook 配置写进 `.claude/settings.local.json`。这个文件不入库 (见 `.g
 | `LIMAE_HOOK_AB_RATE` | 0.1 | 命中 A/B 双跑的概率，0 表示只单跑，1 表示每条都双跑 |
 | `LIMAE_HOOK_TIMEOUT` | 60 | 每个模型调用等多少秒；要小于上面 `settings.local.json` 里的 `timeout` |
 
-单跑用哪个引擎，走的是 `limae polish` 那套配置 (`limae.toml` 的 `[polish]`、`LIMAE_ENGINE`)；A/B 双跑不看这套，它从 ADR-0008 §五 的七个候选里现抽两个。
+单跑用哪个引擎，走的是 `limae polish` 那套配置 (`limae.toml` 的 `[polish]`、`LIMAE_ENGINE`)；A/B 双跑不看这套，它从 ADR-0008 §五 的七个候选里现抽两个。hook 调起的润色子进程会收到 `LIMAE_HOOK_DISABLE=1`，避免 Codex 调 Codex 时递归触发同一个 hook；这个内部标记不需要手工设置。
 
 ## 四、A/B 台账在哪、怎么看
 
@@ -108,10 +124,10 @@ jq -r '.code, (.candidates[] | "\(.label) = \(.engine) \(.model)")' \
 
 ```sh
 ls "${TMPDIR:-/tmp}"/limae-hook/*/polish/
-jq -r '.engine, .model' "${TMPDIR:-/tmp}"/limae-hook/*/polish/<message_id>.json
+jq -r '.engine, .model' "${TMPDIR:-/tmp}"/limae-hook/*/polish/<reply_id>.json
 ```
 
-一轮一个 JSON，**文件名就是 `message_id`**，同一条消息重跑会覆盖它自己那份。里面有六项：时间、`message_id`、引擎与型号，以及三份文本 —— **它们是三份不是两份，这一点是有用的**：
+一轮一个 JSON，**文件名就是宿主给的回复 id**：Claude Code 用 `message_id`，Codex 用 `turn_id`；同一条回复重跑会覆盖它自己那份。JSON 内的字段名仍是 `message_id`，值采用同一个宿主 id。里面有六项：时间、`message_id`、引擎与型号，以及三份文本 —— **它们是三份不是两份，这一点是有用的**：
 
 | 字段 | 是什么 |
 | --- | --- |
@@ -146,7 +162,7 @@ tail "${TMPDIR:-/tmp}"/limae-hook/*/diagnostics.jsonl
 | 字段 | 是什么 |
 | --- | --- |
 | `at` | UTC 时间 |
-| `message_id` | 是哪条消息，用来跟屏幕上的回复对上 |
+| `message_id` | 是哪条回复：Claude Code 记 `message_id`，Codex 记 `turn_id`，用来跟屏幕上的回复对上 |
 | `step` | 哪一步：`assemble` 拼分片、`single` 单跑润色、`ab` A/B 对照、`fix` 确定性修复、`record` 落台账、`display` hook 自己崩了 |
 | `kind` | 哪一类，见下表 |
 

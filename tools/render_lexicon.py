@@ -239,14 +239,14 @@ def render(data: dict[str, Any]) -> str:
       f"<p>{_inline(p)}</p>" for p in cast(list[str], data["preface"])
   )
   return (
-      f"<title>AI 文言</title><style>{STYLE}</style>"
+      f"<title>机器文言</title><style>{STYLE}</style>"
       '<div class="page"><nav><div class="toc-label">目次</div>'
       + "".join(
           f'<a href="#w{i}">{html.escape(str(e["term"]))}'
           f'<span class="sound">{html.escape("".join(e["pinyin"]))}</span></a>'
           for i, e in enumerate(ordered)
       )
-      + '</nav><div class="sheet"><h1>AI 文言</h1>'
+      + '</nav><div class="sheet"><h1>机器文言</h1>'
       '<p class="subtitle">机器写的中文里，读得懂却没人这么说的词</p>'
       f'<div class="intro">{intro}</div>'
       f'<div class="preface"><p><b>判据</b>　{_inline(str(data["standard"]))}'

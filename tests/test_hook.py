@@ -3,9 +3,11 @@ import json
 import os
 import pathlib
 import re
+import subprocess
 import sys
 import threading
 import time
+import tomllib
 
 import pytest
 
@@ -27,6 +29,9 @@ HANDBOOK = (
     / "docs"
     / "knowledge"
     / "polish-hook-self-trial.md"
+)
+CODEX_CONFIG = (
+    pathlib.Path(__file__).resolve().parents[1] / ".codex" / "config.toml"
 )
 # A rewrite carrying the slip a model reliably makes in Chinese prose:
 # the dash of `zh-typography-8`, fixable and error-level, with the
@@ -160,7 +165,7 @@ def run_hook(
   if not out:
     return None
   answer = json.loads(out)
-  return answer["hookSpecificOutput"]
+  return answer.get("hookSpecificOutput", answer)
 
 
 def display(
@@ -192,6 +197,26 @@ def stop(session: str = SESSION) -> dict[str, object]:
       "cwd": "/nonexistent",
       "hook_event_name": hook.STOP,
       "stop_hook_active": False,
+      "last_assistant_message": LONG,
+  }
+
+
+def codex_stop(
+    text: str,
+    *,
+    session: str = SESSION,
+    turn: str = "turn",
+    cwd: pathlib.Path | None = None,
+) -> dict[str, object]:
+  return {
+      "session_id": session,
+      "transcript_path": "/dev/null",
+      "cwd": str(cwd) if cwd is not None else "/nonexistent",
+      "hook_event_name": hook.STOP,
+      "model": "synthetic-model",
+      "turn_id": turn,
+      "stop_hook_active": False,
+      "last_assistant_message": text,
   }
 
 
@@ -385,6 +410,100 @@ def test_the_disable_variable_turns_the_hook_off(
   # Unset, the same message is polished: the switch switches something.
   assert run_hook(payload, tmp_path, monkeypatch, capsys) is not None
   assert calls(tmp_path) == 1
+
+
+def test_the_codex_hook_command_fails_open_until_limae_is_installed(
+    tmp_path: pathlib.Path,
+):
+  with CODEX_CONFIG.open("rb") as f:
+    settings = tomllib.load(f)
+  hooks = settings.get("hooks")
+  assert isinstance(hooks, dict)
+  stops = hooks.get("Stop")
+  assert isinstance(stops, list)
+  group = stops[0]
+  assert isinstance(group, dict)
+  handlers = group.get("hooks")
+  assert isinstance(handlers, list)
+  handler = handlers[0]
+  assert isinstance(handler, dict)
+  command = handler.get("command")
+  assert isinstance(command, str)
+
+  bin_directory = tmp_path / "bin"
+  stub(bin_directory, "git", f"echo {tmp_path}")
+  environment = {"PATH": f"{bin_directory}:/usr/bin:/bin"}
+  missing = subprocess.run(  # noqa: S603
+      ["sh", "-c", command],
+      env=environment,
+      check=False,
+      capture_output=True,
+      text=True,
+      timeout=5,
+  )
+  assert missing.returncode == 0
+
+  marker = tmp_path / "ran"
+  stub(tmp_path / ".venv" / "bin", "limae", f"touch {marker}\nexit 7")
+  installed = subprocess.run(  # noqa: S603
+      ["sh", "-c", command],
+      env=environment,
+      check=False,
+      capture_output=True,
+      text=True,
+      timeout=5,
+  )
+  assert installed.returncode == 7
+  assert marker.is_file()
+
+
+def test_codex_stop_appends_one_rewrite_without_continuation_fields(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  gateway(
+      tmp_path,
+      f'test "$LIMAE_HOOK_DISABLE" = 1 || exit 7\n'
+      f"cat > /dev/null\necho {POLISHED}",
+  )
+
+  answer = run_hook(
+      codex_stop(LONG, cwd=tmp_path), tmp_path, monkeypatch, capsys
+  )
+
+  assert answer is not None
+  warning = answer["systemMessage"]
+  assert isinstance(warning, str)
+  assert warning.startswith("── 润色 ── 1 处改动\n")
+  assert warning.endswith(POLISHED)
+  assert set(answer) == {"systemMessage"}
+  assert calls(tmp_path) == 1
+  records = runs(tmp_path)
+  assert len(records) == 1
+  assert records[0].stem == "turn"
+
+
+def test_codex_stop_fails_open_and_a_later_reply_can_still_be_polished(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+  gateway(tmp_path, "cat > /dev/null\nexit 1")
+  assert (
+      run_hook(codex_stop(LONG, cwd=tmp_path), tmp_path, monkeypatch, capsys)
+      is None
+  )
+
+  gateway(tmp_path, f"cat > /dev/null\necho {POLISHED}")
+  answer = run_hook(
+      codex_stop(LONG, turn="second", cwd=tmp_path),
+      tmp_path,
+      monkeypatch,
+      capsys,
+  )
+  assert answer is not None
+  assert POLISHED in str(answer["systemMessage"])
 
 
 def test_an_unsampled_turn_runs_one_engine_and_writes_no_ledger(
