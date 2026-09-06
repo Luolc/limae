@@ -266,6 +266,7 @@ mod tests {
     fn terminology_precedes_width_and_spacing_in_one_pass() -> Result<(), Box<dyn Error>> {
         let root =
             std::env::temp_dir().join(format!("limae-pipeline-order-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir(&root)?;
         std::fs::write(root.join("limae.toml"), "enable_experimental = true")?;
         let config = resolve(&root, CliOverrides::default());

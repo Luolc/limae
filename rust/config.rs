@@ -553,3 +553,32 @@ fn severity_overrides(
     }
     Ok(overrides)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rule_masks_preserve_other_settings_and_borrow_when_empty() -> Result<(), &'static str> {
+        let mut config = ResolvedConfig::default();
+        config
+            .severity
+            .insert(RuleId::ZH_TYPOGRAPHY_5, Severity::Warning);
+        config.skip_zh_units = "年".to_owned();
+
+        let disabled = BTreeSet::from([RuleId::ZH_TYPOGRAPHY_5]);
+        let masked = config.without_rules(&disabled);
+        assert!(!masked.is_enabled(RuleId::ZH_TYPOGRAPHY_5));
+        assert_eq!(masked.severity(RuleId::ZH_TYPOGRAPHY_5), Severity::Warning);
+        assert_eq!(masked.skip_zh_units(), "年");
+        assert!(config.is_enabled(RuleId::ZH_TYPOGRAPHY_5));
+        assert_eq!(config.severity(RuleId::ZH_TYPOGRAPHY_5), Severity::Warning);
+        assert_eq!(config.skip_zh_units(), "年");
+
+        let Cow::Borrowed(unmasked) = config.without_rules(&BTreeSet::new()) else {
+            return Err("an empty mask must borrow the original configuration");
+        };
+        assert!(std::ptr::eq(unmasked, &config));
+        Ok(())
+    }
+}
