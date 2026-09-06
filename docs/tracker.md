@@ -13,7 +13,7 @@ backlog 的正本，由 `limae-orchestra` 在合入后记账 (全局守则「多
 
 ## 实现与分发
 
-- **Rust 全量迁移**：[ADR-0015](adr/0015-rust-migration.md) 经 PR #66 合入，仓级约定 (G) 经 PR #67 合入；A1 的 Cargo 项目、文本原语与 Rust CI 经 PR #69 合入，下一项为 A2 的 Markdown 保护范围。按 ADR 的 A–E 自动推进、agent 互审，直到正式 `limae` 为 Rust、Python deprecated 且参考实现与测试保留；实际 tag / release / publish 前停止。进度仅在此记，任务依赖与验收合同见 ADR。
+- **Rust 全量迁移**：[ADR-0015](adr/0015-rust-migration.md) 经 PR #66 合入，仓级约定 (G) 经 PR #67 合入；A1 文本基础与 Rust CI (#69)、A2 Markdown 保护范围 (#73) 已完成，A2 前的引用配对基线修正见 #71。下一项为 A5 配置解析，之后接具体规则。按 ADR 的 A–E 自动推进、agent 互审，直到正式 `limae` 为 Rust、Python deprecated 且参考实现与测试保留；实际 tag / release / publish 前停止。进度仅在此记，任务依赖与验收合同见 ADR。
 - **Rust 迁移收尾补项**：E 的默认 pre-commit id 切换必须包含 `.pre-commit-hooks.yaml` 的 `language` / `entry` 与全新消费仓安装验收 (PR #66 复审 P2)。orchestra 按用户「当前 Python 全部功能迁移」的范围对账 (2026-09-06)，补入现有 `tools/render_lexicon.py` 的 HTML 生成功能：迁为 Rust 开发工具，以同源生成产物字节一致验收；Python 脚本保留作参考，不增加 rubrics 等新输出。
 - **后续分发形态**：多语言 SDK、LSP、编辑器与 CI 集成，对标 AutoCorrect；Rust 迁移完成后另起 ADR，不属于本轮 A–E。
 - **Rust 发版准备** (2026-09-06)：许可证尚未选定；[维护者的开发机发布手册 (私有仓)](https://github.com/Luolc/machine-setup/blob/main/docs/knowledge/crates-io-publishing.md) 已经 machine-setup #194 合入，认证仍待用户创建 scoped token，首发后配置 GitHub Actions Trusted Publishing。首发前只能验引用可解析且值非空，不能据此声称 token 有效；操作与权限配置以手册为准，不在此重复。该待办不阻塞代码迁移与无需认证的发布预演，实际发布仍在本轮授权停止点之外。
