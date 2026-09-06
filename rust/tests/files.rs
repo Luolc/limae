@@ -311,9 +311,17 @@ fn missing_suffixes_and_outer_paths_are_not_lost() -> TestResult {
         root.path().join("skip.md"),
         PathBuf::from("./keep.md"),
     ];
+    let actual = not_ignored(&input, &repo)?;
     assert_eq!(
-        not_ignored(&input, &repo)?,
-        vec![input[0].clone(), input[2].clone(), input[3].clone()]
+        actual
+            .iter()
+            .map(|path| path.as_os_str())
+            .collect::<Vec<_>>(),
+        [
+            input[0].as_os_str(),
+            input[2].as_os_str(),
+            input[3].as_os_str()
+        ]
     );
     Ok(())
 }
