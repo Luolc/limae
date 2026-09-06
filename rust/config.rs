@@ -9,6 +9,7 @@
 //! assert_eq!(config.severity(RuleId::ZH_TYPOGRAPHY_1), Severity::Error);
 //! ```
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs;
@@ -60,6 +61,17 @@ impl RuleId {
     #[must_use]
     pub const fn metadata(self) -> &'static RuleMetadata {
         &RULES[self.0 as usize]
+    }
+
+    pub(crate) fn all() -> impl Iterator<Item = Self> {
+        (0..RULES.len()).map(|index| Self(index as u8))
+    }
+
+    pub(crate) fn from_name(name: &str) -> Option<Self> {
+        RULES
+            .iter()
+            .position(|metadata| metadata.name == name)
+            .map(|index| Self(index as u8))
     }
 }
 
@@ -245,6 +257,18 @@ impl ResolvedConfig {
     pub fn skip_zh_units(&self) -> &str {
         &self.skip_zh_units
     }
+
+    pub(crate) fn without_rules<'config>(
+        &'config self,
+        disabled: &BTreeSet<RuleId>,
+    ) -> Cow<'config, Self> {
+        if disabled.is_empty() {
+            return Cow::Borrowed(self);
+        }
+        let mut masked = self.clone();
+        masked.enabled.retain(|rule| !disabled.contains(rule));
+        Cow::Owned(masked)
+    }
 }
 
 impl Default for ResolvedConfig {
@@ -379,10 +403,7 @@ fn line_column(input: &str, byte: usize) -> (usize, usize) {
 }
 
 fn rule_id(name: &str) -> Option<RuleId> {
-    RULES
-        .iter()
-        .position(|metadata| metadata.name == name)
-        .map(|index| RuleId(index as u8))
+    RuleId::from_name(name)
 }
 
 fn cli_rule_ids(
@@ -531,4 +552,33 @@ fn severity_overrides(
         overrides.insert(id, severity);
     }
     Ok(overrides)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rule_masks_preserve_other_settings_and_borrow_when_empty() -> Result<(), &'static str> {
+        let mut config = ResolvedConfig::default();
+        config
+            .severity
+            .insert(RuleId::ZH_TYPOGRAPHY_5, Severity::Warning);
+        config.skip_zh_units = "年".to_owned();
+
+        let disabled = BTreeSet::from([RuleId::ZH_TYPOGRAPHY_5]);
+        let masked = config.without_rules(&disabled);
+        assert!(!masked.is_enabled(RuleId::ZH_TYPOGRAPHY_5));
+        assert_eq!(masked.severity(RuleId::ZH_TYPOGRAPHY_5), Severity::Warning);
+        assert_eq!(masked.skip_zh_units(), "年");
+        assert!(config.is_enabled(RuleId::ZH_TYPOGRAPHY_5));
+        assert_eq!(config.severity(RuleId::ZH_TYPOGRAPHY_5), Severity::Warning);
+        assert_eq!(config.skip_zh_units(), "年");
+
+        let Cow::Borrowed(unmasked) = config.without_rules(&BTreeSet::new()) else {
+            return Err("an empty mask must borrow the original configuration");
+        };
+        assert!(std::ptr::eq(unmasked, &config));
+        Ok(())
+    }
 }
