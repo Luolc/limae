@@ -29,3 +29,6 @@ expect_used = "deny"
 dbg_macro = "deny"
 print_stdout = "deny"
 print_stderr = "deny"
+
+[dependencies]
+regex = "1"
