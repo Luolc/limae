@@ -62,7 +62,8 @@ zh-tell-1 / zh-tell-3 / zh-tell-4 / en-tell-1 / en-tell-3 / zh-tell-5 / zh-word-
 词表分两种匹配语义，按词表所属的规则定，两种都不把条目当正则：
 
 - **中文词表 (zh-tell-1 / zh-tell-3 / zh-tell-4) 匹配字面子串 (literal substring)**：每一条按原文逐字匹配，不做分词、不做繁简或大小写折叠 (zh-word-1 的锚点是唯一的例外，见 zh-word-1)。命中的那几个字符就是违规的位置。
-- **英文词表 (en-tell-1 / en-tell-3) 匹配整词 (whole word)、大小写不敏感**：一条只有在命中处两端都不是 `A-Za-z0-9_` 时才算数 —— `pivotal` 不命中 `pivotally`、也不命中 `is_pivotal`；连字符不是边界字符，所以 `load-bearing` 在 `non-load-bearing` 里算命中 (连字符压缩本身就是要管的形态)。**不做词干还原 (stemming)**：要管的屈折形在词表里逐条写全 (`delve` / `delves` / `delving`)。
+- **英文词表 (en-tell-1 / en-tell-3) 匹配整词 (whole word)、大小写不敏感**：命中处两端须满足下面的英文边界合同 —— `pivotal` 不命中 `pivotally`、也不命中 `is_pivotal`；连字符允许相邻，所以 `load-bearing` 在 `non-load-bearing` 里算命中 (连字符压缩本身就是要管的形态)。**不做词干还原 (stemming)**：要管的屈折形在词表里逐条写全 (`delve` / `delves` / `delving`)。
+- **英文大小写与边界合同 (en-tell-1 / en-tell-2 / en-tell-3)**：对 ASCII 词条与句式关键字，ASCII 字母不分大小写；另将 `İ` (U+0130)、`ı` (U+0131) 与 `i`，`ſ` (U+017F) 与 `s`，U+212A (Kelvin sign) 与 `k` 视为等价。整词匹配要求两端的相邻字符 (若存在) 均不属于 `A-Za-z0-9_` 加这四个码点组成的字符类；其它非 ASCII 字符允许相邻。此合同对应 Python 参考实现的 `re.IGNORECASE`。
 - **豁免表 (zh-tell-5 / zh-word-2) 按覆盖 (cover) 判定**：表里某条在行内的某次出现盖住了命中处的第一个字 (zh-tell-5 的那个「零」、zh-word-2 的「秘」)，这一处就不报。条目都是连续的汉字，所以「盖住」就是命中处落在这次出现的范围之内 —— `零售` 盖住「零售价格」里的零，`从零` 盖住「从零建机」里的零：命中处两侧的固定搭配用同一张表表达，不需要前缀与后缀两套规则。
 - **豁免表在整行范围内查找，不受全局豁免约束**，与 zh-word-1 的锚点同理 —— 它是关于用词的证据，不是违规本身；违规本身照旧受全局豁免约束。
 - **长的先匹配**：一条是另一条的子串时，参与匹配的顺序按长度降序，同一处只算一次命中。
@@ -595,7 +596,7 @@ The is_pivotal column of the table.             → 不变 (整词匹配，`_` �
 - **判定**：同一行内出现下面两种形态之一，两段之间至多 40 个字符 (任何字符都算，含标点)：
   1. `not just` … `but`；
   2. 否定的系动词 … 肯定的系动词 —— 前者是 `it's not` / `that's not` / `they're not` / `is not` / `are not` / `was not` / `were not` / `isn't` / `aren't` / `wasn't` / `weren't`，后者是 `it's` / `that's` / `they're` / `it is` / `that is` / `they are`。
-- 两种形态都按整词匹配、大小写不敏感，直撇号 `'` 与弯撇号 `’` 等价。
+- 两种形态的关键字与整词边界均按「词表」中的英文大小写与边界合同匹配，直撇号 `'` 与弯撇号 `’` 等价。
 - **每个非重叠匹配各报一处**，与 zh-tell-2 同规矩：**句式类规则 (zh-tell-2 / en-tell-2) 逐处报** —— 每个句式各是一处独立违规；**词表类规则 (zh-tell-1 / zh-tell-3 / zh-tell-4 / en-tell-1 / en-tell-3) 一行只报一处** —— 同类词成串出现，逐处报只会刷屏。
 - **不收 `not only … but also …`**：它在英文里是正常的正式行文，与 zh-tell-2 不收「不仅 … 而且 …」同一个理由。
 - **不修复**：改写要重排整句，没有唯一修法。
@@ -653,7 +654,7 @@ Read the `load-bearing` flag from config.      → 不变 (行内代码豁免)
 
 - **判定**：某条 entry 的 `wrong` 出现在某一行，**且同一行内出现该条 `anchors` 里的任一个锚点词**，则每个 `wrong` 命中各报一处 (与修复一一对应，所以不是「一行一处」)。
 - **锚点是语境证据，不是违规的一部分**：锚点在**整行**范围内查找，**不受全局豁免约束** —— 术语最常见的锚点正是行内代码里的 `secret` / `token`。违规本身 (`wrong` 的那几个字) 照旧受全局豁免约束。
-- **锚点匹配大小写不敏感**；`wrong` 与 `right` 逐字匹配。
+- **锚点匹配**：整行与锚点各自按 Unicode lowercase 转小写后查找字面子串，对应 Python 的 `str.lower()`；它与英文规则的 `re.IGNORECASE` 是不同的合同。`wrong` 与 `right` 逐字匹配。
 - **锚点是必要条件**：`anchors` 为空的 entry 永不命中，因此永不报、永不改。
 - **修复**：把命中的 `wrong` 换成同一条的 `right`。没有锚点的行一个字都不改 —— 「代币」在讲钱的语境里是对的，只有 `token` / `OAuth` / `鉴权` 在同一行时才是「令牌」的误译。
 - **词表只收「有唯一正确替换、且能被同行锚点消歧」的词**：「门控」(gate)、「一等公民」(first-class citizen)、「契约」(contract) 没有稳妥的唯一替换，也没有可靠锚点，不收；「秘密」(secret) 收不进来的理由记在 `zh-word-1.toml` 的注释里 —— 锚点与错误负相关。
