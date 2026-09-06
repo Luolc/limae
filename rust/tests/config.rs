@@ -428,11 +428,31 @@ fn selection_validation_rejects_unknown_conflicting_and_experimental_ids() -> Te
             return Err("expected a selection error".into());
         };
         assert!(error.to_string().contains(message));
+        if category == "experimental" {
+            assert!(error.to_string().contains("`enable`"));
+        }
         if category == "unknown" {
             assert!(!error.to_string().contains("ACME_SYNTHETIC_MARKER"));
             assert!(!format!("{error:?}").contains("ACME_SYNTHETIC_MARKER"));
         }
     }
+    Ok(())
+}
+
+#[test]
+fn cli_experimental_selection_names_the_cli_key() -> TestResult {
+    let enabled = vec!["zh-tell-1".to_owned()];
+    let error = resolve(
+        Path::new("."),
+        CliOverrides {
+            disable: None,
+            enable: Some(&enabled),
+        },
+    );
+    let Err(ConfigError::ExperimentalRuleEnabled { key, .. }) = error else {
+        return Err("expected an experimental selection error".into());
+    };
+    assert_eq!(key, "--enable");
     Ok(())
 }
 

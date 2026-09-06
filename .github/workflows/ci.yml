@@ -75,8 +75,11 @@ jobs:
           RUSTDOCFLAGS: -Dwarnings
         run: cargo doc --no-deps --locked
 
+      - name: Rust differential artifacts
+        run: cargo build --locked --bin limae-rs --example diff-probe
+
       - name: Tests
-        run: uv run pytest -q
+        run: uv run pytest -q --rust-bin target/debug/limae-rs
 
       # ruff + pyink + isort + basedpyright + pydoclint + uv-lock + limae.
       # basedpyright type-checks against .venv, so this runs after `uv sync`.
