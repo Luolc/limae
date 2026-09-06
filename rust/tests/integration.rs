@@ -1,3 +1,5 @@
+mod markdown;
+
 use limae::text::{
     char_at, char_before, halfwidth_digit, is_cjk, is_python_whitespace, is_word, snippet,
 };
