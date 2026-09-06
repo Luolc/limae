@@ -52,6 +52,25 @@ run_pre_commit_expect() {
   fi
 }
 
+write_consumer_config() {
+  local engine=$1
+  local hook_id=$2
+  local display_name=$3
+
+  printf '%s\n' \
+    'repos:' \
+    "  - repo: $source_repo" \
+    "    rev: $revision" \
+    '    hooks:' \
+    "      - id: $hook_id" \
+    "        alias: $engine-check" \
+    "      - id: $hook_id" \
+    "        alias: $engine-fix" \
+    "        name: Fix Markdown with limae ($display_name)" \
+    '        args: [--fix]' \
+    >"$consumer/.pre-commit-config.yaml"
+}
+
 [[ -x $pre_commit ]] || fail 'run uv sync before the pre-commit distribution check'
 revision=$(git -C "$repo_root" rev-parse --verify 'HEAD^{commit}')
 source_repo="$work_dir/source.git"
@@ -69,65 +88,55 @@ printf '%s\n' '#!/usr/bin/env bash' 'exit 98' >"$poison_dir/limae"
 chmod +x "$poison_dir/limae-rs" "$poison_dir/limae"
 
 git -C "$consumer" init -q
-printf '%s\n' \
-  'repos:' \
-  "  - repo: $source_repo" \
-  "    rev: $revision" \
-  '    hooks:' \
-  '      - id: limae-rs' \
-  '        alias: rust-check' \
-  '        files: ^rust\.md$' \
-  '      - id: limae-rs' \
-  '        alias: rust-fix' \
-  '        name: Fix Markdown with limae (Rust)' \
-  '        args: [--fix]' \
-  '        files: ^rust\.md$' \
-  '      - id: limae' \
-  '        alias: python-check' \
-  '        files: ^python\.md$' \
-  '      - id: limae' \
-  '        alias: python-fix' \
-  '        name: Fix Markdown with limae (Python)' \
-  '        args: [--fix]' \
-  '        files: ^python\.md$' \
-  >"$consumer/.pre-commit-config.yaml"
-printf '%s\n' '中A' >"$consumer/rust.md"
-printf '%s\n' '中A' >"$consumer/python.md"
-git -C "$consumer" add .
-
 [[ ! -e $pre_commit_home ]] || fail 'isolated PRE_COMMIT_HOME was not initially absent'
-run_pre_commit_expect 0 install "$work_dir/install.log" install-hooks
-
-rust_installs=("$pre_commit_home"/repo*/rustenv-*/bin/limae-rs)
-python_installs=("$pre_commit_home"/repo*/py_env-*/bin/limae)
-[[ ${#rust_installs[@]} -eq 1 && -x ${rust_installs[0]} ]] || \
-  fail 'pre-commit did not install exactly one Rust binary in its cache'
-[[ ${#python_installs[@]} -eq 1 && -x ${python_installs[0]} ]] || \
-  fail 'pre-commit did not install exactly one Python binary in its cache'
-printf '%s\n' 'install: isolated Rust and Python executables are present'
 
 for engine in rust python; do
+  if [[ $engine == rust ]]; then
+    hook_id=limae-rs
+    display_name=Rust
+  else
+    hook_id=limae
+    display_name=Python
+  fi
+  write_consumer_config "$engine" "$hook_id" "$display_name"
+  printf '%s\n' '中A' >"$consumer/sample.md"
+  git -C "$consumer" add .
+
+  run_pre_commit_expect 0 "$engine install" "$work_dir/$engine-install.log" install-hooks
+  if [[ $engine == rust ]]; then
+    rust_installs=("$pre_commit_home"/repo*/rustenv-*/bin/limae-rs)
+    [[ ${#rust_installs[@]} -eq 1 && -x ${rust_installs[0]} ]] || \
+      fail 'pre-commit did not install exactly one Rust binary in its cache'
+  else
+    python_installs=("$pre_commit_home"/repo*/py_env-*/bin/limae)
+    [[ ${#python_installs[@]} -eq 1 && -x ${python_installs[0]} ]] || \
+      fail 'pre-commit did not install exactly one Python binary in its cache'
+  fi
+  printf '%s\n' "$engine install: isolated executable is present"
+
   run_pre_commit_expect 1 "$engine violation" "$work_dir/$engine-violation.log" \
     run "$engine-check" --all-files
   grep -Fq 'zh-typography-4' "$work_dir/$engine-violation.log" || \
     fail_with_log "$work_dir/$engine-violation.log" \
       "$engine violation did not report zh-typography-4"
   printf '%s\n' '中A' >"$work_dir/$engine-unfixed.expected"
-  cmp -s "$work_dir/$engine-unfixed.expected" "$consumer/$engine.md" || \
+  cmp -s "$work_dir/$engine-unfixed.expected" "$consumer/sample.md" || \
     fail "$engine check changed the violating file"
 
   run_pre_commit_expect 1 "$engine fix" "$work_dir/$engine-fix.log" \
     run "$engine-fix" --all-files
   printf '%s\n' '中 A' >"$work_dir/$engine-fixed.expected"
-  cmp -s "$work_dir/$engine-fixed.expected" "$consumer/$engine.md" || \
+  cmp -s "$work_dir/$engine-fixed.expected" "$consumer/sample.md" || \
     fail_with_log "$work_dir/$engine-fix.log" \
       "$engine fix did not write the expected Markdown"
   printf '%s\n' "$engine fix: wrote expected Markdown"
 
   run_pre_commit_expect 0 "$engine clean" "$work_dir/$engine-clean.log" \
     run "$engine-check" --all-files
-  cmp -s "$work_dir/$engine-fixed.expected" "$consumer/$engine.md" || \
+  cmp -s "$work_dir/$engine-fixed.expected" "$consumer/sample.md" || \
     fail "$engine clean check changed the fixed file"
 done
+
+printf '%s\n' 'install: isolated Rust and Python executables are present'
 
 printf 'pre-commit consumer check passed at revision %s\n' "$revision"
