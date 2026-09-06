@@ -1,7 +1,7 @@
 //! File selection shared by explicit inputs and Git's tracked Markdown list.
 
 use std::fs;
-use std::io;
+use std::io as std_io;
 use std::path::{Path, PathBuf};
 
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
@@ -10,6 +10,8 @@ use thiserror::Error;
 
 mod git;
 pub use git::{GitError, tracked_markdown};
+mod io;
+pub use io::{FileError, FileText, FixStatus, fix_file};
 
 /// A discovery, reading, resolution, or pattern error in file filtering.
 #[derive(Debug, Error)]
@@ -22,7 +24,7 @@ pub enum IgnoreError {
     Io {
         path: PathBuf,
         #[source]
-        source: io::Error,
+        source: std_io::Error,
     },
     /// The ignore file could not be compiled in full.
     #[error("{path}:{line}: invalid ignore pattern: {source}")]
@@ -34,7 +36,7 @@ pub enum IgnoreError {
     },
 }
 
-fn at(path: &Path, source: io::Error) -> IgnoreError {
+fn at(path: &Path, source: std_io::Error) -> IgnoreError {
     IgnoreError::Io {
         path: path.to_owned(),
         source,
@@ -53,7 +55,7 @@ pub fn find_ignore(start: &Path) -> Result<Option<PathBuf>, IgnoreError> {
         match fs::metadata(&candidate) {
             Ok(metadata) if metadata.is_file() => return Ok(Some(candidate)),
             Ok(_) => (),
-            Err(err) if err.kind() == io::ErrorKind::NotFound => (),
+            Err(err) if err.kind() == std_io::ErrorKind::NotFound => (),
             Err(err) => return Err(at(&candidate, err)),
         }
         let git = directory.join(".git");
