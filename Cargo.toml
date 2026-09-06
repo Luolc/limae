@@ -4,12 +4,15 @@ version = "0.13.0"
 edition = "2024"
 publish = false
 include = [
-  "Cargo.toml",
-  "Cargo.lock",
-  "README.md",
-  "rust-toolchain.toml",
-  "rust/**/*.rs",
-  "spec/**",
+  "/Cargo.toml",
+  "/Cargo.lock",
+  "/README.md",
+  "/rust-toolchain.toml",
+  "/rust/**/*.rs",
+  "/spec/README.md",
+  "/spec/fixtures/**",
+  "/spec/rules.md",
+  "/spec/wordlists/**",
 ]
 
 [lib]
