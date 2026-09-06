@@ -2,4 +2,5 @@
 
 pub mod config;
 pub mod markdown;
+pub mod rules;
 pub mod text;
