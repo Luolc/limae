@@ -123,11 +123,6 @@ fn rule_metadata_matches_the_specification() {
         })
         .collect();
     assert_eq!(actual, expected);
-    assert!(
-        RULES
-            .iter()
-            .all(|metadata| metadata.id.as_str() == metadata.name)
-    );
 }
 
 #[test]
@@ -240,6 +235,17 @@ fn git_entry_stops_discovery_for_a_file_or_directory() -> TestResult {
 }
 
 #[test]
+fn a_repository_root_configuration_is_still_used() -> TestResult {
+    let temp = TempDir::new("git-root-config")?;
+    write_config(temp.path(), "disable = [\"zh-typography-1\"]\n")?;
+    fs::create_dir(temp.path().join(".git"))?;
+
+    let config = resolve(temp.path(), CliOverrides::default())?;
+    assert!(!config.is_enabled(RuleId::ZH_TYPOGRAPHY_1));
+    Ok(())
+}
+
+#[test]
 fn any_cli_flag_wholly_replaces_the_file_even_when_its_value_is_empty() -> TestResult {
     let temp = TempDir::new("cli-override")?;
     write_config(
@@ -307,22 +313,33 @@ fn empty_cli_flag_skips_a_malformed_file_but_absent_flags_do_not() -> TestResult
 fn selection_validation_rejects_unknown_conflicting_and_experimental_ids() -> TestResult {
     let temp = TempDir::new("selection-errors")?;
     let cases = [
-        ("unknown", "disable = [\"R99\"]\n", "unknown"),
+        (
+            "unknown",
+            "disable = [\"ACME_SYNTHETIC_MARKER\"]\n",
+            "unknown",
+            "unknown rule id",
+        ),
         (
             "conflict",
             "disable = [\"zh-typography-9\"]\nenable = [\"zh-typography-9\"]\n",
             "conflict",
+            "in both",
         ),
-        ("experimental", "enable = [\"zh-tell-1\"]\n", "experimental"),
+        (
+            "experimental",
+            "enable = [\"zh-tell-1\"]\n",
+            "experimental",
+            "cannot be enabled one by one",
+        ),
     ];
-    for (directory_name, contents, expected) in cases {
+    for (directory_name, contents, category, message) in cases {
         let directory = temp.path().join(directory_name);
         fs::create_dir(&directory)?;
         write_config(&directory, contents)?;
         let error = resolve(&directory, CliOverrides::default());
         assert!(
             matches!(
-                (&error, expected),
+                (&error, category),
                 (Err(ConfigError::UnknownRule { .. }), "unknown")
                     | (Err(ConfigError::ConflictingRule { .. }), "conflict")
                     | (
@@ -332,6 +349,14 @@ fn selection_validation_rejects_unknown_conflicting_and_experimental_ids() -> Te
             ),
             "wrong error category for {directory_name}"
         );
+        let Err(error) = error else {
+            return Err("expected a selection error".into());
+        };
+        assert!(error.to_string().contains(message));
+        if category == "unknown" {
+            assert!(!error.to_string().contains("ACME_SYNTHETIC_MARKER"));
+            assert!(!format!("{error:?}").contains("ACME_SYNTHETIC_MARKER"));
+        }
     }
     Ok(())
 }
@@ -340,30 +365,57 @@ fn selection_validation_rejects_unknown_conflicting_and_experimental_ids() -> Te
 fn known_key_types_severity_and_unit_range_are_validated() -> TestResult {
     let temp = TempDir::new("value-errors")?;
     let cases = [
-        ("list", "disable = \"zh-typography-1\"\n", "type"),
-        ("bool", "enable_experimental = \"true\"\n", "type"),
-        ("severity-table", "severity = \"warning\"\n", "type"),
+        (
+            "list",
+            "disable = \"zh-typography-1\"\n",
+            "type",
+            "must be a list of rule ids",
+        ),
+        (
+            "bool",
+            "enable_experimental = \"true\"\n",
+            "type",
+            "must be a boolean",
+        ),
+        (
+            "severity-table",
+            "severity = \"warning\"\n",
+            "type",
+            "must be a table of rule id = severity",
+        ),
         (
             "severity-value",
             "severity = { zh-typography-1 = \"fatal\" }\n",
             "severity",
+            "must be 'error' or 'warning'",
         ),
         (
             "severity-rule",
             "severity = { R99 = \"error\" }\n",
             "unknown",
+            "unknown rule id",
         ),
-        ("units-type", "skip_zh_units = [\"年\"]\n", "type"),
-        ("units-range", "skip_zh_units = \"年 月\"\n", "units"),
+        (
+            "units-type",
+            "skip_zh_units = [\"年\"]\n",
+            "type",
+            "must be a string of CJK characters",
+        ),
+        (
+            "units-range",
+            "skip_zh_units = \"年 月\"\n",
+            "units",
+            "must be a string of CJK characters",
+        ),
     ];
-    for (directory_name, contents, expected) in cases {
+    for (directory_name, contents, category, message) in cases {
         let directory = temp.path().join(directory_name);
         fs::create_dir(&directory)?;
         write_config(&directory, contents)?;
         let error = resolve(&directory, CliOverrides::default());
         assert!(
             matches!(
-                (&error, expected),
+                (&error, category),
                 (Err(ConfigError::InvalidType { .. }), "type")
                     | (Err(ConfigError::InvalidSeverity { .. }), "severity")
                     | (Err(ConfigError::InvalidSkipZhUnits { .. }), "units")
@@ -371,6 +423,10 @@ fn known_key_types_severity_and_unit_range_are_validated() -> TestResult {
             ),
             "wrong error category for {directory_name}"
         );
+        let Err(error) = error else {
+            return Err("expected a configuration value error".into());
+        };
+        assert!(error.to_string().contains(message));
     }
     Ok(())
 }

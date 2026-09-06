@@ -33,4 +33,4 @@ print_stderr = "deny"
 [dependencies]
 regex = "1"
 thiserror = "2"
-toml = "1"
+toml = { version = "1", default-features = false, features = ["std", "serde", "parse"] }

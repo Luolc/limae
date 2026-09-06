@@ -1,4 +1,13 @@
 //! Rule configuration discovery and resolution.
+//!
+//! ```
+//! use limae::config::{ResolvedConfig, RuleId, Severity};
+//!
+//! let config = ResolvedConfig::default();
+//! assert!(config.is_enabled(RuleId::ZH_TYPOGRAPHY_1));
+//! assert!(!config.is_enabled(RuleId::ZH_TYPOGRAPHY_9));
+//! assert_eq!(config.severity(RuleId::ZH_TYPOGRAPHY_1), Severity::Error);
+//! ```
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -77,16 +86,14 @@ pub enum Maturity {
 /// Configuration-relevant properties of one known rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RuleMetadata {
-    pub id: RuleId,
     pub name: &'static str,
     pub default_enabled: bool,
     pub default_severity: Severity,
     pub maturity: Maturity,
 }
 
-const fn stable(id: RuleId, name: &'static str, default_enabled: bool) -> RuleMetadata {
+const fn stable(name: &'static str, default_enabled: bool) -> RuleMetadata {
     RuleMetadata {
-        id,
         name,
         default_enabled,
         default_severity: Severity::Error,
@@ -94,9 +101,8 @@ const fn stable(id: RuleId, name: &'static str, default_enabled: bool) -> RuleMe
     }
 }
 
-const fn experimental(id: RuleId, name: &'static str) -> RuleMetadata {
+const fn experimental(name: &'static str) -> RuleMetadata {
     RuleMetadata {
-        id,
         name,
         default_enabled: false,
         default_severity: Severity::Warning,
@@ -106,27 +112,27 @@ const fn experimental(id: RuleId, name: &'static str) -> RuleMetadata {
 
 /// All known rules in specification order; this is the sole Rust metadata table.
 pub const RULES: [RuleMetadata; 21] = [
-    stable(RuleId::ZH_TYPOGRAPHY_1, "zh-typography-1", true),
-    stable(RuleId::ZH_TYPOGRAPHY_2, "zh-typography-2", true),
-    stable(RuleId::ZH_TYPOGRAPHY_3, "zh-typography-3", true),
-    stable(RuleId::ZH_TYPOGRAPHY_4, "zh-typography-4", true),
-    stable(RuleId::ZH_TYPOGRAPHY_5, "zh-typography-5", true),
-    stable(RuleId::ZH_TYPOGRAPHY_6, "zh-typography-6", true),
-    stable(RuleId::ZH_TYPOGRAPHY_7, "zh-typography-7", true),
-    stable(RuleId::ZH_TYPOGRAPHY_8, "zh-typography-8", true),
-    stable(RuleId::ZH_TYPOGRAPHY_9, "zh-typography-9", false),
-    stable(RuleId::ZH_TYPOGRAPHY_10, "zh-typography-10", true),
-    stable(RuleId::ZH_TYPOGRAPHY_11, "zh-typography-11", true),
-    experimental(RuleId::ZH_TELL_1, "zh-tell-1"),
-    experimental(RuleId::ZH_TELL_2, "zh-tell-2"),
-    experimental(RuleId::ZH_TELL_3, "zh-tell-3"),
-    experimental(RuleId::ZH_TELL_4, "zh-tell-4"),
-    experimental(RuleId::EN_TELL_1, "en-tell-1"),
-    experimental(RuleId::EN_TELL_2, "en-tell-2"),
-    experimental(RuleId::EN_TELL_3, "en-tell-3"),
-    experimental(RuleId::ZH_TELL_5, "zh-tell-5"),
-    experimental(RuleId::ZH_WORD_1, "zh-word-1"),
-    experimental(RuleId::ZH_WORD_2, "zh-word-2"),
+    stable("zh-typography-1", true),
+    stable("zh-typography-2", true),
+    stable("zh-typography-3", true),
+    stable("zh-typography-4", true),
+    stable("zh-typography-5", true),
+    stable("zh-typography-6", true),
+    stable("zh-typography-7", true),
+    stable("zh-typography-8", true),
+    stable("zh-typography-9", false),
+    stable("zh-typography-10", true),
+    stable("zh-typography-11", true),
+    experimental("zh-tell-1"),
+    experimental("zh-tell-2"),
+    experimental("zh-tell-3"),
+    experimental("zh-tell-4"),
+    experimental("en-tell-1"),
+    experimental("en-tell-2"),
+    experimental("en-tell-3"),
+    experimental("zh-tell-5"),
+    experimental("zh-word-1"),
+    experimental("zh-word-2"),
 ];
 
 /// Raw values of the two repeatable CLI rule flags.
@@ -184,7 +190,7 @@ pub enum ConfigError {
         #[source]
         source: Box<toml::de::Error>,
     },
-    #[error("{origin}: `{key}` has the wrong type; expected {expected}")]
+    #[error("{origin}: `{key}` must be {expected}")]
     InvalidType {
         origin: ConfigOrigin,
         key: &'static str,
@@ -197,11 +203,11 @@ pub enum ConfigError {
     },
     #[error("{origin}: a rule id appears in both `disable` and `enable`")]
     ConflictingRule { origin: ConfigOrigin },
-    #[error("{origin}: `enable` cannot name an experimental rule")]
+    #[error("{origin}: an experimental rule cannot be enabled one by one")]
     ExperimentalRuleEnabled { origin: ConfigOrigin },
-    #[error("{origin}: `severity` contains a value other than `error` or `warning`")]
+    #[error("{origin}: `severity` value must be 'error' or 'warning'")]
     InvalidSeverity { origin: ConfigOrigin },
-    #[error("{origin}: `skip_zh_units` must contain only CJK characters")]
+    #[error("{origin}: `skip_zh_units` must be a string of CJK characters")]
     InvalidSkipZhUnits { origin: ConfigOrigin },
 }
 
@@ -246,8 +252,9 @@ impl Default for ResolvedConfig {
         Self {
             enabled: RULES
                 .iter()
-                .filter(|metadata| metadata.default_enabled)
-                .map(|metadata| metadata.id)
+                .enumerate()
+                .filter(|(_, metadata)| metadata.default_enabled)
+                .map(|(index, _)| RuleId(index as u8))
                 .collect(),
             severity: BTreeMap::new(),
             skip_zh_units: String::new(),
@@ -295,12 +302,11 @@ fn resolve_table(table: &toml::Table, origin: ConfigOrigin) -> Result<ResolvedCo
     let experimental = optional_bool(table, "enable_experimental", &origin)?;
     let mut config = ResolvedConfig::default();
     if experimental {
-        config.enabled.extend(
-            RULES
-                .iter()
-                .filter(|metadata| metadata.maturity == Maturity::Experimental)
-                .map(|metadata| metadata.id),
-        );
+        config
+            .enabled
+            .extend(RULES.iter().enumerate().filter_map(|(index, metadata)| {
+                (metadata.maturity == Maturity::Experimental).then_some(RuleId(index as u8))
+            }));
     }
     apply_selection(&mut config.enabled, disabled, enabled);
     config.skip_zh_units = skip_zh_units(table, &origin)?.to_owned();
@@ -311,12 +317,12 @@ fn resolve_table(table: &toml::Table, origin: ConfigOrigin) -> Result<ResolvedCo
 fn find_config(start: &Path) -> Result<Option<(PathBuf, Value)>, ConfigError> {
     for directory in start.ancestors() {
         let standalone = directory.join(CONFIG_FILENAME);
-        if is_file(&standalone)? {
+        if probe(&standalone)?.is_some_and(|metadata| metadata.is_file()) {
             return load_toml(&standalone).map(|value| Some((standalone, value)));
         }
 
         let pyproject = directory.join(PYPROJECT_FILENAME);
-        if is_file(&pyproject)? {
+        if probe(&pyproject)?.is_some_and(|metadata| metadata.is_file()) {
             let value = load_toml(&pyproject)?;
             if let Some(limae) = value
                 .get("tool")
@@ -327,28 +333,17 @@ fn find_config(start: &Path) -> Result<Option<(PathBuf, Value)>, ConfigError> {
             }
         }
 
-        if path_exists(&directory.join(".git"))? {
+        if probe(&directory.join(".git"))?.is_some() {
             break;
         }
     }
     Ok(None)
 }
 
-fn is_file(path: &Path) -> Result<bool, ConfigError> {
+fn probe(path: &Path) -> Result<Option<fs::Metadata>, ConfigError> {
     match fs::metadata(path) {
-        Ok(metadata) => Ok(metadata.is_file()),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
-        Err(source) => Err(ConfigError::Inspect {
-            path: path.to_owned(),
-            source,
-        }),
-    }
-}
-
-fn path_exists(path: &Path) -> Result<bool, ConfigError> {
-    match fs::metadata(path) {
-        Ok(_) => Ok(true),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Ok(metadata) => Ok(Some(metadata)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(source) => Err(ConfigError::Inspect {
             path: path.to_owned(),
             source,
@@ -386,8 +381,8 @@ fn line_column(input: &str, byte: usize) -> (usize, usize) {
 fn rule_id(name: &str) -> Option<RuleId> {
     RULES
         .iter()
-        .find(|metadata| metadata.name == name)
-        .map(|metadata| metadata.id)
+        .position(|metadata| metadata.name == name)
+        .map(|index| RuleId(index as u8))
 }
 
 fn cli_rule_ids(
