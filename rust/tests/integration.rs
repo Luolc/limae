@@ -1,3 +1,4 @@
+mod config;
 mod markdown;
 
 use limae::text::{

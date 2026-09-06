@@ -1,0 +1,455 @@
+use std::error::Error;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use limae::config::{CliOverrides, ConfigError, Maturity, RULES, RuleId, Severity, resolve};
+
+type TestResult = Result<(), Box<dyn Error>>;
+
+struct TempDir(PathBuf);
+
+impl TempDir {
+    fn new(label: &str) -> Result<Self, std::io::Error> {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "limae-config-{}-{label}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&path)?;
+        Ok(Self(path))
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+fn write_config(directory: &Path, contents: &str) -> Result<(), std::io::Error> {
+    fs::write(directory.join("limae.toml"), contents)
+}
+
+#[test]
+fn rule_metadata_matches_the_specification() {
+    let expected = [
+        ("zh-typography-1", true, Severity::Error, Maturity::Stable),
+        ("zh-typography-2", true, Severity::Error, Maturity::Stable),
+        ("zh-typography-3", true, Severity::Error, Maturity::Stable),
+        ("zh-typography-4", true, Severity::Error, Maturity::Stable),
+        ("zh-typography-5", true, Severity::Error, Maturity::Stable),
+        ("zh-typography-6", true, Severity::Error, Maturity::Stable),
+        ("zh-typography-7", true, Severity::Error, Maturity::Stable),
+        ("zh-typography-8", true, Severity::Error, Maturity::Stable),
+        ("zh-typography-9", false, Severity::Error, Maturity::Stable),
+        ("zh-typography-10", true, Severity::Error, Maturity::Stable),
+        ("zh-typography-11", true, Severity::Error, Maturity::Stable),
+        (
+            "zh-tell-1",
+            false,
+            Severity::Warning,
+            Maturity::Experimental,
+        ),
+        (
+            "zh-tell-2",
+            false,
+            Severity::Warning,
+            Maturity::Experimental,
+        ),
+        (
+            "zh-tell-3",
+            false,
+            Severity::Warning,
+            Maturity::Experimental,
+        ),
+        (
+            "zh-tell-4",
+            false,
+            Severity::Warning,
+            Maturity::Experimental,
+        ),
+        (
+            "en-tell-1",
+            false,
+            Severity::Warning,
+            Maturity::Experimental,
+        ),
+        (
+            "en-tell-2",
+            false,
+            Severity::Warning,
+            Maturity::Experimental,
+        ),
+        (
+            "en-tell-3",
+            false,
+            Severity::Warning,
+            Maturity::Experimental,
+        ),
+        (
+            "zh-tell-5",
+            false,
+            Severity::Warning,
+            Maturity::Experimental,
+        ),
+        (
+            "zh-word-1",
+            false,
+            Severity::Warning,
+            Maturity::Experimental,
+        ),
+        (
+            "zh-word-2",
+            false,
+            Severity::Warning,
+            Maturity::Experimental,
+        ),
+    ];
+    let actual: Vec<_> = RULES
+        .iter()
+        .map(|metadata| {
+            (
+                metadata.name,
+                metadata.default_enabled,
+                metadata.default_severity,
+                metadata.maturity,
+            )
+        })
+        .collect();
+    assert_eq!(actual, expected);
+    assert!(
+        RULES
+            .iter()
+            .all(|metadata| metadata.id.as_str() == metadata.name)
+    );
+}
+
+#[test]
+fn shared_fixture_configs_resolve_business_settings() -> TestResult {
+    let temp = TempDir::new("fixtures")?;
+    let selections = temp.path().join("selections");
+    let experimental = temp.path().join("experimental");
+    let severity = temp.path().join("severity");
+    let units = temp.path().join("units");
+    for directory in [&selections, &experimental, &severity, &units] {
+        fs::create_dir(directory)?;
+    }
+    write_config(
+        &selections,
+        include_str!("../../spec/fixtures/config-enable-with-disable.conf"),
+    )?;
+    write_config(
+        &experimental,
+        include_str!("../../spec/fixtures/config-enable-experimental.conf"),
+    )?;
+    write_config(
+        &severity,
+        include_str!("../../spec/fixtures/config-severity-warning.conf"),
+    )?;
+    write_config(
+        &units,
+        include_str!("../../spec/fixtures/config-skip-zh-units.conf"),
+    )?;
+
+    let selected = resolve(&selections, CliOverrides::default())?;
+    assert!(!selected.is_enabled(RuleId::ZH_TYPOGRAPHY_3));
+    assert!(selected.is_enabled(RuleId::ZH_TYPOGRAPHY_9));
+    let all_experimental = resolve(&experimental, CliOverrides::default())?;
+    assert!(all_experimental.is_enabled(RuleId::ZH_TELL_1));
+    assert!(all_experimental.is_enabled(RuleId::EN_TELL_3));
+    assert!(all_experimental.is_enabled(RuleId::ZH_WORD_2));
+    let downgraded = resolve(&severity, CliOverrides::default())?;
+    assert_eq!(
+        downgraded.severity(RuleId::ZH_TYPOGRAPHY_1),
+        Severity::Warning
+    );
+    assert_eq!(
+        downgraded.severity(RuleId::ZH_TYPOGRAPHY_2),
+        Severity::Error
+    );
+    let skipped = resolve(&units, CliOverrides::default())?;
+    assert_eq!(skipped.skip_zh_units(), "年月日天号时分秒");
+    Ok(())
+}
+
+#[test]
+fn standalone_wins_and_nearest_source_replaces_the_parent_wholesale() -> TestResult {
+    let temp = TempDir::new("precedence")?;
+    write_config(temp.path(), "skip_zh_units = \"年\"\n")?;
+    let child = temp.path().join("child");
+    fs::create_dir(&child)?;
+    fs::write(
+        child.join("pyproject.toml"),
+        "[tool.limae]\nenable_experimental = true\n",
+    )?;
+    let nested = child.join("nested");
+    fs::create_dir(&nested)?;
+
+    let nearest = resolve(&nested, CliOverrides::default())?;
+    assert!(nearest.is_enabled(RuleId::ZH_TELL_1));
+    assert_eq!(nearest.skip_zh_units(), "");
+
+    write_config(&child, "disable = [\"zh-typography-1\"]\n")?;
+    let standalone = resolve(&child, CliOverrides::default())?;
+    assert!(!standalone.is_enabled(RuleId::ZH_TYPOGRAPHY_1));
+    assert!(!standalone.is_enabled(RuleId::ZH_TELL_1));
+    Ok(())
+}
+
+#[test]
+fn pyproject_without_tool_table_continues_upward() -> TestResult {
+    let temp = TempDir::new("pyproject-skip")?;
+    write_config(temp.path(), "disable = [\"zh-typography-1\"]\n")?;
+    let child = temp.path().join("child");
+    fs::create_dir(&child)?;
+    fs::write(child.join("pyproject.toml"), "[project]\nname = \"ACME\"\n")?;
+
+    let config = resolve(&child, CliOverrides::default())?;
+    assert!(!config.is_enabled(RuleId::ZH_TYPOGRAPHY_1));
+    Ok(())
+}
+
+#[test]
+fn git_entry_stops_discovery_for_a_file_or_directory() -> TestResult {
+    let temp = TempDir::new("git-stop")?;
+    write_config(temp.path(), "disable = [\"zh-typography-1\"]\n")?;
+    let stopped_by_directory = temp.path().join("directory-repo");
+    let stopped_by_file = temp.path().join("file-repo");
+    let walking = temp.path().join("walking");
+    for directory in [&stopped_by_directory, &stopped_by_file, &walking] {
+        fs::create_dir(directory)?;
+    }
+    fs::create_dir(stopped_by_directory.join(".git"))?;
+    fs::write(stopped_by_file.join(".git"), "gitdir: synthetic\n")?;
+
+    assert!(
+        resolve(&stopped_by_directory, CliOverrides::default())?
+            .is_enabled(RuleId::ZH_TYPOGRAPHY_1)
+    );
+    assert!(
+        resolve(&stopped_by_file, CliOverrides::default())?.is_enabled(RuleId::ZH_TYPOGRAPHY_1)
+    );
+    assert!(!resolve(&walking, CliOverrides::default())?.is_enabled(RuleId::ZH_TYPOGRAPHY_1));
+    Ok(())
+}
+
+#[test]
+fn any_cli_flag_wholly_replaces_the_file_even_when_its_value_is_empty() -> TestResult {
+    let temp = TempDir::new("cli-override")?;
+    write_config(
+        temp.path(),
+        "disable = [\"zh-typography-1\"]\n\
+         enable_experimental = true\n\
+         skip_zh_units = \"年\"\n\
+         severity = { zh-typography-2 = \"warning\" }\n",
+    )?;
+    let from_file = resolve(temp.path(), CliOverrides::default())?;
+    assert!(!from_file.is_enabled(RuleId::ZH_TYPOGRAPHY_1));
+    assert!(from_file.is_enabled(RuleId::ZH_TELL_1));
+
+    let empty = vec![String::new()];
+    let from_cli = resolve(
+        temp.path(),
+        CliOverrides {
+            disable: Some(&empty),
+            enable: None,
+        },
+    )?;
+    assert!(from_cli.is_enabled(RuleId::ZH_TYPOGRAPHY_1));
+    assert!(!from_cli.is_enabled(RuleId::ZH_TELL_1));
+    assert_eq!(from_cli.skip_zh_units(), "");
+    assert_eq!(from_cli.severity(RuleId::ZH_TYPOGRAPHY_2), Severity::Error);
+
+    let repeated = vec![
+        "zh-typography-1, zh-typography-3".to_owned(),
+        "zh-typography-2".to_owned(),
+    ];
+    let selected = resolve(
+        temp.path(),
+        CliOverrides {
+            disable: Some(&repeated),
+            enable: None,
+        },
+    )?;
+    assert!(!selected.is_enabled(RuleId::ZH_TYPOGRAPHY_1));
+    assert!(!selected.is_enabled(RuleId::ZH_TYPOGRAPHY_2));
+    assert!(!selected.is_enabled(RuleId::ZH_TYPOGRAPHY_3));
+    Ok(())
+}
+
+#[test]
+fn empty_cli_flag_skips_a_malformed_file_but_absent_flags_do_not() -> TestResult {
+    let temp = TempDir::new("cli-skips-file")?;
+    write_config(temp.path(), "[broken\n")?;
+    let empty = vec![String::new()];
+    let config = resolve(
+        temp.path(),
+        CliOverrides {
+            disable: None,
+            enable: Some(&empty),
+        },
+    )?;
+    assert!(config.is_enabled(RuleId::ZH_TYPOGRAPHY_1));
+    assert!(matches!(
+        resolve(temp.path(), CliOverrides::default()),
+        Err(ConfigError::Parse { .. })
+    ));
+    Ok(())
+}
+
+#[test]
+fn selection_validation_rejects_unknown_conflicting_and_experimental_ids() -> TestResult {
+    let temp = TempDir::new("selection-errors")?;
+    let cases = [
+        ("unknown", "disable = [\"R99\"]\n", "unknown"),
+        (
+            "conflict",
+            "disable = [\"zh-typography-9\"]\nenable = [\"zh-typography-9\"]\n",
+            "conflict",
+        ),
+        ("experimental", "enable = [\"zh-tell-1\"]\n", "experimental"),
+    ];
+    for (directory_name, contents, expected) in cases {
+        let directory = temp.path().join(directory_name);
+        fs::create_dir(&directory)?;
+        write_config(&directory, contents)?;
+        let error = resolve(&directory, CliOverrides::default());
+        assert!(
+            matches!(
+                (&error, expected),
+                (Err(ConfigError::UnknownRule { .. }), "unknown")
+                    | (Err(ConfigError::ConflictingRule { .. }), "conflict")
+                    | (
+                        Err(ConfigError::ExperimentalRuleEnabled { .. }),
+                        "experimental"
+                    )
+            ),
+            "wrong error category for {directory_name}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn known_key_types_severity_and_unit_range_are_validated() -> TestResult {
+    let temp = TempDir::new("value-errors")?;
+    let cases = [
+        ("list", "disable = \"zh-typography-1\"\n", "type"),
+        ("bool", "enable_experimental = \"true\"\n", "type"),
+        ("severity-table", "severity = \"warning\"\n", "type"),
+        (
+            "severity-value",
+            "severity = { zh-typography-1 = \"fatal\" }\n",
+            "severity",
+        ),
+        (
+            "severity-rule",
+            "severity = { R99 = \"error\" }\n",
+            "unknown",
+        ),
+        ("units-type", "skip_zh_units = [\"年\"]\n", "type"),
+        ("units-range", "skip_zh_units = \"年 月\"\n", "units"),
+    ];
+    for (directory_name, contents, expected) in cases {
+        let directory = temp.path().join(directory_name);
+        fs::create_dir(&directory)?;
+        write_config(&directory, contents)?;
+        let error = resolve(&directory, CliOverrides::default());
+        assert!(
+            matches!(
+                (&error, expected),
+                (Err(ConfigError::InvalidType { .. }), "type")
+                    | (Err(ConfigError::InvalidSeverity { .. }), "severity")
+                    | (Err(ConfigError::InvalidSkipZhUnits { .. }), "units")
+                    | (Err(ConfigError::UnknownRule { .. }), "unknown")
+            ),
+            "wrong error category for {directory_name}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn unconsumed_existing_keys_are_accepted_without_exposing_their_values() -> TestResult {
+    let temp = TempDir::new("unconsumed")?;
+    write_config(
+        temp.path(),
+        "quote_style = \"curly\"\n\
+         [polish]\n\
+         engine = \"custom\"\n\
+         command = [\"synthetic-engine\", \"{prompt}\"]\n",
+    )?;
+
+    let config = resolve(temp.path(), CliOverrides::default())?;
+    assert_eq!(config.enabled_rules().count(), 10);
+    Ok(())
+}
+
+#[test]
+fn pyproject_tool_table_must_be_a_table() -> TestResult {
+    let temp = TempDir::new("tool-table-type")?;
+    fs::write(
+        temp.path().join("pyproject.toml"),
+        "[tool]\nlimae = \"not-a-table\"\n",
+    )?;
+
+    assert!(matches!(
+        resolve(temp.path(), CliOverrides::default()),
+        Err(ConfigError::InvalidType {
+            key: "tool.limae",
+            ..
+        })
+    ));
+    Ok(())
+}
+
+#[test]
+fn malformed_pyproject_stops_before_a_valid_parent_and_keeps_source_details() -> TestResult {
+    let temp = TempDir::new("parse-details")?;
+    write_config(temp.path(), "disable = [\"zh-typography-1\"]\n")?;
+    let child = temp.path().join("child");
+    fs::create_dir(&child)?;
+    fs::write(
+        child.join("pyproject.toml"),
+        "[project]\nname = \"ACME\"\n[polish]\ncommand = [\"synthetic-command-value\"\n",
+    )?;
+
+    let Err(error) = resolve(&child, CliOverrides::default()) else {
+        return Err("expected a TOML parse error".into());
+    };
+    assert!(Error::source(&error).is_some());
+    let diagnostic = error.to_string();
+    assert!(!diagnostic.contains("synthetic-command-value"));
+    let ConfigError::Parse {
+        path,
+        line,
+        column,
+        source: _,
+    } = error
+    else {
+        return Err("expected a TOML parse error".into());
+    };
+    assert_eq!(path, child.join("pyproject.toml"));
+    assert_eq!(line, 4);
+    assert!(column > 0);
+    Ok(())
+}
+
+#[test]
+fn unreadable_text_is_a_read_error_instead_of_default_configuration() -> TestResult {
+    let temp = TempDir::new("read-error")?;
+    fs::write(temp.path().join("limae.toml"), [0xff])?;
+
+    let Err(error) = resolve(temp.path(), CliOverrides::default()) else {
+        return Err("expected a configuration read error".into());
+    };
+    assert!(matches!(&error, ConfigError::Read { .. }));
+    assert!(Error::source(&error).is_some());
+    Ok(())
+}
