@@ -6,6 +6,7 @@ pub mod directives;
 pub mod files;
 pub mod markdown;
 pub mod pipeline;
+pub mod polish;
 mod resources;
 pub mod rules;
 pub mod text;
