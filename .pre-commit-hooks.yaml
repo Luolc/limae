@@ -4,3 +4,9 @@
   entry: limae
   language: python
   files: \.md$
+- id: limae-rs
+  name: Lint Markdown with limae (Rust)
+  description: Opt in to the Rust implementation of limae's Markdown rules.
+  entry: limae-rs
+  language: rust
+  files: \.md$
