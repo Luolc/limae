@@ -57,19 +57,19 @@ impl SpacingRules {
             .filter(|m| !english_token_paren(line, m.end() - 1))
             .map(|m| LineMatch {
                 rule: RuleId::ZH_TYPOGRAPHY_3,
-                name: "zh-typography-3 no space before (",
+                name: "zh-typography-3 no space before (".into(),
                 range: m.range(),
             })
             .collect();
         found.extend(self.paren_after.find_iter(line).map(|m| LineMatch {
             rule: RuleId::ZH_TYPOGRAPHY_3,
-            name: "zh-typography-3 no space after )",
+            name: "zh-typography-3 no space after )".into(),
             range: m.range(),
         }));
         found.extend(self.cjk_boundaries(line, config));
         found.extend(self.number_units(line).map(|m| LineMatch {
             rule: RuleId::ZH_TYPOGRAPHY_6,
-            name: "zh-typography-6 no space between number and unit",
+            name: "zh-typography-6 no space between number and unit".into(),
             range: m.range(),
         }));
         found.retain(|m| config.is_enabled(m.rule) && !protection.is_exempt(m.range.clone()));
@@ -160,7 +160,7 @@ impl SpacingRules {
             };
             found.push(LineMatch {
                 rule,
-                name,
+                name: name.into(),
                 range: start..start,
             });
         }

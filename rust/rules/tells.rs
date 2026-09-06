@@ -5,7 +5,7 @@ use regex::Regex;
 use std::cmp::Reverse;
 use thiserror::Error;
 
-use super::LineMatch;
+use super::{LineMatch, covered};
 use crate::config::{ResolvedConfig, RuleId};
 use crate::markdown::LineProtection;
 use crate::resources::{TELL_WORDLISTS, ZERO_ALLOWLIST, phrases};
@@ -77,7 +77,7 @@ impl WordlistTells {
                 if !protection.is_exempt(matched.range()) {
                     found.push(LineMatch {
                         rule: *rule,
-                        name,
+                        name: (*name).into(),
                         range: matched.range(),
                     });
                     break;
@@ -181,7 +181,7 @@ impl SentenceTells {
                 if !protection.is_exempt(matched.range()) {
                     found.push(LineMatch {
                         rule: RuleId::ZH_TELL_2,
-                        name: "zh-tell-2 negative parallelism",
+                        name: "zh-tell-2 negative parallelism".into(),
                         range: matched.range(),
                     });
                 }
@@ -202,7 +202,7 @@ impl SentenceTells {
                 {
                     found.push(LineMatch {
                         rule: RuleId::ZH_TELL_5,
-                        name: "zh-tell-5 zero-noun coinage",
+                        name: "zh-tell-5 zero-noun coinage".into(),
                         range,
                     });
                 }
@@ -249,7 +249,7 @@ fn english_sentences(
             if !protection.is_exempt(range.clone()) {
                 found.push(LineMatch {
                     rule: RuleId::EN_TELL_2,
-                    name: "en-tell-2 English negative parallelism",
+                    name: "en-tell-2 English negative parallelism".into(),
                     range,
                 });
             }
@@ -258,22 +258,6 @@ fn english_sentences(
         }
     }
     found
-}
-
-fn covered(line: &str, start: usize, allowed: &[&str]) -> bool {
-    allowed.iter().any(|word| {
-        // Every character boundary may begin an occurrence, even when two
-        // allowlist occurrences overlap. Only the hit's first character counts.
-        std::iter::once(start)
-            .chain(
-                line[..start]
-                    .char_indices()
-                    .rev()
-                    .map(|(position, _)| position),
-            )
-            .take_while(|&position| start - position < word.len())
-            .any(|position| line[position..].starts_with(word))
-    })
 }
 
 #[cfg(test)]
