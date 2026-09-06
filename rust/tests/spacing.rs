@@ -1,6 +1,5 @@
 use std::error::Error;
 use std::fs;
-use std::path::Path;
 
 use limae::config::{CliOverrides, ResolvedConfig, RuleId, resolve};
 use limae::markdown::{LineProtection, Markdown};
@@ -21,99 +20,6 @@ fn config(contents: &str) -> Result<ResolvedConfig, Box<dyn Error>> {
     let result = resolve(&root, CliOverrides::default());
     fs::remove_dir_all(root)?;
     Ok(result?)
-}
-
-// Exercise the fragment API on the complement of A2's protected interiors.
-fn fix_line(
-    line: &str,
-    protection: &LineProtection,
-    width: &WidthRules,
-    spacing: &SpacingRules,
-    config: &ResolvedConfig,
-) -> String {
-    let LineProtection::Inline { code, prose } = protection else {
-        return line.to_owned();
-    };
-    let mut spans: Vec<_> = code.iter().chain(prose).collect();
-    spans.sort_by_key(|s| (s.start, s.end));
-    let mut fixed = String::new();
-    let mut cursor = 0;
-    for span in spans {
-        if span.start >= cursor {
-            fixed.push_str(&spacing.fix_fragment(
-                &width.fix_fragment(&line[cursor..span.start], config),
-                config,
-            ));
-        }
-        if span.end >= cursor {
-            fixed.push_str(&line[cursor.max(span.start)..span.end]);
-            cursor = span.end;
-        }
-    }
-    fixed.push_str(&spacing.fix_fragment(&width.fix_fragment(&line[cursor..], config), config));
-    fixed
-}
-
-#[test]
-fn spacing_fixtures_compare_complete_findings_and_fixed_text() -> TestResult {
-    let spacing = SpacingRules::new()?;
-    let width = WidthRules::new()?;
-    let markdown = Markdown::new()?;
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("spec/fixtures");
-    for case in [
-        "zh-typography-3-paren-spacing",
-        "zh-typography-4-cjk-latin",
-        "zh-typography-5-cjk-digit",
-        "zh-typography-6-digit-unit",
-        "zh-typography-2-fullwidth-parens",
-        "zh-typography-10-fullwidth-digits",
-        "config-skip-zh-units",
-        "config-disable-zh-typography-3",
-    ] {
-        let input = fs::read_to_string(root.join(format!("{case}.in")))?;
-        let config_path = root.join(format!("{case}.conf"));
-        let config = if config_path.exists() {
-            config(&fs::read_to_string(config_path)?)?
-        } else {
-            ResolvedConfig::default()
-        };
-        let lines: Vec<_> = input.split('\n').collect();
-        let protected = markdown.protect(&lines);
-        let mut findings = String::new();
-        for (i, (line, protection)) in lines.iter().zip(&protected).enumerate() {
-            let mut found = width.check_line(line, protection, &config);
-            found.extend(spacing.check_line(line, protection, &config));
-            found.sort_by_key(|m| (m.rule, m.range.start));
-            for matched in found {
-                findings.push_str(&format!("{} {}\n", i + 1, matched.rule));
-            }
-        }
-        assert_eq!(
-            findings,
-            fs::read_to_string(root.join(format!("{case}.findings")))?,
-            "{case}"
-        );
-        let fixed = lines
-            .iter()
-            .zip(&protected)
-            .map(|(line, p)| fix_line(line, p, &width, &spacing, &config))
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert_eq!(
-            fixed,
-            fs::read_to_string(root.join(format!("{case}.fixed")))?,
-            "{case}"
-        );
-        let lines: Vec<_> = fixed.split('\n').collect();
-        let twice = lines
-            .iter()
-            .zip(markdown.protect(&lines))
-            .map(|(line, p)| fix_line(line, &p, &width, &spacing, &config))
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert_eq!(twice, fixed, "{case}");
-    }
-    Ok(())
 }
 
 #[test]

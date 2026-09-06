@@ -30,8 +30,8 @@ impl WordRules {
     ///
     /// Anchors and allowlist evidence use the entire line, including protected
     /// interiors. Each wrong-word occurrence is still subject to protection,
-    /// which must belong to this line. The caller handles splitting/directives;
-    /// these primitives are not integrated into `Typography`.
+    /// which must belong to this line. Document processing is provided by
+    /// [`crate::pipeline::Pipeline`]; directive masks belong to the caller.
     #[must_use]
     pub fn check_line(
         &self,

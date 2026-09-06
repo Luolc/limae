@@ -1,38 +1,43 @@
-//! Pure typography document processing (zh-typography-1 through -11).
+//! Document checks and fixed-point fixes for all implemented rules.
 //!
-//! This API applies only the typography settings in the supplied configuration,
-//! including when experimental rules are enabled. Experimental rules (A4) and
-//! inline directives (A6) require subsequent integration; this is not the full
-//! linter or a replacement for Python's `check_text` / `fix_text`.
+//! The supplied configuration bounds enabled rules; experimental rules default
+//! to off. Inline directives (A6) are not parsed, validated or applied: their text
+//! is processed as ordinary Markdown and does not disable rules on other lines.
+//! This API therefore does not provide Python's complete directive-aware
+//! `check_text` / `fix_text` behavior or CLI compatibility.
 //!
 //! ```
-//! use limae::{config::ResolvedConfig, pipeline::Typography};
+//! use limae::{config::ResolvedConfig, pipeline::Pipeline};
 //!
-//! let typography = Typography::new()?;
+//! let pipeline = Pipeline::new()?;
 //! let config = ResolvedConfig::default();
 //! let original = "中（１６GB）";
-//! assert_eq!(typography.check(original, &config).len(), 4);
-//! let fixed = typography.fix(original, &config);
+//! assert_eq!(pipeline.check(original, &config).len(), 4);
+//! let fixed = pipeline.fix(original, &config);
 //! assert_eq!(fixed, "中 (16 GB)");
-//! assert!(typography.check(&fixed, &config).is_empty());
-//! # Ok::<(), regex::Error>(())
+//! assert!(pipeline.check(&fixed, &config).is_empty());
+//! # Ok::<(), limae::pipeline::InitError>(())
 //! ```
 
 use std::borrow::Cow;
 use std::ops::Range;
+use thiserror::Error;
 
 use crate::config::{ResolvedConfig, RuleId};
 use crate::markdown::{LineProtection, Markdown};
 use crate::rules::{
     spacing::SpacingRules,
     structural::{FragmentContext, StructuralRules},
+    tells::{SentenceTells, WordlistError, WordlistTells},
     typography::WidthRules,
+    words::{ActiveTerms, TermResourceError, WordRules},
 };
 use crate::text::{char_at, char_before, snippet};
 
-/// One typography violation in the original document, before any fixes.
+/// One violation in the checked document, before any fixes.
+/// Severity is supplied by [`ResolvedConfig::severity`].
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypographyFinding<'text> {
+pub struct Finding<'text> {
     /// One-based line number in the checker's Python `splitlines()` view.
     pub line: usize,
     pub rule: RuleId,
@@ -44,25 +49,42 @@ pub struct TypographyFinding<'text> {
     pub snippet: &'text str,
 }
 
-/// Reusable typography checker and fixed-point formatter, with no I/O.
-pub struct Typography {
+/// The document pipeline could not initialize its built-in rules.
+#[derive(Debug, Error)]
+pub enum InitError {
+    #[error("cannot compile built-in patterns")]
+    Pattern(#[from] regex::Error),
+    #[error("cannot initialize wordlist rules")]
+    Wordlist(#[from] WordlistError),
+    #[error("cannot initialize terminology rules")]
+    Terms(#[from] TermResourceError),
+}
+
+/// Reusable document checker and fixed-point formatter, with no I/O.
+pub struct Pipeline {
     markdown: Markdown,
     width: WidthRules,
     spacing: SpacingRules,
     structural: StructuralRules,
+    wordlists: WordlistTells,
+    sentences: SentenceTells,
+    words: WordRules,
 }
 
-impl Typography {
-    /// Compile built-in patterns once for reuse across documents.
+impl Pipeline {
+    /// Compile built-in patterns and parse embedded resources once for reuse.
     ///
     /// # Errors
-    /// Returns the concrete regex compilation error for an invalid pattern.
-    pub fn new() -> Result<Self, regex::Error> {
+    /// Returns the failing rule family's error, preserving its concrete source.
+    pub fn new() -> Result<Self, InitError> {
         Ok(Self {
             markdown: Markdown::new()?,
             width: WidthRules::new()?,
             spacing: SpacingRules::new()?,
             structural: StructuralRules::new()?,
+            wordlists: WordlistTells::new()?,
+            sentences: SentenceTells::new()?,
+            words: WordRules::new()?,
         })
     }
 
@@ -73,11 +95,7 @@ impl Typography {
     /// U+0085 and U+2028–U+2029. CRLF is one boundary; a terminal separator adds
     /// no empty check line. TAB, U+001F and NBSP are not line separators.
     #[must_use]
-    pub fn check<'text>(
-        &self,
-        text: &'text str,
-        config: &ResolvedConfig,
-    ) -> Vec<TypographyFinding<'text>> {
+    pub fn check<'text>(&self, text: &'text str, config: &ResolvedConfig) -> Vec<Finding<'text>> {
         let lines = check_lines(text);
         let protected = self.markdown.protect(&lines);
         let mut findings = Vec::new();
@@ -85,12 +103,15 @@ impl Typography {
             let mut matches = self.width.check_line(line, protection, config);
             matches.extend(self.spacing.check_line(line, protection, config));
             matches.extend(self.structural.check_line(line, protection, config));
+            matches.extend(self.wordlists.check_line(line, protection, config));
+            matches.extend(self.sentences.check_line(line, protection, config));
+            matches.extend(self.words.check_line(line, protection, config));
             matches.sort_by_key(|m| (m.rule, m.range.start));
             findings.extend(matches.into_iter().map(|m| {
                 let Some(snippet) = snippet(line, m.range.clone()) else {
                     unreachable!("rule matches must be UTF-8 ranges in the checked line");
                 };
-                TypographyFinding {
+                Finding {
                     line: i + 1,
                     rule: m.rule,
                     name: m.name,
@@ -105,8 +126,10 @@ impl Typography {
     /// Fix until the string is unchanged, rescanning Markdown on every pass.
     ///
     /// Each pass splits only LF, retaining CR and final empty fragments, then
-    /// rejoins with LF. Protected interiors are copied verbatim; prose fragments
-    /// run through width, prose spacing, then structural spacing / cleanup.
+    /// rejoins with LF. Each original line selects active terms once, including
+    /// evidence in protected text. Protected interiors are copied verbatim;
+    /// prose fragments run through terminology, width, prose spacing, then
+    /// structural spacing / cleanup with their original Markdown boundaries.
     /// Fixes are independent of the original finding list.
     #[must_use]
     pub fn fix(&self, text: &str, config: &ResolvedConfig) -> String {
@@ -131,6 +154,7 @@ impl Typography {
         let LineProtection::Inline { code, prose } = protection else {
             return line.to_owned();
         };
+        let active = self.words.active_terms(line, config);
         let mut ranges: Vec<_> = code
             .iter()
             .map(|range| (range, true))
@@ -143,7 +167,12 @@ impl Typography {
         for (range, is_code) in ranges {
             context.ends_with_code_opener =
                 is_code && range.start > cursor && char_before(line, range.start) == Some('`');
-            fixed.push_str(&self.fix_fragment(&line[cursor..range.start], config, context));
+            fixed.push_str(&self.fix_fragment(
+                &line[cursor..range.start],
+                &active,
+                config,
+                context,
+            ));
             fixed.push_str(&line[range.clone()]);
             cursor = range.end;
             context = FragmentContext {
@@ -151,17 +180,19 @@ impl Typography {
                 ends_with_code_opener: false,
             };
         }
-        fixed.push_str(&self.fix_fragment(&line[cursor..], config, context));
+        fixed.push_str(&self.fix_fragment(&line[cursor..], &active, config, context));
         fixed
     }
 
     fn fix_fragment(
         &self,
         fragment: &str,
+        active: &ActiveTerms<'_>,
         config: &ResolvedConfig,
         context: FragmentContext,
     ) -> String {
-        let width = self.width.fix_fragment(fragment, config);
+        let terms = active.fix_fragment(fragment);
+        let width = self.width.fix_fragment(&terms, config);
         let spacing = self.spacing.fix_fragment(&width, config);
         self.structural.fix_fragment(&spacing, config, context)
     }
