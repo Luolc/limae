@@ -3,5 +3,6 @@
 pub mod config;
 pub mod markdown;
 pub mod pipeline;
+mod resources;
 pub mod rules;
 pub mod text;

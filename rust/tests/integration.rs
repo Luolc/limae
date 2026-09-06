@@ -3,6 +3,7 @@ mod markdown;
 mod pipeline;
 mod spacing;
 mod structural;
+mod tells;
 mod typography;
 
 use limae::text::{
