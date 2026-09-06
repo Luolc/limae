@@ -39,90 +39,165 @@ fn write_config(directory: &Path, contents: &str) -> Result<(), std::io::Error> 
 #[test]
 fn rule_metadata_matches_the_specification() {
     let expected = [
-        ("zh-typography-1", true, Severity::Error, Maturity::Stable),
-        ("zh-typography-2", true, Severity::Error, Maturity::Stable),
-        ("zh-typography-3", true, Severity::Error, Maturity::Stable),
-        ("zh-typography-4", true, Severity::Error, Maturity::Stable),
-        ("zh-typography-5", true, Severity::Error, Maturity::Stable),
-        ("zh-typography-6", true, Severity::Error, Maturity::Stable),
-        ("zh-typography-7", true, Severity::Error, Maturity::Stable),
-        ("zh-typography-8", true, Severity::Error, Maturity::Stable),
-        ("zh-typography-9", false, Severity::Error, Maturity::Stable),
-        ("zh-typography-10", true, Severity::Error, Maturity::Stable),
-        ("zh-typography-11", true, Severity::Error, Maturity::Stable),
         (
+            RuleId::ZH_TYPOGRAPHY_1,
+            "zh-typography-1",
+            true,
+            Severity::Error,
+            Maturity::Stable,
+        ),
+        (
+            RuleId::ZH_TYPOGRAPHY_2,
+            "zh-typography-2",
+            true,
+            Severity::Error,
+            Maturity::Stable,
+        ),
+        (
+            RuleId::ZH_TYPOGRAPHY_3,
+            "zh-typography-3",
+            true,
+            Severity::Error,
+            Maturity::Stable,
+        ),
+        (
+            RuleId::ZH_TYPOGRAPHY_4,
+            "zh-typography-4",
+            true,
+            Severity::Error,
+            Maturity::Stable,
+        ),
+        (
+            RuleId::ZH_TYPOGRAPHY_5,
+            "zh-typography-5",
+            true,
+            Severity::Error,
+            Maturity::Stable,
+        ),
+        (
+            RuleId::ZH_TYPOGRAPHY_6,
+            "zh-typography-6",
+            true,
+            Severity::Error,
+            Maturity::Stable,
+        ),
+        (
+            RuleId::ZH_TYPOGRAPHY_7,
+            "zh-typography-7",
+            true,
+            Severity::Error,
+            Maturity::Stable,
+        ),
+        (
+            RuleId::ZH_TYPOGRAPHY_8,
+            "zh-typography-8",
+            true,
+            Severity::Error,
+            Maturity::Stable,
+        ),
+        (
+            RuleId::ZH_TYPOGRAPHY_9,
+            "zh-typography-9",
+            false,
+            Severity::Error,
+            Maturity::Stable,
+        ),
+        (
+            RuleId::ZH_TYPOGRAPHY_10,
+            "zh-typography-10",
+            true,
+            Severity::Error,
+            Maturity::Stable,
+        ),
+        (
+            RuleId::ZH_TYPOGRAPHY_11,
+            "zh-typography-11",
+            true,
+            Severity::Error,
+            Maturity::Stable,
+        ),
+        (
+            RuleId::ZH_TELL_1,
             "zh-tell-1",
             false,
             Severity::Warning,
             Maturity::Experimental,
         ),
         (
+            RuleId::ZH_TELL_2,
             "zh-tell-2",
             false,
             Severity::Warning,
             Maturity::Experimental,
         ),
         (
+            RuleId::ZH_TELL_3,
             "zh-tell-3",
             false,
             Severity::Warning,
             Maturity::Experimental,
         ),
         (
+            RuleId::ZH_TELL_4,
             "zh-tell-4",
             false,
             Severity::Warning,
             Maturity::Experimental,
         ),
         (
+            RuleId::EN_TELL_1,
             "en-tell-1",
             false,
             Severity::Warning,
             Maturity::Experimental,
         ),
         (
+            RuleId::EN_TELL_2,
             "en-tell-2",
             false,
             Severity::Warning,
             Maturity::Experimental,
         ),
         (
+            RuleId::EN_TELL_3,
             "en-tell-3",
             false,
             Severity::Warning,
             Maturity::Experimental,
         ),
         (
+            RuleId::ZH_TELL_5,
             "zh-tell-5",
             false,
             Severity::Warning,
             Maturity::Experimental,
         ),
         (
+            RuleId::ZH_WORD_1,
             "zh-word-1",
             false,
             Severity::Warning,
             Maturity::Experimental,
         ),
         (
+            RuleId::ZH_WORD_2,
             "zh-word-2",
             false,
             Severity::Warning,
             Maturity::Experimental,
         ),
     ];
-    let actual: Vec<_> = RULES
-        .iter()
-        .map(|metadata| {
-            (
-                metadata.name,
-                metadata.default_enabled,
-                metadata.default_severity,
-                metadata.maturity,
-            )
-        })
-        .collect();
-    assert_eq!(actual, expected);
+    assert_eq!(RULES.len(), expected.len());
+    for (metadata, (id, name, default_enabled, default_severity, maturity)) in
+        RULES.iter().zip(expected)
+    {
+        assert_eq!(id.as_str(), name);
+        assert_eq!(id.metadata(), metadata);
+        assert_eq!(metadata.name, name);
+        assert_eq!(metadata.default_enabled, default_enabled);
+        assert_eq!(metadata.default_severity, default_severity);
+        assert_eq!(metadata.maturity, maturity);
+    }
 }
 
 #[test]
