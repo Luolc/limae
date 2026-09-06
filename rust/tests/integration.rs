@@ -1,4 +1,5 @@
 mod config;
+mod fileio;
 mod files;
 mod markdown;
 mod pipeline;
