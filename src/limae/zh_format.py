@@ -636,7 +636,9 @@ def _rule_masks(
   )
 
 
-def _quote_spans(line: str) -> list[tuple[int, int]]:
+def _quote_spans(
+    line: str, code_spans: list[tuple[int, int]]
+) -> list[tuple[int, int]]:
   """Return the interiors of the kana-holding quote spans on one line.
 
   Scanning left to right, an opener pairs with the closer that brings its
@@ -646,6 +648,8 @@ def _quote_spans(line: str) -> list[tuple[int, int]]:
 
   Args:
     line: One Markdown line outside fenced code blocks.
+    code_spans: Inline code interiors whose brackets do not participate
+      in quotation pairing.
 
   Returns:
     Sorted, disjoint ``(start, end)`` ranges between the brackets of the
@@ -655,11 +659,13 @@ def _quote_spans(line: str) -> list[tuple[int, int]]:
   i = 0
   while i < len(line):
     close = QUOTE_PAIRS.get(line[i])
-    if close is None:
+    if close is None or any(a <= i < b for a, b in code_spans):
       i += 1
       continue
     depth = 0
     for j in range(i, len(line)):
+      if any(a <= j < b for a, b in code_spans):
+        continue
       if line[j] == line[i]:
         depth += 1
       elif line[j] == close:
@@ -701,7 +707,7 @@ def _prose_spans(
       spans.append((a, b))
       taken.append((a, b))
 
-  for a, b in _quote_spans(line):
+  for a, b in _quote_spans(line, code_spans):
     start = a
     for c, d in sorted(code_spans):
       if start <= c and d <= b:  # code nested in the quotation
