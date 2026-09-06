@@ -37,17 +37,26 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
   metafunc.parametrize("limae_cli", names, indirect=True, ids=names)
 
 
-def pytest_collection_finish(session: pytest.Session) -> None:
-  """Reject selected tests that silently drop a requested CLI arm."""
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
+  """Reject full collections that silently drop a requested CLI arm."""
+  if any(
+      "::" in argument and argument.endswith("]")
+      for argument in config.invocation_params.args
+  ):
+    return
   expected = {"python"}
-  if _rust_artifacts(session.config) is not None:
+  if _rust_artifacts(config) is not None:
     expected.add("rust")
-  collected = {
-      name
-      for item in session.items
-      for name in ("python", "rust")
-      if item.name.endswith(f"[{name}]")
-  }
+  collected: set[str] = set()
+  for item in items:
+    callspec = getattr(item, "callspec", None)
+    params = getattr(callspec, "params", {})
+    arm = params.get("limae_cli")
+    if arm is not None:
+      collected.add(str(arm))
   if not collected:
     return
   if collected != expected:
