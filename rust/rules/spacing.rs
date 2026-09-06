@@ -10,7 +10,7 @@ use crate::config::{ResolvedConfig, RuleId};
 use crate::markdown::LineProtection;
 use crate::text::{char_at, char_before, is_cjk};
 
-use super::LineMatch;
+use super::{LineMatch, insert_spaces};
 
 /// Reusable checker and fixer for the four prose spacing rules only.
 pub struct SpacingRules {
@@ -178,17 +178,4 @@ impl SpacingRules {
 fn english_token_paren(line: &str, start: usize) -> bool {
     char_before(line, start).is_some_and(|c| c.is_ascii_alphanumeric())
         && char_at(line, start + 1).is_some_and(|c| c.is_ascii_alphanumeric())
-}
-
-// All callers yield sorted, unique UTF-8 boundaries from the same text.
-fn insert_spaces(text: &str, positions: impl Iterator<Item = usize>) -> String {
-    let mut fixed = String::new();
-    let mut previous = 0;
-    for position in positions {
-        fixed.push_str(&text[previous..position]);
-        fixed.push(' ');
-        previous = position;
-    }
-    fixed.push_str(&text[previous..]);
-    fixed
 }
