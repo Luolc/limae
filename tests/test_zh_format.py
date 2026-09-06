@@ -1,4 +1,5 @@
 import pathlib
+import subprocess
 import sys
 
 import pytest
@@ -32,6 +33,45 @@ def test_tracked_markdown_lists_md_files():
   paths = zh_format.tracked_markdown()
   assert paths, "expected tracked markdown files in the repo"
   assert all(p.suffix == ".md" for p in paths)
+
+
+def test_python_binary_keeps_ignore_parse_failure_at_exit_one(
+    tmp_path: pathlib.Path,
+):
+  binary = pathlib.Path(sys.executable).with_name("limae")
+  invalid = tmp_path / "invalid"
+  invalid.mkdir()
+  (invalid / ".limae-ignore").write_text("!\n", encoding="utf-8")
+  (invalid / "t.md").write_text("ACME\n", encoding="utf-8")
+  completed = subprocess.run(  # noqa: S603 - fixed sibling entry point
+      [binary, "t.md"],
+      cwd=invalid,
+      env={},
+      check=False,
+      capture_output=True,
+      text=True,
+  )
+  assert completed.returncode == 1
+  assert completed.stdout == ""
+  assert "GitIgnorePatternError" in completed.stderr
+  assert "Invalid git pattern: '!'" in completed.stderr
+  assert "clean" not in completed.stderr
+
+  control = tmp_path / "control"
+  control.mkdir()
+  (control / ".limae-ignore").write_text("[abc\n", encoding="utf-8")
+  (control / "t.md").write_text("你好,世界\n", encoding="utf-8")
+  completed = subprocess.run(  # noqa: S603 - fixed sibling entry point
+      [binary, "t.md"],
+      cwd=control,
+      env={},
+      check=False,
+      capture_output=True,
+      text=True,
+  )
+  assert completed.returncode == 1
+  assert "t.md:1: error: [zh-typography-1" in completed.stdout
+  assert completed.stderr == ""
 
 
 def run(argv: list[str], monkeypatch: pytest.MonkeyPatch) -> int:
