@@ -11,6 +11,7 @@ include = [
   "/rust/**/*.rs",
   "/spec/README.md",
   "/spec/fixtures/**",
+  "/spec/polish/**",
   "/spec/rules.md",
   "/spec/wordlists/**",
 ]
@@ -43,6 +44,7 @@ print_stderr = "deny"
 
 [dependencies]
 clap = { version = "4", default-features = false, features = ["std", "help", "usage", "error-context"] }
+getrandom = { version = "0.4", features = ["std"] }
 globset = "0.4"
 ignore = "0.4"
 regex = "1"
