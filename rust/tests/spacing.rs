@@ -274,7 +274,7 @@ fn protection_checks_overlap_and_both_zero_width_endpoints() -> TestResult {
     let line = "用A表示";
     let p = LineProtection::Inline {
         code: Vec::new(),
-        prose: vec![3..4],
+        prose: std::iter::once(3..4).collect(),
     };
     assert_eq!(rules.check_line(line, &p, &config), []);
     Ok(())
