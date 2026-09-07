@@ -89,18 +89,6 @@ pub const RETENTION: Duration = Duration::from_secs(24 * 3600);
 /// magnitude past the seconds a message spends streaming, so a sweep can never
 /// take the batches of a message still arriving.
 pub const ORPHAN_RETENTION: Duration = Duration::from_secs(3600);
-/// How long the final batch waits for a slower sibling to land.
-///
-/// The host starts one process per batch and does not wait for it before
-/// starting the next (2026-09-01, Claude Code 2.1.257: the dispatcher only
-/// serialises what the answers do to the screen, not the runs). Two
-/// consequences, and one line of defence each: [`keep`] renames a batch into
-/// place so a half-written one is never read, and the final batch — which knows
-/// its own index, and so how many came before it — waits this long before
-/// giving up and polishing what it has.
-pub const SIBLING_WAIT: Duration = Duration::from_secs(2);
-/// How often that wait looks again.
-pub const SIBLING_POLL: Duration = Duration::from_millis(20);
 
 /// The longest a sanitised id may be.
 const NAME_LIMIT: usize = 64;
@@ -241,9 +229,11 @@ pub fn part(parts: &Path, index: usize) -> PathBuf {
 ///
 /// The batch is written under a temporary name and renamed into place in one
 /// step, because another batch of the same message may be reading this
-/// directory right now (see [`SIBLING_WAIT`]). The temporary name carries this
-/// process's id so that the exclusive create stays exclusive without a leftover
-/// from a dead sibling blocking it.
+/// directory right now: the host starts one process per batch and does not wait
+/// for it before starting the next (2026-09-01, Claude Code 2.1.257: the
+/// dispatcher only serialises what the answers do to the screen, not the runs).
+/// The temporary name carries this process's id so that the exclusive create
+/// stays exclusive without a leftover from a dead sibling blocking it.
 pub fn keep(parts: &Path, index: usize, delta: &str) -> io::Result<()> {
     create_directory(parts)?;
     let writing = parts.join(format!(
