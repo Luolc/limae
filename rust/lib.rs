@@ -4,6 +4,7 @@ pub mod cli;
 pub mod config;
 pub mod directives;
 pub mod files;
+pub mod hook;
 pub mod markdown;
 pub mod pipeline;
 pub mod polish;
