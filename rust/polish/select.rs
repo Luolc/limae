@@ -216,6 +216,11 @@ pub fn probe(
 /// whatever this run writes back, so that one search cannot read one clock and
 /// write another.
 ///
+/// Only `limits`' caps apply to a probe; its `timeout` does not. A caller's
+/// deadline says how long the user waits for a rewrite, and a probe is not one:
+/// the reference implementation's `engines.select` takes no timeout at all and
+/// probes under [`PROBE_TIMEOUT`].
+///
 /// # Errors
 ///
 /// Returns [`EngineError::NoUsableEngine`] when no engine answered; its report
@@ -237,6 +242,14 @@ pub fn select(
     // anything: step 3 excludes it before its remembered state is consulted.
     fresh.retain(|(engine, _)| installed(engine, env));
 
+    // The search's own deadline, not the caller's: `PROBE_TIMEOUT` is how long
+    // one engine may take to say it is alive, which is a different question
+    // from how long a rewrite may take. A caller that hands its own deadline
+    // down would otherwise shorten or lengthen the search along with it.
+    let probing = EngineLimits {
+        timeout: PROBE_TIMEOUT,
+        ..limits
+    };
     let candidates = order(env);
     let mut diagnosed: Vec<(&'static Engine, EngineState)> = Vec::new();
     let mut stale = false;
@@ -245,7 +258,7 @@ pub fn select(
         let state = match remembered {
             Some(observed) => observed.state,
             None => {
-                let state = probe(engine, env, limits, cancellation)?;
+                let state = probe(engine, env, probing, cancellation)?;
                 // `command -v` is free to redo, so a missing binary is never
                 // written down; only what cost a real call is.
                 if state != EngineState::Missing
