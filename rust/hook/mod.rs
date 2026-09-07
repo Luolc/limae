@@ -4,5 +4,6 @@
 //! the hook does and `src/limae/hook.py` is the reference implementation; this
 //! module holds the parts of it that are not the host protocol itself.
 
+pub mod parts;
 pub mod render;
 pub mod state;
