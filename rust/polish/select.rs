@@ -16,15 +16,23 @@
 //! tests would be untestable, and a caller that wants the process environment
 //! passes it.
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::fs::File;
 use std::io::BufReader;
-use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::path::Path;
+use std::time::{Duration, SystemTime};
 
+use super::cache::{self, Observed};
 use super::diagnosis::{EngineState, Signs};
-use super::engines::{ENGINES, Engine, EngineError, EngineLimits, EngineRequest, polish};
-use super::process::{CancellationToken, ProcessError};
+use super::engines::{self, ENGINES, Engine, EngineError, EngineLimits, EngineRequest};
+use super::process::CancellationToken;
+use super::value;
+
+/// What a diagnosis adds when some of its answers came from the cache.
+///
+/// The user who needs this most is the one who has just logged in: the engine
+/// they fixed is still being skipped, and this says why and how to retry now.
+const STALE_HINT: &str = "some of these are remembered answers, not fresh ones; to retry right now, name the engine with --engine, or delete";
 
 /// The token the probe asks for and accepts as proof of life.
 pub const PROBE_MARKER: &str = "LIMAE-PROBE-OK";
@@ -43,15 +51,6 @@ pub const PROBE_INPUT: &str = "probe";
 
 /// How long one probe is allowed to take, from the reference implementation.
 pub const PROBE_TIMEOUT: Duration = Duration::from_secs(90);
-
-/// Return the home directory of a run.
-///
-/// `None` when the environment carries no usable `HOME`; the caller's
-/// environment is the whole environment, so there is no ambient fallback.
-#[must_use]
-pub fn home(env: &[(OsString, OsString)]) -> Option<PathBuf> {
-    value(env, "HOME").map(PathBuf::from)
-}
 
 /// Return whether an engine's CLI is on `PATH` (step 3).
 ///
@@ -137,7 +136,7 @@ pub fn has_credentials(engine: &Engine, env: &[(OsString, OsString)]) -> bool {
     {
         return true;
     }
-    let Some(home) = home(env) else {
+    let Some(home) = super::home(env) else {
         return false;
     };
     let path = home.join(preset.auth_file);
@@ -188,13 +187,16 @@ pub fn probe(
         cwd: Path::new("."),
         env,
     };
-    let state = match polish(&request, limits, cancellation) {
+    let state = match engines::polish(&request, limits, cancellation) {
         Ok(answer) if answer.to_uppercase().contains(PROBE_MARKER) => EngineState::Ok,
         Ok(answer) => {
             let signs = Signs::new().map_err(|source| EngineError::Classifier { source })?;
             signs.classify(&answer)
         }
-        Err(error) => attributed(error)?,
+        Err(error) => {
+            let state = error.state();
+            state.ok_or(error)?
+        }
     };
     if state == EngineState::Failed && !has_credentials(engine, env) && engine.preset().is_some() {
         return Ok(EngineState::NoCredentials);
@@ -202,34 +204,123 @@ pub fn probe(
     Ok(state)
 }
 
-/// Turn the failures the reference implementation blames on the engine into a
-/// state, and hand back the ones it has no counterpart for.
-fn attributed(error: EngineError) -> Result<EngineState, EngineError> {
-    Ok(match &error {
-        // One state, two things to look at: waiting too long and finding no
-        // route are the same thing to tell a person.
-        EngineError::Process {
-            source: ProcessError::Timeout,
-        } => EngineState::Unreachable,
-        EngineError::Process {
-            source: ProcessError::Spawn { .. },
-        } => EngineState::Missing,
-        EngineError::Process {
-            source: ProcessError::OutputLimit { .. },
+/// Find an engine to polish with (ADR-0008 section 三 steps 2 to 6).
+///
+/// The ordering is recomputed every time; only each engine's observed state is
+/// served from the cache, standing in for the probe of step 5 whether it was a
+/// probe or a failed real call that last set it. A diagnosis that came from the
+/// cache says so and says how to retry now, because the user who needs it most
+/// is the one who has just logged in.
+///
+/// `now` is the run's own clock reading, shared by the TTL check and by
+/// whatever this run writes back, so that one search cannot read one clock and
+/// write another.
+///
+/// # Errors
+///
+/// Returns [`EngineError::NoUsableEngine`] when no engine answered; its report
+/// diagnoses every preset one by one and gives each one's next step. Nothing an
+/// engine printed is quoted. A failure that is this process's own rather than
+/// an engine's — a temporary file, the OS random source, a cancellation — is
+/// returned as itself.
+pub fn select(
+    env: &[(OsString, OsString)],
+    limits: EngineLimits,
+    cancellation: &CancellationToken,
+    now: SystemTime,
+) -> Result<&'static Engine, EngineError> {
+    let path = cache::file(env);
+    let mut fresh = path
+        .as_deref()
+        .map_or_else(Vec::new, |path| cache::remembered(path, now));
+    // An answer about a CLI that is no longer installed is not an answer about
+    // anything: step 3 excludes it before its remembered state is consulted.
+    fresh.retain(|(engine, _)| installed(engine, env));
+
+    let candidates = order(env);
+    let mut diagnosed: Vec<(&'static Engine, EngineState)> = Vec::new();
+    let mut stale = false;
+    for engine in candidates {
+        let remembered = observed(&fresh, engine);
+        let state = match remembered {
+            Some(observed) => observed.state,
+            None => {
+                let state = probe(engine, env, limits, cancellation)?;
+                // `command -v` is free to redo, so a missing binary is never
+                // written down; only what cost a real call is.
+                if state != EngineState::Missing
+                    && let Some(path) = path.as_deref()
+                {
+                    cache::remember(path, engine, state, now);
+                }
+                state
+            }
+        };
+        if state == EngineState::Ok {
+            return Ok(engine);
         }
-        | EngineError::AnswerRead { .. }
-        | EngineError::AnswerLimit { .. }
-        | EngineError::AnswerEncoding
-        | EngineError::EmptyAnswer => EngineState::Failed,
-        EngineError::Exit { state } => *state,
-        _ => return Err(error),
+        diagnosed.push((engine, state));
+        stale = stale || remembered.is_some();
+    }
+
+    let mut report = vec!["no polish engine is usable:".to_owned()];
+    for engine in &ENGINES {
+        let state = diagnosed
+            .iter()
+            .find(|(diagnosed, _)| diagnosed.name() == engine.name())
+            .map_or(EngineState::Missing, |(_, state)| *state);
+        let when = observed(&fresh, engine).map_or_else(String::new, |observed| {
+            format!(" ({})", cache::ago(observed.age))
+        });
+        let step = state.next_step().unwrap_or_default();
+        report.push(format!("  {}: {state}{when} — {step}", engine.name()));
+    }
+    report.push("or configure [polish] engine = 'custom' with your own command".to_owned());
+    if let (true, Some(path)) = (stale, path.as_deref()) {
+        report.push(format!("{STALE_HINT} {}", path.display()));
+    }
+    Err(EngineError::NoUsableEngine {
+        report: report.join("\n"),
     })
 }
 
-fn value<'a>(env: &'a [(OsString, OsString)], name: &str) -> Option<&'a OsStr> {
-    env.iter()
-        .find(|(variable, value)| variable == OsStr::new(name) && !value.is_empty())
-        .map(|(_, value)| value.as_os_str())
+/// Rewrite one piece of prose, keeping the cache honest.
+///
+/// This is the `auto` search's front door for a real call, and the reason
+/// [`cache::CACHE_TTL`] can be an hour: a call that failed for real is the
+/// check that a remembered `Ok` has to survive, so its state is written over
+/// that `Ok` and the next run picks another engine instead of failing the same
+/// way for the rest of the hour. [`super::engines::polish`] is the same call
+/// without that write-back, for a caller that has already been told which
+/// engine to run.
+///
+/// A custom command is nobody's cached engine, and a missing binary is free to
+/// re-check, so neither is written down.
+///
+/// # Errors
+///
+/// Returns whatever the invocation failed with, unchanged.
+pub fn polish(
+    request: &EngineRequest<'_>,
+    limits: EngineLimits,
+    cancellation: &CancellationToken,
+    now: SystemTime,
+) -> Result<String, EngineError> {
+    engines::polish(request, limits, cancellation).inspect_err(|error| {
+        let Some(state) = error.state().filter(|state| *state != EngineState::Missing) else {
+            return;
+        };
+        if let Some(path) = cache::file(request.env) {
+            cache::remember(&path, request.engine, state, now);
+        }
+    })
+}
+
+fn observed<'a>(fresh: &'a [(&'static Engine, Observed)], engine: &Engine) -> Option<&'a Observed> {
+    fresh
+        .iter()
+        .find(|(remembered, _)| remembered.name() == engine.name())
+        .map(|(_, observed)| observed)
 }
 
 #[cfg(unix)]

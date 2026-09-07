@@ -312,6 +312,14 @@ pub enum EngineError {
     /// The configured timeout could not be represented as an absolute deadline.
     #[error("polish engine timeout is outside the supported range")]
     InvalidTimeout,
+    /// The `auto` search found no engine that answered (ADR-0008 section 三
+    /// step 6).
+    #[error("{report}")]
+    NoUsableEngine {
+        /// One diagnosis and next step per preset. Engine names, states and
+        /// next steps only; nothing an engine printed is quoted.
+        report: String,
+    },
 }
 
 impl EngineError {
@@ -355,7 +363,42 @@ impl EngineError {
             | Self::Classifier { .. }
             | Self::Cleanup { .. }
             | Self::InvalidTimeout => FailureReason::Other,
+            Self::NoUsableEngine { .. } => FailureReason::NoEngine,
         }
+    }
+
+    /// Return the state this failure means for the engine, or `None` when the
+    /// failure is this process's own rather than the engine's.
+    ///
+    /// This is the mapping the reference implementation makes inside its
+    /// runner: a spawn failure, a deadline, a nonzero exit and an unusable
+    /// answer are all things to tell a person about the engine, while a
+    /// temporary file, the OS random source and the caller's own cancellation
+    /// are not. It is the sibling of [`EngineError::reason`], one layer
+    /// coarser: `reason` says how this invocation ended, this says what that
+    /// means about the engine — which is what a probe reports and what the
+    /// cache remembers.
+    #[must_use]
+    pub fn state(&self) -> Option<EngineState> {
+        Some(match self {
+            // One state, two things to look at: waiting too long and finding no
+            // route are the same thing to tell a person.
+            Self::Process {
+                source: ProcessError::Timeout,
+            } => EngineState::Unreachable,
+            Self::Process {
+                source: ProcessError::Spawn { .. },
+            } => EngineState::Missing,
+            Self::Process {
+                source: ProcessError::OutputLimit { .. },
+            }
+            | Self::AnswerRead { .. }
+            | Self::AnswerLimit { .. }
+            | Self::AnswerEncoding
+            | Self::EmptyAnswer => EngineState::Failed,
+            Self::Exit { state } => *state,
+            _ => return None,
+        })
     }
 }
 
@@ -459,6 +502,10 @@ pub fn expand(request: &EngineRequest<'_>, workdir: &Path) -> Result<Invocation,
 }
 
 /// Execute an engine through C1 and return one normalized trailing newline.
+///
+/// This is the raw call. [`super::select::polish`] is the same call with the
+/// `auto` search's cache write-back, which is what keeps a remembered `ok`
+/// from outliving the engine.
 ///
 /// The temporary directory is removed explicitly on every return path. Cleanup
 /// is outside the process deadline and takes priority over an execution or

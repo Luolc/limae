@@ -55,6 +55,24 @@ impl EngineState {
         }
     }
 
+    /// Return the state a stored [`EngineState::as_str`] came from.
+    ///
+    /// `None` for anything else, which is what lets a cache file written by a
+    /// different build, or by hand, be dropped instead of believed.
+    #[must_use]
+    pub fn parse(text: &str) -> Option<Self> {
+        [
+            Self::Ok,
+            Self::Missing,
+            Self::Unauthorized,
+            Self::NoCredentials,
+            Self::Unreachable,
+            Self::Failed,
+        ]
+        .into_iter()
+        .find(|state| state.as_str() == text)
+    }
+
     /// Return what the person should do about this state.
     ///
     /// [`EngineState::Ok`] has no next step and is the only `None`.
