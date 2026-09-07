@@ -3,6 +3,7 @@ name = "limae"
 version = "0.13.0"
 description = "Markdown linter, starting from Chinese technical-writing typography rules"
 requires-python = ">=3.13,<3.14"
+license = "Apache-2.0"
 # gitignore pattern matching for the `.limae-ignore` file; the
 # semantics are git's, not worth reimplementing.
 dependencies = ["pathspec>=0.12.1"]

@@ -85,7 +85,7 @@ impl Default for PolishSettings {
 ///
 /// The presets are already in the order the reference implementation sorts
 /// them into, so this is one list, not two.
-fn known_engines() -> String {
+pub fn known_engines() -> String {
     let mut names = Vec::with_capacity(ENGINES.len() + 2);
     names.push(AUTO_ENGINE);
     names.extend(ENGINES.iter().map(Engine::name));

@@ -167,3 +167,7 @@ uv run limae <file>...           # 检查指定文件
 uv run limae polish - < draft.md # 用 LLM 润色一段文本 (stdin 进、stdout 出)
 uv run pytest -q                 # 测试
 ```
+
+## 许可证
+
+Apache License, Version 2.0，见 [`LICENSE`](LICENSE)。

@@ -281,10 +281,66 @@ fn directive_and_unavailable_subcommands_are_usage_errors() -> TestResult {
     assert_eq!((code, stdout.as_str()), (2, ""));
     assert!(stderr.contains("directive error: t.md:1: unknown rule id(s) unknown"));
 
-    for subcommand in ["polish", "hook"] {
-        let (code, stdout, stderr) = output_text(run(root.path(), &[subcommand])?)?;
-        assert_eq!((code, stdout.as_str()), (2, ""));
-        assert!(stderr.contains("subcommand is not provided yet"));
-    }
+    // `hook` is still the D task; `polish` is wired now and answers with its
+    // own usage, which is what tells the two apart.
+    let (code, stdout, stderr) = output_text(run(root.path(), &["hook"])?)?;
+    assert_eq!((code, stdout.as_str()), (2, ""));
+    assert!(stderr.contains("subcommand is not provided yet"));
+
+    let (code, stdout, stderr) = output_text(run(root.path(), &["polish", "doc.md"])?)?;
+    assert_eq!((code, stdout.as_str()), (2, ""));
+    assert!(!stderr.contains("subcommand is not provided yet"));
+    assert!(stderr.contains("only \'-\' (stdin) is supported so far"));
+    Ok(())
+}
+
+/// One real process for the `polish` subcommand.
+///
+/// The offline arms exercise `polish::cli::run` directly; this one is here for
+/// what only a process has: the subcommand dispatch, the ambient environment
+/// and standard input, and the exit code `main` hands back to the shell.
+#[cfg(unix)]
+#[test]
+fn the_polish_subcommand_rewrites_standard_input_through_a_custom_command() -> TestResult {
+    use std::io::Write as _;
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::Stdio;
+
+    let root = TempDir::new()?;
+    let bin = root.path().join("bin");
+    fs::create_dir(&bin)?;
+    // Shell built-ins only: `PATH` is this directory alone, so no engine
+    // installed on the machine can answer and nothing reaches a real model.
+    let stub = bin.join("mygateway");
+    fs::write(
+        &stub,
+        "#!/bin/sh\nIFS= read -r line\nprintf 'polished: %s\\n' \"$line\"\n",
+    )?;
+    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755))?;
+    fs::write(
+        root.path().join("limae.toml"),
+        "[polish]\nengine = \"custom\"\ncommand = [\"mygateway\"]\n",
+    )?;
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_limae-rs"))
+        .current_dir(root.path())
+        .env_clear()
+        .env("PATH", &bin)
+        .env("HOME", root.path().join("home"))
+        .env("XDG_CACHE_HOME", root.path().join("cache"))
+        .args(["polish", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    child
+        .stdin
+        .take()
+        .ok_or("missing child stdin")?
+        .write_all(b"the acme report\n")?;
+
+    let (code, stdout, stderr) = output_text(child.wait_with_output()?)?;
+    assert_eq!((code, stderr.as_str()), (0, ""));
+    assert_eq!(stdout, "polished: the acme report\n");
     Ok(())
 }
