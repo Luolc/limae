@@ -632,7 +632,7 @@ fn nonzero_exit_is_diagnosed_from_output_that_stays_out_of_the_error() -> TestRe
     let rejected = failing_stub(
         &root,
         "rejected",
-        &format!("printf '%s' '{rejected_output}' >&2; exit 1"),
+        &format!("printf '%s' '{rejected_output}' >&2; exit 7"),
     )?;
     assert!(matches!(
         rejected,
@@ -645,7 +645,7 @@ fn nonzero_exit_is_diagnosed_from_output_that_stays_out_of_the_error() -> TestRe
     let unreachable = failing_stub(
         &root,
         "unreachable",
-        &format!("printf '%s' 'getaddrinfo ENOTFOUND gateway.invalid {SYNTHETIC_VALUE}'; exit 2"),
+        &format!("printf '%s' 'getaddrinfo ENOTFOUND gateway.invalid {SYNTHETIC_VALUE}'; exit 7"),
     )?;
     assert!(matches!(
         unreachable,
@@ -658,7 +658,7 @@ fn nonzero_exit_is_diagnosed_from_output_that_stays_out_of_the_error() -> TestRe
     let unknown = failing_stub(
         &root,
         "unknown",
-        &format!("printf '%s' 'the reactor rejected widget {SYNTHETIC_VALUE}' >&2; exit 3"),
+        &format!("printf '%s' 'the reactor rejected widget {SYNTHETIC_VALUE}' >&2; exit 7"),
     )?;
     assert!(matches!(
         unknown,
@@ -668,6 +668,9 @@ fn nonzero_exit_is_diagnosed_from_output_that_stays_out_of_the_error() -> TestRe
     ));
     assert_eq!(unknown.reason(), FailureReason::NonzeroExit);
 
+    // The three arms end with the same nonzero status and differ only in what
+    // they printed, so three different states cannot have come from the exit
+    // code; the classifier is the only thing that told them apart.
     // The three arms above prove the child's output reached the classifier;
     // these prove none of it left with the error it produced.
     for error in [&rejected, &unreachable, &unknown] {

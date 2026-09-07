@@ -12,9 +12,6 @@ use thiserror::Error;
 use super::diagnosis::{EngineState, FailureReason, Signs};
 use super::process::{self, CancellationToken, ProcessError, ProcessRequest, RunLimits};
 
-const CLAUDE_MODEL: &str = "sonnet";
-const CODEX_MODEL: &str = "gpt-5.6-terra";
-const GROK_MODEL: &str = "grok-4.6";
 const CODEX_EFFORT: &str = "low";
 
 const SPEC_FILENAME: &str = "spec.md";
@@ -31,25 +28,77 @@ const DIRECTORY_ENV: &[&str] = &["PWD", "OLDPWD"];
 const HOOK_DISABLE_VARIABLE: &str = "LIMAE_HOOK_DISABLE";
 const LOCALE_PREFIX: &str = "LC_";
 
-const CLAUDE_ENV: &[&str] = &[
-    "ANTHROPIC_API_KEY",
-    "ANTHROPIC_AUTH_TOKEN",
-    "ANTHROPIC_BASE_URL",
-    "CLAUDE_CODE_USE_BEDROCK",
-    "CLAUDE_CODE_USE_VERTEX",
-    "ANTHROPIC_FOUNDRY_BASE_URL",
-];
-const CODEX_ENV: &[&str] = &[
-    "OPENAI_API_KEY",
-    "CODEX_API_KEY",
-    "CODEX_ACCESS_TOKEN",
-    "CODEX_URL",
-];
-const GROK_ENV: &[&str] = &[
-    "GROK_CODE_XAI_API_KEY",
-    "GROK_CLI_CHAT_PROXY_BASE_URL",
-    "GROK_AUTH_PROVIDER_COMMAND",
-];
+/// One built-in engine's metadata (ADR-0008 section 三).
+///
+/// Everything the `auto` search needs to know about a preset without running
+/// it: where its binary is, which session it belongs to, and where it leaves a
+/// trace of a login. The credential fields name locations only — nothing read
+/// through them is returned, logged or reported (`AGENTS.md` 「隐私边界」).
+pub struct Preset {
+    /// The CLI's executable name, looked up on `PATH`; a missing binary is the
+    /// only hard negative of the `auto` search (ADR-0008 section 三 step 3).
+    pub binary: &'static str,
+    /// The default model, overridden by `[polish] model`. Not frozen by the
+    /// ADR — it moves once the A/B evidence exists (ADR-0008 section 五).
+    pub model: &'static str,
+    /// Variables the CLI sets in its own sessions, and only those; a variable
+    /// that changes with the installation method is not a host marker
+    /// (ADR-0008 section 三 step 2).
+    pub host_env: &'static [&'static str],
+    /// The login state's path relative to the home directory.
+    pub auth_file: &'static str,
+    /// A key that must be present in `auth_file` for it to count; `None` when
+    /// the file's existence is the whole hint.
+    pub auth_key: Option<&'static str>,
+    /// Key and base-URL variables of this vendor. Only their names are used,
+    /// never their values.
+    pub credential_env: &'static [&'static str],
+}
+
+const CLAUDE: Preset = Preset {
+    binary: "claude",
+    model: "sonnet",
+    host_env: &["CLAUDECODE"],
+    auth_file: ".claude.json",
+    auth_key: Some("oauthAccount"),
+    credential_env: &[
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_BASE_URL",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "ANTHROPIC_FOUNDRY_BASE_URL",
+    ],
+};
+const CODEX: Preset = Preset {
+    binary: "codex",
+    model: "gpt-5.6-terra",
+    host_env: &["CODEX_SESSION_ID"],
+    auth_file: ".codex/auth.json",
+    auth_key: None,
+    credential_env: &[
+        "OPENAI_API_KEY",
+        "CODEX_API_KEY",
+        "CODEX_ACCESS_TOKEN",
+        "CODEX_URL",
+    ],
+};
+const GROK: Preset = Preset {
+    binary: "grok",
+    model: "grok-4.6",
+    host_env: &["GROK_SESSION_ID"],
+    auth_file: ".grok/auth.json",
+    auth_key: None,
+    credential_env: &[
+        "GROK_CODE_XAI_API_KEY",
+        "GROK_CLI_CHAT_PROXY_BASE_URL",
+        "GROK_AUTH_PROVIDER_COMMAND",
+    ],
+};
+
+/// The order the presets are tried and reported in when nothing else breaks
+/// the tie (ADR-0008 section 三).
+pub static ENGINES: [Engine; 3] = [Engine::Claude, Engine::Codex, Engine::Grok];
 
 /// Maximum time allowed for one real model call.
 ///
@@ -85,26 +134,40 @@ pub enum Engine {
 }
 
 impl Engine {
+    /// Return this engine's name, as configuration and diagnostics spell it.
+    #[must_use]
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Claude => "claude",
+            Self::Codex => "codex",
+            Self::Grok => "grok",
+            Self::Custom(_) => "custom",
+        }
+    }
+
+    /// Return the built-in metadata of a preset, or `None` for a custom
+    /// command — which is the user's own, so this module knows nothing about
+    /// where it lives or how it is authenticated.
+    #[must_use]
+    pub fn preset(&self) -> Option<&'static Preset> {
+        match self {
+            Self::Claude => Some(&CLAUDE),
+            Self::Codex => Some(&CODEX),
+            Self::Grok => Some(&GROK),
+            Self::Custom(_) => None,
+        }
+    }
+
     fn is_preset(&self) -> bool {
-        !matches!(self, Self::Custom(_))
+        self.preset().is_some()
     }
 
     fn default_model(&self) -> &'static str {
-        match self {
-            Self::Claude => CLAUDE_MODEL,
-            Self::Codex => CODEX_MODEL,
-            Self::Grok => GROK_MODEL,
-            Self::Custom(_) => "",
-        }
+        self.preset().map_or("", |preset| preset.model)
     }
 
     fn credential_env(&self) -> &'static [&'static str] {
-        match self {
-            Self::Claude => CLAUDE_ENV,
-            Self::Codex => CODEX_ENV,
-            Self::Grok => GROK_ENV,
-            Self::Custom(_) => &[],
-        }
+        self.preset().map_or(&[], |preset| preset.credential_env)
     }
 }
 
@@ -314,7 +377,7 @@ pub fn expand(request: &EngineRequest<'_>, workdir: &Path) -> Result<Invocation,
             fs::write(&spec_file, spec).map_err(|source| EngineError::Temporary { source })?;
             Ok(Invocation {
                 argv: strings(&[
-                    "claude",
+                    CLAUDE.binary,
                     "-p",
                     "--system-prompt-file",
                     utf8_path(&spec_file)?,
@@ -332,7 +395,7 @@ pub fn expand(request: &EngineRequest<'_>, workdir: &Path) -> Result<Invocation,
             let output_path = utf8_path(&output)?;
             Ok(Invocation {
                 argv: strings(&[
-                    "codex",
+                    CODEX.binary,
                     "exec",
                     "--skip-git-repo-check",
                     "--ephemeral",
@@ -351,7 +414,7 @@ pub fn expand(request: &EngineRequest<'_>, workdir: &Path) -> Result<Invocation,
         }
         Engine::Grok => Ok(Invocation {
             argv: strings(&[
-                "grok",
+                GROK.binary,
                 "--system-prompt-override",
                 request.spec,
                 "-m",
