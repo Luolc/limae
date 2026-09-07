@@ -2,10 +2,12 @@
 name = "limae"
 version = "0.13.0"
 edition = "2024"
+license = "Apache-2.0"
 publish = false
 include = [
   "/Cargo.toml",
   "/Cargo.lock",
+  "/LICENSE",
   "/README.md",
   "/rust-toolchain.toml",
   "/rust/**/*.rs",
