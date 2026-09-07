@@ -1,6 +1,7 @@
 use super::{
     AnswerSource, Engine, EngineError, EngineLimits, EngineRequest, Invocation, expand, polish,
 };
+use crate::polish::diagnosis::{EngineState, FailureReason};
 use crate::polish::process::{CancellationToken, ProcessError, Stream};
 use std::error::Error;
 use std::ffi::OsString;
@@ -603,5 +604,170 @@ fn answer_normalization_uses_the_python_whitespace_contract() -> TestResult {
         super::normalize("\u{1c}\u{1f}".as_bytes().to_vec()),
         Err(EngineError::EmptyAnswer)
     ));
+    Ok(())
+}
+
+#[cfg(unix)]
+fn failing_stub(root: &TempDir, slot: &str, body: &str) -> Result<EngineError, Box<dyn Error>> {
+    let bin = root.path().join(slot);
+    let script = stub(&bin, "gateway", body)?;
+    let env = environment(&bin);
+    let engine = Engine::Custom(vec![script.to_string_lossy().into_owned()]);
+    let error = polish(
+        &request(&engine, "", root.path(), &env),
+        limits(),
+        &CancellationToken::new(),
+    )
+    .err()
+    .ok_or("failing command unexpectedly succeeded")?;
+    Ok(error)
+}
+
+#[cfg(unix)]
+#[test]
+fn nonzero_exit_is_diagnosed_from_output_that_stays_out_of_the_error() -> TestResult {
+    let root = TempDir::new("classified-exit")?;
+
+    let rejected_output = format!("HTTP 401 Unauthorized for key {SYNTHETIC_VALUE}");
+    let rejected = failing_stub(
+        &root,
+        "rejected",
+        &format!("printf '%s' '{rejected_output}' >&2; exit 1"),
+    )?;
+    assert!(matches!(
+        rejected,
+        EngineError::Exit {
+            state: EngineState::Unauthorized
+        }
+    ));
+    assert_eq!(rejected.reason(), FailureReason::Rejected);
+
+    let unreachable = failing_stub(
+        &root,
+        "unreachable",
+        &format!("printf '%s' 'getaddrinfo ENOTFOUND gateway.invalid {SYNTHETIC_VALUE}'; exit 2"),
+    )?;
+    assert!(matches!(
+        unreachable,
+        EngineError::Exit {
+            state: EngineState::Unreachable
+        }
+    ));
+    assert_eq!(unreachable.reason(), FailureReason::Unreachable);
+
+    let unknown = failing_stub(
+        &root,
+        "unknown",
+        &format!("printf '%s' 'the reactor rejected widget {SYNTHETIC_VALUE}' >&2; exit 3"),
+    )?;
+    assert!(matches!(
+        unknown,
+        EngineError::Exit {
+            state: EngineState::Failed
+        }
+    ));
+    assert_eq!(unknown.reason(), FailureReason::NonzeroExit);
+
+    // The three arms above prove the child's output reached the classifier;
+    // these prove none of it left with the error it produced.
+    for error in [&rejected, &unreachable, &unknown] {
+        assert!(!error.to_string().contains(SYNTHETIC_VALUE));
+        assert!(!format!("{error:?}").contains(SYNTHETIC_VALUE));
+        assert!(!error.to_string().contains(&rejected_output));
+        assert!(!format!("{error:?}").contains(&rejected_output));
+        let mut source = error.source();
+        while let Some(current) = source {
+            assert!(!current.to_string().contains(SYNTHETIC_VALUE));
+            assert!(!format!("{current:?}").contains(SYNTHETIC_VALUE));
+            source = current.source();
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn every_invocation_outcome_carries_its_reference_reason() -> TestResult {
+    let root = TempDir::new("reasons")?;
+    let bin = root.path().join("bin");
+    let env = environment(&bin);
+
+    let slow = stub(&bin, "slow", "sleep 5")?;
+    let slow_engine = Engine::Custom(vec![slow.to_string_lossy().into_owned()]);
+    let timed_out = polish(
+        &request(&slow_engine, "", root.path(), &env),
+        EngineLimits {
+            timeout: Duration::from_millis(200),
+            ..limits()
+        },
+        &CancellationToken::new(),
+    )
+    .err()
+    .ok_or("slow command unexpectedly succeeded")?;
+    assert!(matches!(
+        timed_out,
+        EngineError::Process {
+            source: ProcessError::Timeout
+        }
+    ));
+    assert_eq!(timed_out.reason(), FailureReason::TimedOut);
+
+    let absent = Engine::Custom(vec![
+        root.path()
+            .join("no-such-engine")
+            .to_string_lossy()
+            .into_owned(),
+    ]);
+    let missing = polish(
+        &request(&absent, "", root.path(), &env),
+        limits(),
+        &CancellationToken::new(),
+    )
+    .err()
+    .ok_or("missing command unexpectedly succeeded")?;
+    assert!(matches!(
+        missing,
+        EngineError::Process {
+            source: ProcessError::Spawn { .. }
+        }
+    ));
+    assert_eq!(missing.reason(), FailureReason::NotInstalled);
+
+    let cancellation = CancellationToken::new();
+    cancellation.cancel();
+    let quiet = stub(&bin, "quiet", "printf 'polished'")?;
+    let quiet_engine = Engine::Custom(vec![quiet.to_string_lossy().into_owned()]);
+    let cancelled = polish(
+        &request(&quiet_engine, "", root.path(), &env),
+        limits(),
+        &cancellation,
+    )
+    .err()
+    .ok_or("cancelled command unexpectedly succeeded")?;
+    assert!(matches!(
+        cancelled,
+        EngineError::Process {
+            source: ProcessError::Cancelled
+        }
+    ));
+    assert_eq!(cancelled.reason(), FailureReason::Other);
+
+    let silent = failing_stub(&root, "silent", "printf '   '")?;
+    assert!(matches!(silent, EngineError::EmptyAnswer));
+    assert_eq!(silent.reason(), FailureReason::EmptyAnswer);
+
+    stub(&bin, "codex", "cat > /dev/null")?;
+    let codex = Engine::Codex;
+    let unreadable = polish(
+        &request(&codex, "", root.path(), &environment(&bin)),
+        limits(),
+        &CancellationToken::new(),
+    )
+    .err()
+    .ok_or("absent answer file unexpectedly succeeded")?;
+    assert!(matches!(unreadable, EngineError::AnswerRead { .. }));
+    assert_eq!(unreadable.reason(), FailureReason::UnreadableAnswer);
+
+    assert_eq!(EngineError::EmptyCommand.reason(), FailureReason::NoEngine);
     Ok(())
 }
