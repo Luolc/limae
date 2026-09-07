@@ -1,13 +1,15 @@
 use super::{
-    Engine, EngineLimits, EngineState, PROBE_MARKER, PROBE_SPEC, host, installed, order, probe,
+    Engine, EngineLimits, EngineState, PROBE_MARKER, PROBE_SPEC, cache, host, installed, order,
+    polish, probe, select,
 };
+use crate::polish::engines::{EngineError, EngineRequest};
 use crate::polish::process::CancellationToken;
 use std::error::Error;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 type TestResult = Result<(), Box<dyn Error>>;
 
@@ -378,6 +380,298 @@ fn every_engine_attributable_failure_becomes_its_reference_state() -> TestResult
         let env = environment(&bin, &home, &credentials);
         let state = probe(&arm.engine, &env, arm.limits, &CancellationToken::new())?;
         assert_eq!(state, arm.expected, "arm: {}", arm.label);
+    }
+    Ok(())
+}
+
+/// A fixed clock reading, so that no cache assertion depends on the wall clock.
+fn now() -> SystemTime {
+    UNIX_EPOCH + Duration::from_secs(1_700_000_000)
+}
+
+/// An environment whose cache lives inside this test's own directory.
+///
+/// Nothing here may read the machine's real cache: the machine running these
+/// tests has all three CLIs installed and logged in, and a remembered answer
+/// about them would decide these arms instead of the fixtures.
+fn cached_environment(
+    bin: &Path,
+    home: &Path,
+    cache: &Path,
+    extra: &[(&str, &str)],
+) -> Vec<(OsString, OsString)> {
+    let mut env = environment(bin, home, extra);
+    env.push(("XDG_CACHE_HOME".into(), cache.as_os_str().to_owned()));
+    env
+}
+
+fn cache_file(env: &[(OsString, OsString)]) -> Result<PathBuf, Box<dyn Error>> {
+    Ok(cache::file(env).ok_or("no cache path")?)
+}
+
+fn selected(env: &[(OsString, OsString)]) -> Result<&'static Engine, EngineError> {
+    select(env, limits(), &CancellationToken::new(), now())
+}
+
+/// A stub that answers the probe and records that it was run.
+#[cfg(unix)]
+fn recording_stub(directory: &Path, name: &str, ran: &Path) -> Result<(), std::io::Error> {
+    stub(
+        directory,
+        name,
+        &format!(": > '{}'\nprintf '%s\\n' '{PROBE_MARKER}'", ran.display()),
+    )
+}
+
+#[cfg(unix)]
+#[test]
+fn the_first_engine_that_answers_is_chosen_and_remembered() -> TestResult {
+    let root = TempDir::new("chosen")?;
+    let bin = root.path().join("bin");
+    let home = root.path().join("home");
+    let cache = root.path().join("cache");
+    fs::create_dir(&home)?;
+    stub(&bin, "claude", "exit 7")?;
+    stub(&bin, "grok", &format!("printf '%s\\n' '{PROBE_MARKER}'"))?;
+    let env = cached_environment(&bin, &home, &cache, &[]);
+
+    assert_eq!(selected(&env)?.name(), "grok");
+
+    // Both answers cost a real call, so both are written down; the choice
+    // itself is not, because the next run's ordering is its own question.
+    let remembered = cache::remembered(&cache_file(&env)?, now());
+    let states: Vec<_> = remembered
+        .iter()
+        .map(|(engine, observed)| (engine.name(), observed.state))
+        .collect();
+    assert_eq!(
+        states,
+        [
+            ("claude", EngineState::NoCredentials),
+            ("grok", EngineState::Ok),
+        ]
+    );
+    Ok(())
+}
+
+/// The cache stands in for the probe, which is the whole point of it: an engine
+/// with a remembered answer is not run again inside its TTL.
+#[cfg(unix)]
+#[test]
+fn a_remembered_answer_stands_in_for_the_probe() -> TestResult {
+    let root = TempDir::new("stand-in")?;
+    let bin = root.path().join("bin");
+    let home = root.path().join("home");
+    let cache = root.path().join("cache");
+    fs::create_dir(&home)?;
+    let ran = root.path().join("claude-ran");
+    recording_stub(&bin, "claude", &ran)?;
+    let env = cached_environment(&bin, &home, &cache, &[]);
+    let path = cache_file(&env)?;
+
+    // The stub would answer, so anything but the remembered failure selects it.
+    cache::remember(&path, &Engine::Claude, EngineState::Unauthorized, now());
+    let error = selected(&env).err().ok_or("an engine was selected")?;
+    assert!(matches!(error, EngineError::NoUsableEngine { .. }));
+    assert!(!ran.exists(), "the CLI was run despite a remembered answer");
+
+    // Once the answer is past its TTL the engine is asked again.
+    cache::remember(
+        &path,
+        &Engine::Claude,
+        EngineState::Unauthorized,
+        now() - cache::FAILURE_CACHE_TTL - Duration::from_secs(1),
+    );
+    assert_eq!(selected(&env)?.name(), "claude");
+    assert!(ran.exists());
+    Ok(())
+}
+
+/// An answer cached outside a session cannot outrank the session the user is in
+/// now: only the state is remembered, never which engine was chosen.
+#[cfg(unix)]
+#[test]
+fn the_choice_is_recomputed_even_when_every_answer_is_remembered() -> TestResult {
+    let root = TempDir::new("recomputed")?;
+    let bin = root.path().join("bin");
+    let home = root.path().join("home");
+    let cache = root.path().join("cache");
+    fs::create_dir(&home)?;
+    let ran = root.path().join("ran");
+    for name in ["claude", "codex", "grok"] {
+        recording_stub(&bin, name, &ran)?;
+    }
+    let plain = cached_environment(&bin, &home, &cache, &[]);
+    let path = cache_file(&plain)?;
+    for engine in [&Engine::Claude, &Engine::Codex, &Engine::Grok] {
+        cache::remember(&path, engine, EngineState::Ok, now());
+    }
+
+    assert_eq!(selected(&plain)?.name(), "claude");
+    let inside_grok =
+        cached_environment(&bin, &home, &cache, &[("GROK_SESSION_ID", SYNTHETIC_VALUE)]);
+    assert_eq!(selected(&inside_grok)?.name(), "grok");
+    assert!(
+        !ran.exists(),
+        "an engine was probed despite a remembered answer"
+    );
+    Ok(())
+}
+
+/// A remembered answer about a CLI that is no longer installed is not an answer
+/// about anything, and it must not put an age on that engine's diagnosis.
+#[cfg(unix)]
+#[test]
+fn a_remembered_answer_about_an_uninstalled_cli_is_ignored() -> TestResult {
+    let root = TempDir::new("uninstalled")?;
+    let bin = root.path().join("bin");
+    let home = root.path().join("home");
+    let cache = root.path().join("cache");
+    fs::create_dir_all(&bin)?;
+    fs::create_dir(&home)?;
+    let env = cached_environment(&bin, &home, &cache, &[]);
+    cache::remember(&cache_file(&env)?, &Engine::Claude, EngineState::Ok, now());
+
+    let error = selected(&env).err().ok_or("an engine was selected")?;
+    let report = error.to_string();
+    assert!(report.contains("claude: not installed"), "{report}");
+    assert!(!report.contains("last checked"), "{report}");
+    Ok(())
+}
+
+/// The two diagnoses have to differ: a remembered one says how old it is and
+/// how to retry now, because the user who needs that most is the one who has
+/// just logged in.
+#[cfg(unix)]
+#[test]
+fn a_remembered_diagnosis_says_so_and_a_fresh_one_does_not() -> TestResult {
+    let root = TempDir::new("diagnosis")?;
+    let bin = root.path().join("bin");
+    let home = root.path().join("home");
+    let cache = root.path().join("cache");
+    fs::create_dir(&home)?;
+    stub(
+        &bin,
+        "claude",
+        &format!("printf '%s\\n' 'the reactor rejected widget {SYNTHETIC_VALUE}'; exit 7"),
+    )?;
+    let env = cached_environment(&bin, &home, &cache, &[]);
+    let path = cache_file(&env)?;
+
+    let fresh = selected(&env)
+        .err()
+        .ok_or("an engine was selected")?
+        .to_string();
+    assert!(
+        fresh.starts_with("no polish engine is usable:\n"),
+        "{fresh}"
+    );
+    assert!(
+        fresh.contains(
+            "  claude: no credentials found — log in to that CLI once, or configure engine = 'custom'\n"
+        ),
+        "{fresh}"
+    );
+    assert!(
+        fresh.contains(
+            "  codex: not installed — install the CLI, or name another engine with --engine\n"
+        ),
+        "{fresh}"
+    );
+    assert!(fresh.contains("  grok: not installed"), "{fresh}");
+    assert!(
+        fresh.ends_with("or configure [polish] engine = 'custom' with your own command"),
+        "{fresh}"
+    );
+    assert!(!fresh.contains("last checked"), "{fresh}");
+
+    // That first run wrote the answer down, so the second one is remembered.
+    cache::remember(
+        &path,
+        &Engine::Claude,
+        EngineState::NoCredentials,
+        now() - Duration::from_secs(120),
+    );
+    let stale = selected(&env)
+        .err()
+        .ok_or("an engine was selected")?
+        .to_string();
+    assert!(
+        stale.contains("  claude: no credentials found (last checked 2 minute(s) ago) —"),
+        "{stale}"
+    );
+    assert!(
+        stale.ends_with(&format!(
+            "some of these are remembered answers, not fresh ones; to retry right now, name the engine with --engine, or delete {}",
+            path.display()
+        )),
+        "{stale}"
+    );
+    // The uninstalled engines are diagnosed the same way in both.
+    assert!(stale.contains("  grok: not installed"), "{stale}");
+    Ok(())
+}
+
+/// The write-back of a failed real call is what lets a remembered `ok` last an
+/// hour: without it the permit would stand until its TTL ran out.
+#[cfg(unix)]
+#[test]
+fn a_real_failure_is_written_over_a_remembered_answer() -> TestResult {
+    let root = TempDir::new("writeback")?;
+    let bin = root.path().join("bin");
+    let home = root.path().join("home");
+    let cache = root.path().join("cache");
+    fs::create_dir(&home)?;
+    stub(&bin, "claude", "printf '%s\\n' 'HTTP 401'; exit 3")?;
+    stub(&bin, "failing", "exit 3")?;
+    let env = cached_environment(&bin, &home, &cache, &[]);
+    let path = cache_file(&env)?;
+    cache::remember(&path, &Engine::Claude, EngineState::Ok, now());
+
+    let request = EngineRequest {
+        engine: &Engine::Claude,
+        model: "",
+        spec: "spec",
+        text: "text",
+        cwd: root.path(),
+        env: &env,
+    };
+    let error = polish(&request, limits(), &CancellationToken::new(), now())
+        .err()
+        .ok_or("the stub answered")?;
+    assert!(matches!(error, EngineError::Exit { .. }));
+
+    let remembered = cache::remembered(&path, now());
+    let (engine, observed) = remembered.first().ok_or("nothing was remembered")?;
+    assert_eq!(
+        (engine.name(), observed.state),
+        ("claude", EngineState::Unauthorized)
+    );
+    assert_eq!(remembered.len(), 1);
+
+    // A custom command is nobody's cached engine, and a missing binary is free
+    // to re-check, so neither is written down.
+    for engine in [
+        Engine::Custom(vec![bin.join("failing").display().to_string()]),
+        Engine::Grok,
+    ] {
+        let request = EngineRequest {
+            engine: &engine,
+            model: "",
+            spec: "spec",
+            text: "text",
+            cwd: root.path(),
+            env: &env,
+        };
+        let _ = polish(&request, limits(), &CancellationToken::new(), now())
+            .err()
+            .ok_or("the stub answered")?;
+        assert_eq!(
+            cache::remembered(&path, now()).len(),
+            1,
+            "{}",
+            engine.name()
+        );
     }
     Ok(())
 }
