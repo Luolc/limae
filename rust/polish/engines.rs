@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use getrandom::fill;
 use thiserror::Error;
 
+use super::diagnosis::{EngineState, FailureReason, Signs};
 use super::process::{self, CancellationToken, ProcessError, ProcessRequest, RunLimits};
 
 const CLAUDE_MODEL: &str = "sonnet";
@@ -206,9 +207,19 @@ pub enum EngineError {
         #[source]
         source: ProcessError,
     },
-    /// The process finished with a nonzero status.
-    #[error("polish engine exited unsuccessfully")]
-    Exit,
+    /// The process finished with a nonzero status, diagnosed from its output.
+    #[error("polish engine exited unsuccessfully: {}", state.describe())]
+    Exit {
+        /// Diagnosis read from the child's output, which is not retained.
+        state: EngineState,
+    },
+    /// The failure classifier's own patterns could not be compiled.
+    #[error("polish failure classifier failed: {source}")]
+    Classifier {
+        /// Compilation failure of a constant pattern; carries no child output.
+        #[source]
+        source: regex::Error,
+    },
     /// The file-based answer could not be read.
     #[error("polish engine answer could not be read: {source}")]
     AnswerRead {
@@ -238,6 +249,51 @@ pub enum EngineError {
     /// The configured timeout could not be represented as an absolute deadline.
     #[error("polish engine timeout is outside the supported range")]
     InvalidTimeout,
+}
+
+impl EngineError {
+    /// Return how this invocation ended, for a caller that has to tell apart
+    /// the failures one [`EngineState`] merges.
+    ///
+    /// The hook's diagnostics record this token so that "no polish appeared"
+    /// can be answered without guessing
+    /// (`docs/adr/0009-polish-hook-contract.md` section 六). Cancellation has
+    /// no counterpart in the reference implementation, which cannot be
+    /// cancelled, and is reported as [`FailureReason::Other`].
+    #[must_use]
+    pub fn reason(&self) -> FailureReason {
+        match self {
+            Self::EmptyCommand
+            | Self::Process {
+                source: ProcessError::EmptyArgv,
+            } => FailureReason::NoEngine,
+            Self::Process {
+                source: ProcessError::Spawn { .. },
+            } => FailureReason::NotInstalled,
+            Self::Process {
+                source: ProcessError::Timeout,
+            } => FailureReason::TimedOut,
+            Self::Exit { state } => match state {
+                EngineState::Unauthorized => FailureReason::Rejected,
+                EngineState::Unreachable => FailureReason::Unreachable,
+                EngineState::Ok
+                | EngineState::Missing
+                | EngineState::NoCredentials
+                | EngineState::Failed => FailureReason::NonzeroExit,
+            },
+            Self::AnswerRead { .. } | Self::AnswerLimit { .. } | Self::AnswerEncoding => {
+                FailureReason::UnreadableAnswer
+            }
+            Self::EmptyAnswer => FailureReason::EmptyAnswer,
+            Self::TemporaryPathEncoding
+            | Self::Random { .. }
+            | Self::Temporary { .. }
+            | Self::Process { .. }
+            | Self::Classifier { .. }
+            | Self::Cleanup { .. }
+            | Self::InvalidTimeout => FailureReason::Other,
+        }
+    }
 }
 
 /// Expand an engine template into a concrete invocation.
@@ -374,7 +430,18 @@ pub fn polish(
         )
         .map_err(|source| EngineError::Process { source })?;
         if !output.status.success() {
-            return Err(EngineError::Exit);
+            let signs = Signs::new().map_err(|source| EngineError::Classifier { source })?;
+            // The child's bytes are read for signs here and go no further: the
+            // state is what leaves this scope, never the output it was read
+            // from (`AGENTS.md` 「隐私边界」).
+            let observed = format!(
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return Err(EngineError::Exit {
+                state: signs.classify(&observed),
+            });
         }
         let answer = match invocation.answer {
             AnswerSource::Stdout => output.stdout,
