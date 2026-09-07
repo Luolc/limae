@@ -224,6 +224,16 @@ pub enum ConfigError {
     InvalidSeverity { origin: ConfigOrigin },
     #[error("{origin}: `skip_zh_units` must be a string of CJK characters")]
     InvalidSkipZhUnits { origin: ConfigOrigin },
+    #[error("{origin}: `{key}` must be one of {known}")]
+    UnknownEngine {
+        origin: ConfigOrigin,
+        key: &'static str,
+        known: String,
+    },
+    #[error("{origin}: `engine = \"custom\"` needs `command`, the whole command to run")]
+    CustomWithoutCommand { origin: ConfigOrigin },
+    #[error("{origin}: `command` only runs under `engine = \"custom\"`")]
+    CommandWithoutCustom { origin: ConfigOrigin },
 }
 
 /// The effective rule configuration for one run.
@@ -341,7 +351,7 @@ fn resolve_table(table: &toml::Table, origin: ConfigOrigin) -> Result<ResolvedCo
     Ok(config)
 }
 
-fn find_config(start: &Path) -> Result<Option<(PathBuf, Value)>, ConfigError> {
+pub(crate) fn find_config(start: &Path) -> Result<Option<(PathBuf, Value)>, ConfigError> {
     for directory in start.ancestors() {
         let standalone = directory.join(CONFIG_FILENAME);
         if probe(&standalone)?.is_some_and(|metadata| metadata.is_file()) {
