@@ -25,7 +25,13 @@ const NONCE_BYTES: usize = 8;
 
 const SHARED_ENV: &[&str] = &["PATH", "HOME", "TMPDIR", "LANG", "TZ"];
 const DIRECTORY_ENV: &[&str] = &["PWD", "OLDPWD"];
-const HOOK_DISABLE_VARIABLE: &str = "LIMAE_HOOK_DISABLE";
+/// What a hook sets in an engine's environment to stop it starting
+/// another hook.
+///
+/// It is on the allowlist below for that reason: a preset engine is itself a
+/// coding agent, and one whose own display hook fired on the rewrite would be
+/// a recursion bounded by nothing.
+pub const HOOK_DISABLE_VARIABLE: &str = "LIMAE_HOOK_DISABLE";
 const LOCALE_PREFIX: &str = "LC_";
 
 /// One built-in engine's metadata (ADR-0008 section 三).
