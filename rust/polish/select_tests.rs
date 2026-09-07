@@ -454,6 +454,42 @@ fn the_first_engine_that_answers_is_chosen_and_remembered() -> TestResult {
     Ok(())
 }
 
+/// A caller's deadline says how long the user waits for a rewrite, and a probe
+/// is not one: the reference implementation's `engines.select` takes no timeout
+/// at all and probes under `PROBE_TIMEOUT`. The probe here outlasts the
+/// caller's own deadline many times over and the search still finds the engine,
+/// which is the arm that says the two deadlines are apart. Handing the caller's
+/// deadline down instead makes this arm report that no engine is usable.
+#[cfg(unix)]
+#[test]
+fn the_search_probes_under_the_probes_own_deadline() -> TestResult {
+    let root = TempDir::new("probe-deadline")?;
+    let bin = root.path().join("bin");
+    let home = root.path().join("home");
+    let cache = root.path().join("cache");
+    fs::create_dir(&home)?;
+    // The engine's own `PATH` is the stub directory alone, where `sleep` does
+    // not live, so the stub puts this run's real `PATH` back at the top of
+    // itself. Without that the tool is simply missing, the stub answers at once
+    // and the arm passes under either deadline — which is no arm at all.
+    let tools = std::env::var("PATH").unwrap_or_default();
+    stub(
+        &bin,
+        "claude",
+        &format!("PATH='{tools}'\nexport PATH\nsleep 1\nprintf '%s\\n' '{PROBE_MARKER}'"),
+    )?;
+    let env = cached_environment(&bin, &home, &cache, &[]);
+
+    let brief = EngineLimits {
+        timeout: Duration::from_millis(100),
+        ..limits()
+    };
+    let engine = select(&env, brief, &CancellationToken::new(), now())?;
+
+    assert_eq!(engine.name(), "claude");
+    Ok(())
+}
+
 /// The cache stands in for the probe, which is the whole point of it: an engine
 /// with a remembered answer is not run again inside its TTL.
 #[cfg(unix)]
