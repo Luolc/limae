@@ -150,14 +150,17 @@ fn number_takes_the_forms_a_person_writes_a_number_in() {
 
 // -- putting a message back together --------------------------------------
 
+/// The batches are written here in an order no reader may depend on, because
+/// the directory hands them back in an order no reader may depend on either:
+/// what puts the message back in the order the user read it is the index in the
+/// name, and nothing else. Joining them in the order the directory lists them
+/// turns this red on most filesystems and is not caught by asserting the whole
+/// is non-empty.
 #[test]
 fn assemble_joins_every_batch_in_index_order() -> TestResult {
     let session = TempDir::new("assemble")?;
     let parts = session.path().join("parts/message");
-    for (index, delta) in ["第一段。\n", "第二段。\n", "第三段。\n"]
-        .iter()
-        .enumerate()
-    {
+    for (index, delta) in [(2, "第三段。\n"), (0, "第一段。\n"), (1, "第二段。\n")] {
         cache(&parts, index, delta)?;
     }
     let mut stderr = Vec::new();
@@ -302,6 +305,169 @@ fn assemble_reports_a_batch_it_cannot_read_rather_than_calling_it_missing() -> T
     );
 
     assert!(failed.is_err(), "an unreadable batch is not a missing one");
+    Ok(())
+}
+
+/// What this costs is set by the batches on disk, never by the number the host
+/// sent — and the number the host sent is the one thing here an outside caller
+/// picks. `usize::MAX` is how that is made observable rather than argued: no
+/// implementation that lays out, visits, or otherwise spends anything per batch
+/// asked for can return from this call at all, so this test finishing at all is
+/// the assertion. Laying the paths out one per batch — what this code did until
+/// the fix — cannot even allocate that many and takes the process down with a
+/// capacity overflow, which is a non-zero exit out of a hook event and the
+/// breach of ADR-0009 section 六 this is about; visiting them one at a time
+/// without allocating runs past any deadline this suite would tolerate.
+///
+/// Timing is deliberately not asserted: a duration is both brittle and, on a
+/// fast enough machine, green for an implementation that is still linear in the
+/// host's number.
+#[test]
+fn assemble_costs_what_is_on_disk_and_not_what_the_host_asked_for() -> TestResult {
+    let session = TempDir::new("assemble-unbounded")?;
+    let parts = session.path().join("parts/message");
+    cache(&parts, 0, "第一段。\n")?;
+    cache(&parts, 1, "第二段。\n")?;
+    let mut stderr = Vec::new();
+
+    let whole = assemble(
+        &parts,
+        usize::MAX,
+        Instant::now(),
+        session.path(),
+        "message",
+        now(),
+        &mut stderr,
+    )?;
+
+    assert_eq!(whole, None);
+    assert_eq!(
+        String::from_utf8(stderr)?,
+        format!(
+            "limae hook: 2/{} batches arrived before the deadline; showing the original\n",
+            usize::MAX
+        )
+    );
+    Ok(())
+}
+
+/// A run that died mid-message leaves its batches behind under the same message
+/// id, so the next one can find as many files as it was told to expect and
+/// still be missing one of them. Counting them would call this message whole
+/// and then fall over reading a batch that is not there; what settles it is
+/// which indices are present.
+#[test]
+fn assemble_is_not_fooled_by_a_stale_batch_that_makes_the_count_come_out_right() -> TestResult {
+    let session = TempDir::new("assemble-stale")?;
+    let parts = session.path().join("parts/message");
+    cache(&parts, 0, "第一段。\n")?;
+    cache(&parts, 5, "上一次运行留下的。\n")?;
+    let mut stderr = Vec::new();
+
+    let whole = assemble(
+        &parts,
+        2,
+        Instant::now(),
+        session.path(),
+        "message",
+        now(),
+        &mut stderr,
+    )?;
+
+    assert_eq!(whole, None);
+    assert_eq!(
+        String::from_utf8(stderr)?,
+        "limae hook: 1/2 batches arrived before the deadline; showing the original\n"
+    );
+    let written = diagnostics(session.path())?;
+    assert_eq!(written.len(), 1);
+    assert_eq!(written[0]["kind"], "incomplete");
+    Ok(())
+}
+
+/// The same leftover, once this message's own batches have all landed: it is
+/// none of this message's business and none of this message's text.
+#[test]
+fn assemble_leaves_a_stale_batch_out_of_a_message_that_is_whole() -> TestResult {
+    let session = TempDir::new("assemble-stale-whole")?;
+    let parts = session.path().join("parts/message");
+    cache(&parts, 0, "第一段。\n")?;
+    cache(&parts, 1, "第二段。\n")?;
+    cache(&parts, 5, "上一次运行留下的。\n")?;
+    let mut stderr = Vec::new();
+
+    let whole = assemble(
+        &parts,
+        2,
+        Instant::now() + SIBLING_WAIT,
+        session.path(),
+        "message",
+        now(),
+        &mut stderr,
+    )?;
+
+    assert_eq!(whole.as_deref(), Some("第一段。\n第二段。\n"));
+    assert_eq!(stderr, b"");
+    Ok(())
+}
+
+/// Nothing was ever cached under this message id. That is a message with every
+/// batch missing — the hole it reports — and not a directory that would not
+/// read back, which is the other thing this returns and the caller treats
+/// differently.
+#[test]
+fn assemble_reports_a_message_with_no_directory_at_all_as_a_hole() -> TestResult {
+    let session = TempDir::new("assemble-absent")?;
+    let parts = session.path().join("parts/message");
+    let mut stderr = Vec::new();
+
+    let whole = assemble(
+        &parts,
+        3,
+        Instant::now(),
+        session.path(),
+        "message",
+        now(),
+        &mut stderr,
+    )?;
+
+    assert_eq!(whole, None);
+    assert_eq!(
+        String::from_utf8(stderr)?,
+        "limae hook: 0/3 batches arrived before the deadline; showing the original\n"
+    );
+    Ok(())
+}
+
+/// A batch still being written is under its temporary name until the rename
+/// puts it in place, so it is not one of the batches that are here yet. Reading
+/// one would be reading half a paragraph.
+#[test]
+fn assemble_does_not_take_a_batch_that_is_still_being_written() -> TestResult {
+    let session = TempDir::new("assemble-writing")?;
+    let parts = session.path().join("parts/message");
+    cache(&parts, 0, "第一段。\n")?;
+    fs::write(
+        parts.join(format!("000001.{}.writing", std::process::id())),
+        "半",
+    )?;
+    let mut stderr = Vec::new();
+
+    let whole = assemble(
+        &parts,
+        2,
+        Instant::now(),
+        session.path(),
+        "message",
+        now(),
+        &mut stderr,
+    )?;
+
+    assert_eq!(whole, None);
+    assert_eq!(
+        String::from_utf8(stderr)?,
+        "limae hook: 1/2 batches arrived before the deadline; showing the original\n"
+    );
     Ok(())
 }
 

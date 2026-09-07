@@ -23,7 +23,7 @@
 
 use std::ffi::OsString;
 use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
 use crate::config::{self, CliOverrides};
@@ -69,6 +69,26 @@ pub fn tidy(text: &str, cwd: &Path) -> (String, Option<Kind>) {
 /// the session-state directory and the sanitised message id the diagnostics
 /// line is written under.
 ///
+/// What this costs is set by the batches that exist on disk, never by
+/// `batches`. That number reaches here from the host's payload — it is
+/// `index + 1` of the final batch — so anything laid out one per batch is a
+/// piece of work the payload gets to size, and a large enough one takes the
+/// process down, on a capacity overflow or a failed allocation. Either is an
+/// exit code that is not 0 out of a hook event, which ADR-0009 section 六 does
+/// not allow; short of that it is a wait the user sits through for no reason.
+/// Reading the directory instead also makes the question an honest one: whether
+/// a message is whole is a question about which batches are in that directory,
+/// not about a number somebody sent us.
+///
+/// This is where the two implementations part company. `_assemble` in
+/// `src/limae/hook.py` still lays out `range(batches)`; it is not followed here,
+/// because following it means keeping the hole.
+///
+/// Counting them is not enough on its own, which is why the check below is on
+/// indices rather than on how many there are: a run that died mid-message
+/// leaves its batches behind under the same message id, so a directory can hold
+/// as many files as `batches` and still be missing one of them.
+///
 /// `Ok(None)` when a batch never arrived. There is no honest rewrite of a
 /// message with a hole in it — polishing what did arrive would put a paragraph
 /// the user never wrote under a message that says it is theirs — so a missing
@@ -77,10 +97,13 @@ pub fn tidy(text: &str, cwd: &Path) -> (String, Option<Kind>) {
 /// debug-logs; a diagnostics line; and the `None` itself.
 ///
 /// # Errors
-/// Returns the failure of reading a batch back. This is deliberately not folded
-/// into `Ok(None)`: a batch that is on disk and unreadable is not a batch that
-/// never arrived, and a diagnostics line saying it never arrived would be a
-/// record that lies, which is worse than no record.
+/// Returns the failure of reading a batch back, or of listing the directory
+/// they are in. This is deliberately not folded into `Ok(None)`: a batch that
+/// is on disk and unreadable is not a batch that never arrived, and a
+/// diagnostics line saying it never arrived would be a record that lies, which
+/// is worse than no record. A directory that is not there yet is not a failure
+/// to read one — it is a message every batch of which is missing — and reports
+/// itself as the hole it is.
 ///
 /// **The caller owes this error the same fail-open path as every other crash**:
 /// [`Kind::Crashed`] in the diagnostics line, and the user's own text on screen.
@@ -98,15 +121,23 @@ pub fn assemble(
     now: SystemTime,
     stderr: &mut dyn Write,
 ) -> io::Result<Option<String>> {
-    let wanted: Vec<_> = (0..batches)
-        .map(|index| state::part(parts, index))
-        .collect();
-    while !wanted.iter().all(|path| path.is_file()) {
+    loop {
+        let found = cached(parts)?;
+        if whole(&found, batches) {
+            let mut text = String::new();
+            for (_, path) in found.iter().take(batches) {
+                text.push_str(&std::fs::read_to_string(path)?);
+            }
+            return Ok(Some(text));
+        }
         if Instant::now() >= deadline {
             // The host debug-logs a hook's stderr. How many batches were
             // missing is the whole of what is worth saying; what they held is
-            // the user's own text and stays out of every log.
-            let arrived = wanted.iter().filter(|path| path.is_file()).count();
+            // the user's own text and stays out of every log. A leftover from a
+            // run that died mid-message is not one of this message's batches
+            // and is not counted as one, or the line would say a batch had come
+            // that had not.
+            let arrived = found.iter().filter(|(index, _)| *index < batches).count();
             let _ = writeln!(
                 stderr,
                 "limae hook: {arrived}/{batches} batches arrived before the deadline; showing the original"
@@ -116,11 +147,63 @@ pub fn assemble(
         }
         std::thread::sleep(SIBLING_POLL);
     }
-    let mut whole = String::new();
-    for path in &wanted {
-        whole.push_str(&std::fs::read_to_string(path)?);
+}
+
+/// Every batch on disk under this message id right now, by index, in index
+/// order.
+///
+/// This listing is what bounds the whole of [`assemble`]: it is as long as the
+/// directory is, whatever number the payload named.
+fn cached(parts: &Path) -> io::Result<Vec<(usize, PathBuf)>> {
+    let listing = match std::fs::read_dir(parts) {
+        Ok(listing) => listing,
+        // Nothing has been cached under this message id, which is a message
+        // with every batch still missing rather than a directory that will not
+        // read back.
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error),
+    };
+    let mut found = Vec::new();
+    for entry in listing {
+        let path = entry?.path();
+        // A batch being written is still under its temporary name, so it is not
+        // one of these until the rename puts it here.
+        let Some(index) = indexed(&path) else {
+            continue;
+        };
+        found.push((index, path));
     }
-    Ok(Some(whole))
+    found.sort_unstable_by_key(|(index, _)| *index);
+    Ok(found)
+}
+
+/// Return whether `found` opens with every batch of a message of `batches`
+/// batches.
+///
+/// The test is that its first `batches` entries are the indices `0..batches`,
+/// asserted forwards — `found` is in index order, so the batch in slot `n` has
+/// to be batch `n`. How many files are there does not settle it: a run that
+/// died mid-message leaves its batches behind under the same message id, so a
+/// directory can hold as many as this message has and still be missing one of
+/// them. Anything past those first `batches` is such a leftover and is neither
+/// waited for nor read.
+fn whole(found: &[(usize, PathBuf)], batches: usize) -> bool {
+    found.len() >= batches
+        && found
+            .iter()
+            .take(batches)
+            .enumerate()
+            .all(|(slot, (index, _))| slot == *index)
+}
+
+/// Read the batch index out of a cached batch's path, or `None` when the path
+/// is not a cached batch.
+fn indexed(path: &Path) -> Option<usize> {
+    path.file_name()?
+        .to_str()?
+        .strip_suffix(state::PART_SUFFIX)?
+        .parse()
+        .ok()
 }
 
 /// Read one numeric knob from the environment.
