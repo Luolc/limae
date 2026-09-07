@@ -132,7 +132,13 @@ fn number_falls_back_for_anything_that_is_not_a_number() {
 /// take too, surrounding whitespace included.
 #[test]
 fn number_takes_the_forms_a_person_writes_a_number_in() {
-    for (text, expected) in [(" 30 ", 30.0), ("1e3", 1000.0), (".5", 0.5), ("-2.", -2.0)] {
+    for (text, expected) in [
+        (" 30 ", 30.0),
+        ("1e3", 1000.0),
+        (".5", 0.5),
+        ("-2.", -2.0),
+        ("+5", 5.0),
+    ] {
         let env = environment(&[("LIMAE_HOOK_TIMEOUT", text)]);
         let read = number(&env, "LIMAE_HOOK_TIMEOUT", 60.0);
         assert!(

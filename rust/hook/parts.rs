@@ -77,8 +77,18 @@ pub fn tidy(text: &str, cwd: &Path) -> (String, Option<Kind>) {
 /// debug-logs; a diagnostics line; and the `None` itself.
 ///
 /// # Errors
-/// Returns the failure of reading a batch back, which is the caller's to fail
-/// open on like any other.
+/// Returns the failure of reading a batch back. This is deliberately not folded
+/// into `Ok(None)`: a batch that is on disk and unreadable is not a batch that
+/// never arrived, and a diagnostics line saying it never arrived would be a
+/// record that lies, which is worse than no record.
+///
+/// **The caller owes this error the same fail-open path as every other crash**:
+/// [`Kind::Crashed`] in the diagnostics line, and the user's own text on screen.
+/// The reference implementation gets there by raising out of `_assemble` into
+/// the hook's top-level catch (`display` / `crashed`); here the error is
+/// returned instead, so the mapping has to be written rather than inherited. A
+/// caller that reports it as [`Kind::Incomplete`], or that returns a partial
+/// message, has diverged from `src/limae/hook.py`.
 pub fn assemble(
     parts: &Path,
     batches: usize,
@@ -119,9 +129,26 @@ pub fn assemble(
 /// is not a number, because a typo in a setting is not a reason to interrupt
 /// the user.
 ///
-/// The reference implementation's `float()` accepts a little more than this
-/// does: digit separators (`1_000`) and non-ASCII digits are a number to it and
-/// a typo here. Surrounding whitespace is accepted by both.
+/// The reference implementation's `float()` accepts a little more than
+/// [`f64::from_str`](str::parse) does, and the difference is left standing
+/// rather than coded around, because it falls the harmless way: the forms only
+/// Python takes are ones nobody types into a setting, and where it differs this
+/// returns the documented default — which is what `float()`'s own fallback does
+/// with a typo. Measured against Python 3, 2026-09-07:
+///
+/// * Both take `1e3`, `.5`, `2.`, `+5`, and `inf` / `infinity` / `nan` in any
+///   case, with or without a sign.
+/// * Both refuse `""`, `"1,000"`, `"30s"`, `"0x10"`, `"1__0"` and `"_1"`, and
+///   so fall back.
+/// * Only Python takes PEP 515 digit separators (`"1_000"`, `"1_0.5"`) and
+///   non-ASCII decimal digits (`"１２３"`). Those fall back here.
+///
+/// Surrounding whitespace is taken by both, but only because of the [`str::trim`]
+/// below — `f64::from_str` alone refuses it, and a stray space in a settings
+/// file is a real typo rather than a hypothetical one. The two definitions of
+/// whitespace are not the same set (`str::trim` follows `char::is_whitespace`,
+/// Python's `str.strip` its own table); the ASCII ones agree, and the code
+/// points they disagree on — U+001C to U+001F among them — were not measured.
 #[must_use]
 pub fn number(env: &[(OsString, OsString)], variable: &str, fallback: f64) -> f64 {
     value(env, variable)
