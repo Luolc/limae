@@ -5,6 +5,7 @@ import re
 import sys
 import time
 
+from cli_runner import CliRunner
 import pytest
 
 from limae import config, engines, polish, zh_format
@@ -713,3 +714,107 @@ def test_the_entry_point_dispatches_the_subcommand(
   monkeypatch.setattr(polish, "main", record)
   assert zh_format.main() == 0
   assert seen == [["-", "--engine", "grok"]]
+
+
+# The dual-arm reconciliation of the subcommand itself. Everything above
+# calls into the Python modules; these run the installed entry point as a
+# process, once per implementation (`tests/conftest.py`), so that the exit
+# codes, the three error prefixes and the stream each of them lands on are
+# compared against the same expectation. Every arm states its own PATH, HOME
+# and cache directory: the machine running these tests may have all three
+# engine CLIs installed and logged in, and an arm that inherited them would
+# pass here and fail on the next machine.
+STUB = "IFS= read -r line\nprintf 'polished: %s\\n' \"$line\"\n"
+
+
+def polish_env(tmp_path: pathlib.Path, **extra: str) -> dict[str, str]:
+  bin_dir = tmp_path / "bin"
+  bin_dir.mkdir(exist_ok=True)
+  return {
+      "PATH": str(bin_dir),
+      "HOME": str(tmp_path / "home"),
+      "XDG_CACHE_HOME": str(tmp_path / "cache"),
+      **extra,
+  }
+
+
+def test_cli_process_writes_only_the_rewrite_to_stdout(
+    tmp_path: pathlib.Path, limae_cli: CliRunner
+):
+  stub(tmp_path / "bin", "mygateway", STUB)
+  (tmp_path / "limae.toml").write_text(
+      '[polish]\nengine = "custom"\ncommand = ["mygateway"]\n', encoding="utf-8"
+  )
+  completed = limae_cli.run(
+      ["polish", "-"],
+      tmp_path,
+      stdin="the acme report\n",
+      env=polish_env(tmp_path),
+  )
+  assert (completed.returncode, completed.stderr) == (0, "")
+  assert completed.stdout == "polished: the acme report\n"
+
+
+def test_cli_process_reports_a_failing_engine_and_exits_one(
+    tmp_path: pathlib.Path, limae_cli: CliRunner
+):
+  stub(tmp_path / "bin", "mygateway", "exit 1")
+  (tmp_path / "limae.toml").write_text(
+      '[polish]\nengine = "custom"\ncommand = ["mygateway"]\n', encoding="utf-8"
+  )
+  completed = limae_cli.run(
+      ["polish", "-"], tmp_path, stdin=TEXT, env=polish_env(tmp_path)
+  )
+  assert (completed.returncode, completed.stdout) == (1, "")
+  assert completed.stderr.startswith("engine error:")
+
+
+def test_cli_process_rejects_blank_input_as_usage(
+    tmp_path: pathlib.Path, limae_cli: CliRunner
+):
+  completed = limae_cli.run(
+      ["polish", "-"], tmp_path, stdin="  \n", env=polish_env(tmp_path)
+  )
+  assert (completed.returncode, completed.stdout) == (2, "")
+  assert completed.stderr == "input error: nothing on stdin to polish\n"
+
+
+def test_cli_process_rejects_an_unknown_engine_from_the_variable(
+    tmp_path: pathlib.Path, limae_cli: CliRunner
+):
+  completed = limae_cli.run(
+      ["polish", "-"],
+      tmp_path,
+      stdin=TEXT,
+      env=polish_env(tmp_path, LIMAE_ENGINE="gemini"),
+  )
+  assert (completed.returncode, completed.stdout) == (2, "")
+  assert completed.stderr == (
+      "config error: unknown engine 'gemini';"
+      " pick one of auto, claude, codex, grok, custom\n"
+  )
+
+
+def test_cli_process_rejects_a_file_argument(
+    tmp_path: pathlib.Path, limae_cli: CliRunner
+):
+  completed = limae_cli.run(
+      ["polish", "doc.md"], tmp_path, stdin=TEXT, env=polish_env(tmp_path)
+  )
+  assert (completed.returncode, completed.stdout) == (2, "")
+  assert "only '-' (stdin) is supported so far" in completed.stderr
+
+
+def test_cli_process_diagnoses_every_engine_when_none_is_installed(
+    tmp_path: pathlib.Path, limae_cli: CliRunner
+):
+  (tmp_path / "bin").mkdir(exist_ok=True)
+  completed = limae_cli.run(
+      ["polish", "-"], tmp_path, stdin=TEXT, env=polish_env(tmp_path)
+  )
+  assert (completed.returncode, completed.stdout) == (1, "")
+  assert completed.stderr.startswith(
+      "engine error: no polish engine is usable:"
+  )
+  for engine in ("claude", "codex", "grok"):
+    assert f"  {engine}: not installed" in completed.stderr
