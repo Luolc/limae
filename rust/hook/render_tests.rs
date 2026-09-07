@@ -37,7 +37,7 @@ fn the_alignment_and_the_pairs_match_the_reference_implementation() {
         "the corpus shrank to {} cases",
         CASES.len()
     );
-    let mut aligned = 0;
+    let mut pruned = 0;
     for case in CASES {
         let (before, after) = (case.before, case.after);
         let found: Vec<String> = opcodes(&characters(before), &characters(after))
@@ -58,15 +58,20 @@ fn the_alignment_and_the_pairs_match_the_reference_implementation() {
         assert_eq!(trailing_newlines(before), case.trailing, "for {before:?}");
         assert_eq!(flat(before), case.flat, "for {before:?}");
         assert_eq!(folded(before), case.folded, "for {before:?}");
-        aligned += usize::from(before.chars().count() >= 200);
+        pruned += usize::from(after.chars().count() >= 200);
     }
     // Above 200 elements `difflib` stops seeding matches on the characters that
     // are everywhere, and that pruning changes which blocks it finds. A corpus
     // that never crossed the threshold would leave the port's copy of the rule
     // untested while looking like a parity check.
+    //
+    // The length that decides it is `after`'s: the popularity table is built
+    // over the second sequence, so a corpus of long inputs rewritten into short
+    // outputs never prunes anything. Counting `before` here would be a guard
+    // that says the same thing whether or not the branch it names was reached.
     assert!(
-        aligned >= 10,
-        "only {aligned} cases reach difflib's autojunk threshold"
+        pruned >= 10,
+        "only {pruned} cases have an `after` long enough for difflib to prune"
     );
 }
 
