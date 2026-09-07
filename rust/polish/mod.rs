@@ -4,6 +4,7 @@ use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
 pub mod cache;
+pub mod cli;
 pub mod config;
 pub mod diagnosis;
 pub mod engines;

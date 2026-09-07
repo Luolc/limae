@@ -17,16 +17,34 @@ class CliRunner:
       self,
       args: list[str],
       cwd: pathlib.Path,
+      stdin: str | None = None,
+      env: dict[str, str] | None = None,
   ) -> subprocess.CompletedProcess[str]:
-    env = {
+    """Run one invocation of this entry point.
+
+    Args:
+      args: Arguments after the executable.
+      cwd: Working directory of the run.
+      stdin: Text written to the child's standard input, when it reads one.
+      env: Variables replacing the defaults, so that a `polish` arm can state
+        its own `PATH`, `HOME` and cache directory instead of inheriting the
+        machine's engines.
+
+    Returns:
+      The finished process.
+    """
+    environment = {
         "GIT_CONFIG_GLOBAL": os.devnull,
         "GIT_CONFIG_NOSYSTEM": "1",
         "PATH": os.environ.get("PATH", os.defpath),
     }
+    if env is not None:
+      environment = dict(env)
     return subprocess.run(  # noqa: S603 - paths are validated test artifacts
         [self.binary, *args],
         cwd=cwd,
-        env=env,
+        env=environment,
+        input=stdin,
         check=False,
         capture_output=True,
         text=True,

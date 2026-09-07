@@ -44,16 +44,31 @@ pub fn run_from(
     stderr: &mut dyn Write,
 ) -> u8 {
     let args: Vec<_> = args.into_iter().collect();
-    if let Some(subcommand @ ("polish" | "hook")) =
-        args.get(1).and_then(|argument| argument.to_str())
-    {
-        return write_clap_error(
-            command().error(
-                ErrorKind::InvalidSubcommand,
-                format!("the '{subcommand}' subcommand is not provided yet"),
-            ),
-            stderr,
-        );
+    match args.get(1).and_then(|argument| argument.to_str()) {
+        // `polish` reads the prose it rewrites, so it is the one subcommand
+        // that needs stdin and the whole environment; both are the process's
+        // own here and explicit parameters inside `polish::cli::run`.
+        Some("polish") => {
+            let env: Vec<_> = std::env::vars_os().collect();
+            return crate::polish::cli::run(
+                &args[2..],
+                cwd,
+                &env,
+                &mut io::stdin().lock(),
+                stdout,
+                stderr,
+            );
+        }
+        Some(subcommand @ "hook") => {
+            return write_clap_error(
+                command().error(
+                    ErrorKind::InvalidSubcommand,
+                    format!("the '{subcommand}' subcommand is not provided yet"),
+                ),
+                stderr,
+            );
+        }
+        _ => {}
     }
 
     let mut command = command();
