@@ -281,15 +281,17 @@ fn directive_and_unavailable_subcommands_are_usage_errors() -> TestResult {
     assert_eq!((code, stdout.as_str()), (2, ""));
     assert!(stderr.contains("directive error: t.md:1: unknown rule id(s) unknown"));
 
-    // `hook` is still the D task; `polish` is wired now and answers with its
-    // own usage, which is what tells the two apart.
-    let (code, stdout, stderr) = output_text(run(root.path(), &["hook"])?)?;
+    // Both subcommands are wired now, and each answers with its own usage,
+    // which is what tells the two apart.
+    let (code, stdout, stderr) = output_text(run(root.path(), &["hook", "MessageDisplay"])?)?;
     assert_eq!((code, stdout.as_str()), (2, ""));
-    assert!(stderr.contains("subcommand is not provided yet"));
+    assert!(
+        stderr.contains("reads one hook event as JSON on stdin"),
+        "{stderr}"
+    );
 
     let (code, stdout, stderr) = output_text(run(root.path(), &["polish", "doc.md"])?)?;
     assert_eq!((code, stdout.as_str()), (2, ""));
-    assert!(!stderr.contains("subcommand is not provided yet"));
     assert!(stderr.contains("only \'-\' (stdin) is supported so far"));
     Ok(())
 }
@@ -342,5 +344,79 @@ fn the_polish_subcommand_rewrites_standard_input_through_a_custom_command() -> T
     let (code, stdout, stderr) = output_text(child.wait_with_output()?)?;
     assert_eq!((code, stderr.as_str()), (0, ""));
     assert_eq!(stdout, "polished: the acme report\n");
+    Ok(())
+}
+
+/// One real process for the `hook` subcommand.
+///
+/// The offline arms exercise `hook::cli::run` directly; this one is here for
+/// what only a process has: the subcommand dispatch, the ambient environment
+/// and standard input, and the exit code the host reads. The host's contract is
+/// that this exit code is always 0 (ADR-0009 section 六), which is why the
+/// screen output beside it is what says the run did anything at all.
+#[cfg(unix)]
+#[test]
+fn the_hook_subcommand_answers_one_message_display_event_on_standard_input() -> TestResult {
+    use std::io::Write as _;
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::Stdio;
+
+    let root = TempDir::new()?;
+    let bin = root.path().join("bin");
+    fs::create_dir(&bin)?;
+    // Shell built-ins only: `PATH` is this directory alone, so no engine
+    // installed on the machine can answer and nothing reaches a real model.
+    let stub = bin.join("claude");
+    fs::write(
+        &stub,
+        "#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' 'ACME 的报告写得不好 —— 请改得像人话一些。'\n",
+    )?;
+    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755))?;
+    fs::write(
+        root.path().join("limae.toml"),
+        "[polish]\nengine = \"claude\"\n",
+    )?;
+    let message = "ACME 的报告写得不好，请把它改得像人话一些。".repeat(20);
+    let payload = format!(
+        concat!(
+            r#"{{"session_id":"11111111-2222-3333-4444-555555555555","#,
+            r#""message_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","#,
+            r#""hook_event_name":"MessageDisplay","cwd":{cwd},"#,
+            r#""index":0,"final":true,"delta":{delta}}}"#
+        ),
+        cwd = serde_json::to_string(&root.path().to_string_lossy())?,
+        delta = serde_json::to_string(&message)?,
+    );
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_limae-rs"))
+        .current_dir(root.path())
+        .env_clear()
+        .env("PATH", &bin)
+        .env("HOME", root.path().join("home"))
+        .env("XDG_CACHE_HOME", root.path().join("cache"))
+        // Where scratch goes is where the state goes: the hook has no setting
+        // of its own for it, on purpose.
+        .env("TMPDIR", root.path().join("scratch"))
+        .env("LIMAE_HOOK_AB_RATE", "0")
+        .arg("hook")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    child
+        .stdin
+        .take()
+        .ok_or("missing child stdin")?
+        .write_all(payload.as_bytes())?;
+
+    let (code, stdout, stderr) = output_text(child.wait_with_output()?)?;
+    let answer: serde_json::Value = serde_json::from_str(stdout.trim_end())?;
+    let shown = answer
+        .pointer("/hookSpecificOutput/displayContent")
+        .and_then(serde_json::Value::as_str)
+        .ok_or("no displayContent in the answer")?;
+    assert_eq!((code, stderr.as_str()), (0, ""));
+    assert!(shown.starts_with(&message), "{shown:?}");
+    assert!(shown.contains("── 润色 ──"), "{shown:?}");
     Ok(())
 }
