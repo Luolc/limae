@@ -5,5 +5,6 @@
 //! module holds the parts of it that are not the host protocol itself.
 
 pub mod ab;
+pub mod parts;
 pub mod render;
 pub mod state;
