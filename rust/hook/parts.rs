@@ -129,19 +129,12 @@ pub fn assemble(
 /// is not a number, because a typo in a setting is not a reason to interrupt
 /// the user.
 ///
-/// The reference implementation's `float()` accepts a little more than
-/// [`f64::from_str`](str::parse) does, and the difference is left standing
-/// rather than coded around, because it falls the harmless way: the forms only
-/// Python takes are ones nobody types into a setting, and where it differs this
-/// returns the documented default — which is what `float()`'s own fallback does
-/// with a typo. Measured against Python 3, 2026-09-07:
-///
-/// * Both take `1e3`, `.5`, `2.`, `+5`, and `inf` / `infinity` / `nan` in any
-///   case, with or without a sign.
-/// * Both refuse `""`, `"1,000"`, `"30s"`, `"0x10"`, `"1__0"` and `"_1"`, and
-///   so fall back.
-/// * Only Python takes PEP 515 digit separators (`"1_000"`, `"1_0.5"`) and
-///   non-ASCII decimal digits (`"１２３"`). Those fall back here.
+/// Two forms are a number to the reference implementation's `float()` and a
+/// typo here: PEP 515 digit separators (`"1_000"`) and non-ASCII decimal digits
+/// (`"１２３"`), measured against Python 3 on 2026-09-07. The difference is left
+/// standing rather than coded around, because it falls the harmless way —
+/// nobody types either into a setting, and where they differ this returns the
+/// documented default, which is what `float()` itself does with a typo.
 ///
 /// Surrounding whitespace is taken by both, but only because of the [`str::trim`]
 /// below — `f64::from_str` alone refuses it, and a stray space in a settings
