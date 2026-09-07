@@ -619,6 +619,33 @@ fn an_index_that_is_not_a_whole_number_is_not_an_index() -> TestResult {
     Ok(())
 }
 
+/// The largest index there is, is not an index: the final batch's count is
+/// `index + 1`, and a number without a successor cannot say how many batches a
+/// message had.
+///
+/// What this asserts is the fail-open result itself — nothing on screen, no
+/// model call, and not so much as a state directory — and not "it did not
+/// panic". The two are different observations in the two build profiles, and
+/// only this one has any force in the profile we ship: `Cargo.toml` sets no
+/// `[profile]` table, so a release build inherits Cargo's
+/// `overflow-checks = false` and the addition wraps to a batch count of zero
+/// instead of panicking, which is the quieter half of the same bug.
+#[test]
+fn the_largest_index_there_is_cannot_say_how_many_batches_there_were() -> TestResult {
+    let fixture = Fixture::new("batch-successor")?;
+    fixture.engine()?;
+    let mut payload = whole(&fixture, &long());
+    payload["index"] = json!(u64::MAX);
+
+    let ran = fixture.hook(&payload, &[])?;
+
+    assert_eq!(ran.code, OK);
+    assert_eq!(ran.stdout, "");
+    assert_eq!(fixture.calls(), 0);
+    assert!(!fixture.session().exists());
+    Ok(())
+}
+
 // -- the failures, which are all quiet on screen and none of them silent ---
 
 /// A message with a hole in it is not polished: there is no honest rewrite of

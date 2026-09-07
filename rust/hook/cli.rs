@@ -209,15 +209,25 @@ fn display(
     if session.is_empty() || message.is_empty() {
         return Ok(String::new());
     }
-    // A batch index is a whole non-negative number and nothing else. The
-    // reference implementation has to say so twice — `isinstance(index, int)`
-    // and then `not isinstance(index, bool)`, because in Python `True` is an
-    // `int` — where here JSON's booleans and its numbers are separate variants
-    // of `Value` and `as_u64` answers `None` to a boolean already.
-    let Some(index) = payload
+    // A batch index is a whole non-negative number that can also say how many
+    // batches there are, because indices are zero-based and increment by one
+    // per batch, so the final one's count is its successor. Both halves are
+    // read here, and an index without a successor is not one this can act on:
+    // ADR-0009 section 六 asks this process never to crash and never to exit
+    // anything but 0, and `usize::MAX + 1` would do the first in a debug build
+    // and, with Cargo's release default of `overflow-checks = false`, silently
+    // wrap to a count of zero in the build we ship.
+    //
+    // The reference implementation says the first half twice —
+    // `isinstance(index, int)` and then `not isinstance(index, bool)`, because
+    // in Python `True` is an `int` — where here JSON's booleans and its numbers
+    // are separate variants of `Value` and `as_u64` answers `None` to a boolean
+    // already.
+    let Some((index, batches)) = payload
         .get("index")
         .and_then(Value::as_u64)
         .and_then(|index| usize::try_from(index).ok())
+        .and_then(|index| Some((index, index.checked_add(1)?)))
     else {
         return Ok(String::new());
     };
@@ -229,11 +239,9 @@ fn display(
     if payload.get("final") != Some(&Value::Bool(true)) {
         return Ok(String::new());
     }
-    // Indices are zero-based and increment by one per batch, so the final one
-    // says how many there are.
     let text = parts::assemble(
         &parts,
-        index + 1,
+        batches,
         Instant::now() + parts::SIBLING_WAIT,
         &directory,
         &message,
@@ -274,8 +282,15 @@ fn display(
 /// ending on a newline is exactly that case, since its final delta is empty and
 /// every newline is already up there.
 fn joined(delta: &str, text: &str, block: &str) -> String {
-    let painted = ending(text) - ending(delta);
-    let gap = usize::try_from(i64::try_from(render::BLOCK_GAP).unwrap_or(0) - painted).unwrap_or(0);
+    // Saturating rather than plain: nothing this process does to a payload is
+    // worth a panic in a debug build or a wrap in a release one (ADR-0009
+    // section 六), and both differences are unreachable — an `ending` is a
+    // count of newlines in a string, so no pair of them can leave `i64`.
+    let painted = ending(text).saturating_sub(ending(delta));
+    let gap = i64::try_from(render::BLOCK_GAP)
+        .unwrap_or(0)
+        .saturating_sub(painted);
+    let gap = usize::try_from(gap).unwrap_or(0);
     format!(
         "{}{}{block}",
         delta.trim_end_matches('\n'),
