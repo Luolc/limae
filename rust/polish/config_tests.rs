@@ -224,7 +224,14 @@ fn custom_without_a_command_has_its_own_category() -> TestResult {
         return Err("custom without a command needs its own category".into());
     };
     assert_eq!(*origin, ConfigOrigin::File(file));
-    assert!(error.to_string().contains("needs `command`"));
+    // Both keys the diagnosis turns on, spelled as the reference
+    // implementation spells them: which value of `engine` asks for a
+    // `command`, and which key would supply it.
+    assert!(
+        error
+            .to_string()
+            .contains("`engine = \"custom\"` needs `command`, the whole command to run")
+    );
     Ok(())
 }
 
@@ -243,7 +250,7 @@ fn a_command_outside_custom_has_its_own_category_and_stays_out_of_the_message() 
     };
     assert_eq!(*origin, ConfigOrigin::File(file));
     let message = error.to_string();
-    assert!(message.contains("only runs under"));
+    assert!(message.contains("`command` only runs under `engine = \"custom\"`"));
     assert!(!message.contains(SYNTHETIC_COMMAND));
     Ok(())
 }
