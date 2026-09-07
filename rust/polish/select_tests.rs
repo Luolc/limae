@@ -269,3 +269,115 @@ fn a_failure_without_a_credential_trace_is_reported_as_no_credentials() -> TestR
     assert_eq!(probed(&Engine::Claude, &with_key)?, EngineState::Failed);
     Ok(())
 }
+
+/// One arm of the mapping [`super::attributed`] makes from an invocation's
+/// failure to the state `probe` reports.
+#[cfg(unix)]
+struct Arm {
+    /// What the arm is called, so a failure names itself.
+    label: &'static str,
+    /// Which preset to run, because the answer channel differs by engine.
+    engine: Engine,
+    /// The stub's shell body, which produces the failure.
+    body: String,
+    /// The bounds this arm needs to reach its failure.
+    limits: EngineLimits,
+    /// The state `probe` must report.
+    expected: EngineState,
+}
+
+/// Every failure the reference implementation attributes to the engine has to
+/// survive the trip through `probe` as its own state.
+///
+/// Without this the mapping has no assertion of its own: the C1 tests prove
+/// these errors happen, and `probe`'s other tests would stay green if a
+/// timeout started reporting `Failed` or an unreadable answer started
+/// propagating as an error instead of a diagnosis.
+///
+/// Every arm carries a credential trace, so an arm that expects `Failed` is
+/// asserting the mapping and not the no-credentials refinement that would
+/// otherwise rewrite it.
+#[cfg(unix)]
+#[test]
+fn every_engine_attributable_failure_becomes_its_reference_state() -> TestResult {
+    let root = TempDir::new("attributed")?;
+    let home = root.path().join("home");
+    fs::create_dir(&home)?;
+    let credentials = [
+        ("ANTHROPIC_API_KEY", SYNTHETIC_VALUE),
+        ("OPENAI_API_KEY", SYNTHETIC_VALUE),
+    ];
+    // Codex is the only preset that reads its answer from a file, so the two
+    // file-answer failures are its arms and the rest are stdout's.
+    let codex_answer = concat!(
+        "out=; while [ $# -gt 0 ]; do ",
+        "if [ \"$1\" = '--output-last-message' ]; then out=$2; fi; shift; done; "
+    );
+
+    let arms = [
+        Arm {
+            label: "timeout",
+            engine: Engine::Claude,
+            // A shell loop rather than `sleep`: `PATH` here is the stub
+            // directory alone, so that no arm can reach a real CLI.
+            body: "while :; do :; done".to_owned(),
+            limits: EngineLimits {
+                timeout: Duration::from_millis(200),
+                ..limits()
+            },
+            expected: EngineState::Unreachable,
+        },
+        Arm {
+            label: "output limit",
+            engine: Engine::Claude,
+            body: format!("printf '%s' '{}'", "a".repeat(200)),
+            limits: EngineLimits {
+                stdout: 64,
+                ..limits()
+            },
+            expected: EngineState::Failed,
+        },
+        Arm {
+            label: "empty answer",
+            engine: Engine::Claude,
+            body: "printf '  \\n'".to_owned(),
+            limits: limits(),
+            expected: EngineState::Failed,
+        },
+        Arm {
+            label: "answer encoding",
+            engine: Engine::Claude,
+            body: "printf '\\377\\376'".to_owned(),
+            limits: limits(),
+            expected: EngineState::Failed,
+        },
+        Arm {
+            label: "answer read",
+            engine: Engine::Codex,
+            // Exits successfully without ever writing the answer file.
+            body: "exit 0".to_owned(),
+            limits: limits(),
+            expected: EngineState::Failed,
+        },
+        Arm {
+            label: "answer limit",
+            engine: Engine::Codex,
+            body: format!("{codex_answer}printf '%s' '{}' > \"$out\"", "a".repeat(200)),
+            limits: EngineLimits {
+                answer: 64,
+                ..limits()
+            },
+            expected: EngineState::Failed,
+        },
+    ];
+
+    for (index, arm) in arms.iter().enumerate() {
+        let bin = root.path().join(format!("bin{index}"));
+        let binary = arm.engine.preset().ok_or("arm is not a preset")?.binary;
+        stub(&bin, binary, &arm.body)?;
+        let env = environment(&bin, &home, &credentials);
+        let state = probe(&arm.engine, &env, arm.limits, &CancellationToken::new())?;
+        assert_eq!(state, arm.expected, "arm: {}", arm.label);
+    }
+    Ok(())
+}
