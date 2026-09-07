@@ -3,6 +3,7 @@
 use std::ffi::OsString;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use clap::{Arg, ArgAction, Command, error::ErrorKind, value_parser};
 use thiserror::Error;
@@ -59,13 +60,19 @@ pub fn run_from(
                 stderr,
             );
         }
-        Some(subcommand @ "hook") => {
-            return write_clap_error(
-                command().error(
-                    ErrorKind::InvalidSubcommand,
-                    format!("the '{subcommand}' subcommand is not provided yet"),
-                ),
+        // `hook` reads one host event, and it reads the environment for the
+        // same reason `polish` does: the knobs ADR-0009 leaves open are all
+        // environment variables, because that is what a hook has.
+        Some(name) if name == crate::hook::cli::SUBCOMMAND => {
+            let env: Vec<_> = std::env::vars_os().collect();
+            return crate::hook::cli::run(
+                &args[2..],
+                cwd,
+                &env,
+                &mut io::stdin().lock(),
+                stdout,
                 stderr,
+                SystemTime::now(),
             );
         }
         _ => {}
