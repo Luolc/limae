@@ -337,7 +337,7 @@ const MODES: bool = cfg!(unix);
 ///
 /// Every level gets the mode, not only the last one: a directory that holds
 /// directories of replies is as much this user's own as the replies are.
-fn create_directory(path: &Path) -> io::Result<()> {
+pub(super) fn create_directory(path: &Path) -> io::Result<()> {
     create_directory_with_modes(path, MODES)
 }
 
@@ -378,7 +378,7 @@ fn unsupported() -> io::Error {
 }
 
 /// Create one file that did not exist, with [`FILE_MODE`].
-fn create(path: &Path) -> io::Result<File> {
+pub(super) fn create(path: &Path) -> io::Result<File> {
     open(OpenOptions::new().write(true).create_new(true), path)
 }
 
@@ -416,7 +416,7 @@ fn apply_directory_mode(builder: &mut DirBuilder) {
 /// The reference implementation's `datetime.now(UTC).isoformat()`, digit for
 /// digit — the fractional part is left out when there is none, and the offset
 /// is spelled out rather than abbreviated to `Z`.
-fn timestamp(now: SystemTime) -> String {
+pub(super) fn timestamp(now: SystemTime) -> String {
     let (seconds, microseconds) = since_epoch(now);
     let (year, month, day) = civil(seconds.div_euclid(86_400));
     let time = seconds.rem_euclid(86_400);
