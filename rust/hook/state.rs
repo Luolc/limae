@@ -29,10 +29,11 @@
 //! folds away anything that is not a plain name before any of that starts.
 //!
 //! The modes are Unix modes. On a platform without them every call that would
-//! create state fails with [`std::io::ErrorKind::Unsupported`] rather than
-//! quietly creating a world-readable copy of the user's replies; the hook then
-//! has nowhere to put a reply and does nothing, which is its behaviour for
-//! every other failure (ADR-0009 section 六).
+//! create state fails with [`std::io::ErrorKind::Unsupported`] before it
+//! creates anything, rather than quietly leaving a world-readable directory of
+//! the user's replies behind on the way to reporting that it could not set its
+//! mode; the hook then has nowhere to put a reply and does nothing, which is
+//! its behaviour for every other failure (ADR-0009 section 六).
 
 use std::ffi::OsString;
 use std::fs::{self, DirBuilder, File, OpenOptions};
@@ -324,19 +325,41 @@ fn append(directory: &Path, line: &str) -> io::Result<()> {
     writeln!(file, "{line}")
 }
 
+/// Whether this build can give a file or a directory the mode it has to have.
+///
+/// Written with `cfg!` rather than `#[cfg]` so that the refusal below is
+/// compiled — and so type-checked — on every platform, not only on the one it
+/// fires on.
+const MODES: bool = cfg!(unix);
+
 /// Create one directory and every missing ancestor, each with
 /// [`DIRECTORY_MODE`].
 ///
 /// Every level gets the mode, not only the last one: a directory that holds
 /// directories of replies is as much this user's own as the replies are.
 fn create_directory(path: &Path) -> io::Result<()> {
+    create_directory_with_modes(path, MODES)
+}
+
+/// The body of [`create_directory`], with the platform's answer passed in.
+///
+/// `modes` is a parameter so that the refusal has an arm that runs: the whole
+/// content of "this build cannot set modes" is that it says so *before* the
+/// first `mkdir`, and a build that created the directory and only then reported
+/// it would have left a world-readable directory of the user's replies behind —
+/// which is the outcome the refusal exists to prevent, not one it may take on
+/// the way to reporting.
+fn create_directory_with_modes(path: &Path, modes: bool) -> io::Result<()> {
+    if !modes {
+        return Err(unsupported());
+    }
     if path.is_dir() {
         return Ok(());
     }
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
     {
-        create_directory(parent)?;
+        create_directory_with_modes(parent, modes)?;
     }
     let mut builder = DirBuilder::new();
     apply_directory_mode(&mut builder);
@@ -344,6 +367,14 @@ fn create_directory(path: &Path) -> io::Result<()> {
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists && path.is_dir() => Ok(()),
         result => result,
     }
+}
+
+/// The error every state-creating call returns where the modes do not exist.
+fn unsupported() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::Unsupported,
+        "limae's hook state needs Unix file modes",
+    )
 }
 
 /// Create one file that did not exist, with [`FILE_MODE`].
@@ -364,10 +395,7 @@ fn open(options: &mut OpenOptions, path: &Path) -> io::Result<File> {
     #[cfg(not(unix))]
     {
         let _ = (options, path);
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "limae's hook state needs Unix file modes",
-        ))
+        Err(unsupported())
     }
 }
 

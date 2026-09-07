@@ -234,6 +234,37 @@ fn nothing_holding_a_reply_is_created_readable_by_others() -> TestResult {
     checked
 }
 
+/// A build that cannot set modes refuses before it creates anything.
+///
+/// What this arm proves and what it does not: the capability is passed in, so
+/// the assertion runs here, on Unix, and goes red if the refusal is ever
+/// ordered after the first `mkdir` — which is the whole of what the refusal is
+/// for. It says nothing about how any particular non-Unix target behaves; no
+/// such target is built or run in this repository, and this is not an
+/// acceptance of one.
+#[test]
+fn a_build_without_file_modes_refuses_before_it_creates_anything() -> TestResult {
+    let scratch = TempDir::new("nomodes")?;
+    let directory = scratch.path().join(STATE_DIRECTORY).join("session");
+
+    let refused = super::create_directory_with_modes(&directory, false)
+        .err()
+        .ok_or("a build without file modes must refuse")?;
+    assert_eq!(refused.kind(), std::io::ErrorKind::Unsupported);
+    // Not the leaf, and not the root above it either: nothing at all.
+    assert_eq!(names(scratch.path())?, Vec::<String>::new());
+
+    // The same call with the modes in hand creates it, so the refusal above is
+    // not the answer this function gives to everything.
+    super::create_directory_with_modes(&directory, true)?;
+    assert!(directory.is_dir());
+    // And this build is one that has them, or every other arm here is testing a
+    // platform nobody is on. Asserted in a const block, so a `MODES` that read
+    // the wrong platform would not compile rather than fail here.
+    const { assert!(super::MODES) };
+    Ok(())
+}
+
 // -- caching one batch ---------------------------------------------------
 
 #[test]
