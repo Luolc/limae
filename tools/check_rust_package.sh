@@ -77,7 +77,7 @@ check_static_elf() {
 check_package() {
   local cargo_target="$work_dir/package-target"
   local consumer_target="$work_dir/package-consumer-target"
-  local archives package_roots archive package_root missing_root
+  local archives package_roots archive package_root missing_root lexicon_root
 
   (
     cd "$repo_root"
@@ -99,6 +99,7 @@ check_package() {
     rust/examples/diff_probe.rs \
     rust/tests/integration.rs \
     spec/fixtures/clean.in \
+    spec/lexicon/zh.toml \
     spec/wordlists/zh-word-1.toml; do
     [[ -f "$package_root/$required" ]] || fail "Cargo archive omitted $required"
   done
@@ -124,6 +125,39 @@ check_package() {
       "$work_dir/missing-build.log" 'missing-wordlist build failed for an unrelated reason'
   fi
   printf '%s\n' 'missing-wordlist control: rejected by the embedded resource build'
+
+  # `cargo test` only compiles the examples. render-lexicon reads
+  # spec/lexicon/zh.toml at run time, so compiling it says nothing about
+  # whether its input shipped: the example built fine out of a package that
+  # did not carry the lexicon at all. Run it, and keep a control arm that
+  # removes the lexicon — without one, an example that stopped reading the
+  # file would pass this just as green.
+  cp -a "$package_root" "$work_dir/missing-lexicon"
+  lexicon_root="$work_dir/missing-lexicon"
+  rm "$lexicon_root/spec/lexicon/zh.toml"
+
+  (
+    cd "$package_root"
+    CARGO_TARGET_DIR="$consumer_target" cargo run --locked --example render-lexicon \
+      >"$work_dir/render-lexicon.log" 2>&1
+  ) || fail_with_log "$work_dir/render-lexicon.log" \
+    'packaged render-lexicon example did not run'
+  [[ -s "$package_root/site/index.html" ]] || \
+    fail 'packaged render-lexicon example wrote no page'
+  printf '%s\n' 'Cargo package: render-lexicon ran from its packaged lexicon'
+
+  if (
+    cd "$lexicon_root"
+    CARGO_TARGET_DIR="$consumer_target" cargo run --locked --example render-lexicon \
+      >"$work_dir/missing-lexicon.log" 2>&1
+  ); then
+    fail 'package without the lexicon still rendered the page'
+  fi
+  if ! grep -Fq 'spec/lexicon/zh.toml' "$work_dir/missing-lexicon.log"; then
+    fail_with_log \
+      "$work_dir/missing-lexicon.log" 'missing-lexicon run failed for an unrelated reason'
+  fi
+  printf '%s\n' 'missing-lexicon control: rejected by the packaged example'
 
   (
     cd "$package_root"

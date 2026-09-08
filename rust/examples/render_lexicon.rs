@@ -11,8 +11,11 @@
 //! This is an example rather than a `[[bin]]` because it is a development tool
 //! and the shipped binary set is `limae` alone; `diff-probe` sits here for
 //! the same reason. Examples are packaged (`Cargo.toml` carries
-//! `rust/**/*.rs`) and compiled by `cargo test`, so the packaging gate keeps
-//! covering it, while nothing about a release build has to change.
+//! `rust/**/*.rs`) and compiled by `cargo test`, while nothing about a release
+//! build has to change. Compiling is not enough on its own: the source above
+//! is read at run time, so `Cargo.toml` also has to `include` it, and the
+//! packaging gate runs this example out of the unpacked package to prove it
+//! shipped.
 //!
 //! Run it from the repository root:
 //!
