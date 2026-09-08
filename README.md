@@ -37,6 +37,8 @@ limae --all
 limae <file>...
 ```
 
+`--all` 取的是 **git 跟踪 (tracked) 的** Markdown，也就是 `git ls-files '*.md'` 那一份：已跟踪文件的改动照查，还没 `git add` 的新文件不在其中。为了让「真的干净」与「有新文件没被看见」分得开，这种情况下会向 stderr 打一行 `note: N untracked *.md not checked (git add them to include)`；它只是提示，不改退出码，被 `.gitignore` 或 `.limae-ignore` 忽略的文件不计入。
+
 ### 开关某条规则
 
 启用集 = ((默认集 ∪ experimental 集) ∪ `enable`) − `disable`，experimental 集只在 `enable_experimental = true` 时并入；不写配置就是默认行为。配置模型的正本是 `spec/rules.md`「配置」，这里只举例。

@@ -208,7 +208,14 @@ fn all_overrides_explicit_files_and_all_ignored_is_clean() -> TestResult {
     fs::write(selected.path().join("explicit.md"), "clean")?;
     git(selected.path(), &["add", "tracked.md"])?;
     let (code, stdout, stderr) = output_text(run(selected.path(), &["explicit.md", "--all"])?)?;
-    assert_eq!((code, stderr.as_str()), (1, ""));
+    // `explicit.md` stays unchecked and untracked, so the note reports it.
+    assert_eq!(
+        (code, stderr.as_str()),
+        (
+            1,
+            "note: 1 untracked *.md not checked (git add them to include)\n"
+        )
+    );
     assert!(stdout.contains("tracked.md:1: error:"));
     assert!(!stdout.contains("explicit.md"));
 
@@ -222,6 +229,86 @@ fn all_overrides_explicit_files_and_all_ignored_is_clean() -> TestResult {
     assert_eq!(
         (code, stdout.as_str(), stderr.as_str()),
         (0, "OK: 0 file(s) clean\n", "")
+    );
+    Ok(())
+}
+
+#[test]
+fn all_notes_untracked_markdown_without_changing_the_result() -> TestResult {
+    let root = TempDir::new()?;
+    git(root.path(), &["init", "-q"])?;
+    fs::write(root.path().join("tracked.md"), "clean\n")?;
+
+    // Nothing is indexed yet, so selection is empty and the usage error is the
+    // whole result. The note is what explains why the tree looks empty, so it
+    // has to come before that error rather than after it.
+    let (code, stdout, stderr) = output_text(run(root.path(), &["--all"])?)?;
+    assert_eq!((code, stdout.as_str()), (2, ""));
+    assert!(stderr.starts_with("note: 1 untracked *.md not checked (git add them to include)\n"));
+
+    git(root.path(), &["add", "tracked.md"])?;
+    fs::write(root.path().join("new.md"), "你好,世界\n")?;
+    fs::write(root.path().join("also new.md"), "你好,世界\n")?;
+
+    // A clean tracked result now says how much it could not see, and says so
+    // on stderr without turning a warning into a failing exit code.
+    let (code, stdout, stderr) = output_text(run(root.path(), &["--all"])?)?;
+    assert_eq!(
+        (code, stdout.as_str(), stderr.as_str()),
+        (
+            0,
+            "OK: 1 file(s) clean\n",
+            "note: 2 untracked *.md not checked (git add them to include)\n"
+        )
+    );
+
+    // Explicit selection has no blind spot, so it stays silent.
+    let (code, stdout, stderr) = output_text(run(root.path(), &["tracked.md"])?)?;
+    assert_eq!(
+        (code, stdout.as_str(), stderr.as_str()),
+        (0, "OK: 1 file(s) clean\n", "")
+    );
+
+    // Control arm: with nothing untracked left, the note must be absent.
+    git(root.path(), &["add", "new.md", "also new.md"])?;
+    let (code, stdout, stderr) = output_text(run(root.path(), &["--all"])?)?;
+    assert_eq!((code, stderr.as_str()), (1, ""));
+    assert!(stdout.contains("new.md:1: error:"));
+    Ok(())
+}
+
+#[test]
+fn untracked_note_omits_ignored_markdown() -> TestResult {
+    let root = TempDir::new()?;
+    git(root.path(), &["init", "-q"])?;
+    fs::write(root.path().join("tracked.md"), "clean\n")?;
+    fs::write(root.path().join(".gitignore"), "build/\n")?;
+    git(root.path(), &["add", "tracked.md", ".gitignore"])?;
+    fs::create_dir(root.path().join("build"))?;
+    fs::write(root.path().join("build/out.md"), "你好,世界\n")?;
+    fs::create_dir(root.path().join("vendor"))?;
+    fs::write(root.path().join("vendor/t.md"), "你好,世界\n")?;
+    fs::write(root.path().join(".limae-ignore"), "vendor/\n")?;
+
+    // Neither the Git-ignored nor the limae-ignored file is worth shouting
+    // about: a note that always fires is the same silence it replaces.
+    let (code, stdout, stderr) = output_text(run(root.path(), &["--all"])?)?;
+    assert_eq!(
+        (code, stdout.as_str(), stderr.as_str()),
+        (0, "OK: 1 file(s) clean\n", "")
+    );
+
+    // Same tree, same file, only the ignore rules removed: now it counts.
+    fs::remove_file(root.path().join(".limae-ignore"))?;
+    fs::write(root.path().join(".gitignore"), "\n")?;
+    let (code, stdout, stderr) = output_text(run(root.path(), &["--all"])?)?;
+    assert_eq!(
+        (code, stdout.as_str(), stderr.as_str()),
+        (
+            0,
+            "OK: 1 file(s) clean\n",
+            "note: 2 untracked *.md not checked (git add them to include)\n"
+        )
     );
     Ok(())
 }

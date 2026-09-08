@@ -52,6 +52,32 @@ pub enum GitError {
 /// adapter; only Linux has runtime test evidence. Other platforms return
 /// `GitError::Unsupported` before spawning.
 pub fn tracked_markdown(cwd: &Path) -> Result<Vec<PathBuf>, GitError> {
+    ls_files(cwd, &["ls-files", "-z", "--", "*.md"])
+}
+
+/// List `*.md` paths at and below `cwd` that Git neither tracks nor ignores.
+///
+/// `--exclude-standard` applies the same exclude sources Git itself honours, so
+/// build products and other ignored Markdown never appear here. Ordering,
+/// delimiting, limits, and failure modes match [`tracked_markdown`].
+///
+/// This is diagnostic only: `--all` checks the tracked list, and these paths are
+/// the ones that selection cannot see until they are added to the index.
+pub fn untracked_markdown(cwd: &Path) -> Result<Vec<PathBuf>, GitError> {
+    ls_files(
+        cwd,
+        &[
+            "ls-files",
+            "-z",
+            "--others",
+            "--exclude-standard",
+            "--",
+            "*.md",
+        ],
+    )
+}
+
+fn ls_files(cwd: &Path, args: &[&str]) -> Result<Vec<PathBuf>, GitError> {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         use std::ffi::OsStr;
@@ -59,7 +85,7 @@ pub fn tracked_markdown(cwd: &Path) -> Result<Vec<PathBuf>, GitError> {
         use std::process::Command;
 
         let mut command = Command::new("git");
-        command.args(["ls-files", "-z", "--", "*.md"]);
+        command.args(args);
         let output = unix::run(&mut command, cwd, unix::Limits::GIT)?;
         if output.is_empty() {
             return Ok(Vec::new());
@@ -83,9 +109,12 @@ pub fn tracked_markdown(cwd: &Path) -> Result<Vec<PathBuf>, GitError> {
             .collect()
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    Err(GitError::Unsupported {
-        cwd: cwd.to_owned(),
-    })
+    {
+        let _ = args;
+        Err(GitError::Unsupported {
+            cwd: cwd.to_owned(),
+        })
+    }
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
