@@ -1,0 +1,61 @@
+# Release artifacts: on a version tag, build the `limae` binary — fully
+# static musl for Linux, native for macOS — and attach it to a GitHub
+# Release. Static musl linking works because the dependency tree is
+# OpenSSL-free: limae does no networking at all (`Cargo.lock` has no
+# openssl / openssl-sys entry).
+#
+# The crates.io publish job is deliberately absent. Trusted Publishing
+# cannot be configured until the crate already exists, so the first
+# release is published by hand from the maintainer's machine; the job is
+# added after that. See docs/knowledge/release.md.
+name: release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/create-gh-release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  upload-assets:
+    needs: create-release
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      # Linux only: musl cross toolchain. The apple targets build natively
+      # on the macOS runner (upload-rust-binary-action installs the target).
+      - uses: taiki-e/setup-cross-toolchain-action@v1
+        if: startsWith(matrix.os, 'ubuntu')
+        with:
+          target: ${{ matrix.target }}
+      # Ships `limae-<target>.tar.gz` plus a sha256 sidecar. `bin:` is the
+      # `[[bin]] name` in Cargo.toml; the examples are development-only and
+      # are not released (AGENTS.md, directory conventions).
+      - uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: limae
+          target: ${{ matrix.target }}
+          tar: unix
+          checksum: sha256
+          token: ${{ secrets.GITHUB_TOKEN }}

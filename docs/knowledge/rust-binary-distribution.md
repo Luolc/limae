@@ -1,6 +1,6 @@
 # Rust 分发预演
 
-Rust 命令名为 `limae`，是本项目正式的 CLI (ADR-0015 阶段 E)；Python 那份改名 `limae-python`、保留为 deprecated 的参考实现。本文覆盖 pre-commit 的两个 hook id，以及 Linux GNU / musl 的源码包与独立二进制预演；macOS、Windows、发布 tag、GitHub Release 与 `cargo publish` 均不在本轮验收范围内。
+Rust 命令名为 `limae`，是本项目正式的 CLI (ADR-0015 阶段 E)；Python 那份改名 `limae-python`、保留为 deprecated 的参考实现。本文覆盖 pre-commit 的两个 hook id，以及 Linux GNU / musl 的源码包与独立二进制预演；macOS 与 Windows 不在本地预演范围内。发布 tag、GitHub Release 与 `cargo publish` 见 [发布手册](release.md)。
 
 版本与组件的唯一配置来源是仓根 `rust-toolchain.toml`。源码包的文件范围由 `Cargo.toml` 的 `include` 声明；其中既保留生产 binary 的编译期词表，也保留 manifest 显式声明的 library、example 与 integration test target 所需源码和共享 fixture。`spec/README.md` 与 `spec/rules.md` 作为这些 fixture 和实现所遵循的规范正本随源码包分发。
 

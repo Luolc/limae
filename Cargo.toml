@@ -8,7 +8,6 @@ repository = "https://github.com/Luolc/limae"
 readme = "README.md"
 keywords = ["markdown", "linter", "typography", "chinese", "cjk"]
 categories = ["command-line-utilities", "development-tools", "text-processing"]
-publish = false
 include = [
   "/Cargo.toml",
   "/Cargo.lock",
