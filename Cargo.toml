@@ -17,6 +17,7 @@ include = [
   "/rust/**/*.rs",
   "/spec/README.md",
   "/spec/fixtures/**",
+  "/spec/lexicon/zh.toml",
   "/spec/polish/**",
   "/spec/rules.md",
   "/spec/wordlists/**",

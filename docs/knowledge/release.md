@@ -1,16 +1,20 @@
 # 发布手册
 
-`limae` 的发布分两条独立的线：**GitHub Release 的二进制产物**由 tag 触发的 workflow 自动产出，**crates.io 的 `cargo publish`** 目前仍由维护者在自己的机器上人工执行。本文覆盖两条线各自的步骤、判据与它们之间的先后关系。
+`limae` 的发布分两条独立的线：**GitHub Release 的二进制产物**由 tag 触发的 workflow 自动产出，**crates.io 的 `cargo publish`** 在维护者的开发机上执行，走 API token 路径而不是 Trusted Publishing。本文覆盖两条线各自的步骤、判据与它们之间的先后关系。
+
+本文的步骤默认可以由 agent 执行；标了 👤 的那几步必须由人做，因为它们在浏览器里，不是命令。
 
 工具链版本与 target 的唯一配置来源是仓根 `rust-toolchain.toml`；本地分发预演 (源码包、独立 Linux binary) 见 [Rust 分发预演](rust-binary-distribution.md)，本文不重复。token 的存放位置、`op run` 注入方式与权限配置以 [维护者的开发机发布手册 (私有仓)](https://github.com/Luolc/machine-setup/blob/main/docs/knowledge/crates-io-publishing.md) 为准，本文只写「什么时候做哪一步」。
 
 ## 凭证红线
 
-**任何 agent 不读、不接触 crates.io token。** `cargo login`、`op run` 注入与 `cargo publish` 这三步一律由用户在自己的 shell 里执行；agent 只做不需要认证的预演与验收，需要认证的那一步停下来交给用户。
+**任何 agent 不读、不接触 crates.io token 的值。** 保证这一点的是 `op run` 的机制，不是「把这一步推给人」 —— token 由 `op run` 按次注入子进程的环境，谁敲的这条命令与值会不会被读到无关。所以 `op run -- cargo publish` 这一步**可以由 agent 执行**。
+
+**不做 `cargo login`**：它会把 token 写进 `~/.cargo/credentials.toml`，从此长期落盘。也**永远不用 `--token <值>`** 这种把值放进命令行的写法 —— 命令行会进 shell 历史、进进程表、进任何一份日志。输出只回显退出码与状态，值不进任何输出。
 
 token 若曾以任何形式出现在会话记录、命令输出或仓内文本里，按全局守则先轮换、再处理泄漏。验证凭证只看存在与长度，值本身不进任何命令输出。
 
-维护者机器上 `~/.cargo/credentials.toml` 在 2026-09-08 实测不存在 (只查了存在性，没有读取内容)；token 走 `op run` 按次注入，不落盘。
+维护者机器上 `~/.cargo/credentials.toml` 在 2026-09-08 实测不存在 (只查了存在性，没有读取内容)。**这是刻意的，不是还没配**：不跑 `cargo login`，token 就不落盘，每次发布由 `op run` 现注入。
 
 ## 版本策略
 
@@ -24,10 +28,12 @@ Python 参考实现自 0.13.0 起**冻结、不再发布** (用户 2026-09-08 �
 
 一个对两种情况给出相同输出的观察，不能用来在两者之间做选择 —— 更糟的是它看起来像一次检查，于是关掉了下游复核。所以：
 
-- **可以拿来当证据的**：字段确实在 `Cargo.toml` 里 (直接读文件)，以及 `tools/check_rust_package.sh package` 真的打得出包并能从包里装出可运行的 binary。
+- **可以拿来当证据的**：字段确实在 `Cargo.toml` 里 (直接读文件)，以及 `tools/check_rust_package.sh package` 真的打得出包、能从包里装出可运行的 binary，并且把包内每个显式 target 的**运行时输入**也跑过一遍。
 - **不可以拿来当证据的**：`--dry-run` 退出 0。
 
-manifest 到底合不合格，只有真正 `cargo publish` 那一刻由 crates.io 给出答复。
+manifest 到底合不合格，只有真正 `cargo publish` 那一刻由 crates.io 给出答复。`--dry-run` 仍然值得跑，它是一次**本地打包检查** (打得出包吗、编译得过吗)；只是**发布成不成功以真 `cargo publish` 的退出码为准**，不以它为准。
+
+同一个形状咬过一次，记在这里：`Cargo.toml` 的 `include` 曾经漏掉 `spec/lexicon/zh.toml`，而随包分发的 `render-lexicon` example 在运行时要读它。包打得出来、example 编译得过、`cargo test` 全绿 —— 因为编译一个 example 不需要它的运行时输入。**「编译过了」对「装出来能不能用」零分辨力**；只有在解包目录里真的跑一次那个 example 才分得开 (PR #141 审查方发现，同 PR 修复：入 `include`，并让打包门真跑它、外加一条抽掉词典的对照臂)。
 
 ## 一、首发 (crate 尚不存在时，只做一次)
 
@@ -39,9 +45,9 @@ crates.io 的 Trusted Publishing 无法在 crate 存在之前配置，官方原�
 
 > Your crate must already be published to crates.io (initial publish requires an API token)
 
-因此首发只能人工带 token 跑。
+这里的 manually 是**相对 Trusted Publishing 而言**的 —— 指首发得用 API token 而不是 OIDC，**不是**「必须由人手动敲」。因此首发只能带 API token 跑，用不了 Trusted Publishing；执行者可以是 agent。
 
-1. 👤 **在维护者的开发机上**，仓库根目录，确认工作区干净、且就是要发布的那个 commit：
+1. **在维护者的开发机上**，仓库根目录，确认工作区干净、且就是要发布的那个 commit：
 
    ```sh
    git status --porcelain && git rev-parse HEAD
@@ -49,11 +55,11 @@ crates.io 的 Trusted Publishing 无法在 crate 存在之前配置，官方原�
 
    完成判据：第一条命令**无任何输出**，第二条打出的 SHA 与你要发布的 commit 相同。
 
-2. 👤 同一台机器、同一个目录，按 CI 的门顺序裸跑全部质量门 (命令清单见仓根 `AGENTS.md`)，**不接管道**。
+2. 同一台机器、同一个目录，按 CI 的门顺序裸跑全部质量门 (命令清单见仓根 `AGENTS.md`)，**不接管道**。
 
    完成判据：每一道门都退出 0。输出太长就整条重定向到文件、再单独看退出码 —— `| tail` / `| grep` 会把退出码换成管道末端那个程序的，通过与失败给出同一个 0。
 
-3. 👤 同一台机器，确认打包门能真的产出包：
+3. 同一台机器，确认打包门能真的产出包：
 
    ```sh
    tools/check_rust_package.sh package
@@ -61,11 +67,11 @@ crates.io 的 Trusted Publishing 无法在 crate 存在之前配置，官方原�
 
    完成判据：退出 0。
 
-4. 👤 同一台机器，按 [私有仓的发布手册](https://github.com/Luolc/machine-setup/blob/main/docs/knowledge/crates-io-publishing.md) 用 `op run` 注入 token 并执行 `cargo publish`。这一步 agent 不参与。
+4. 同一台机器，按 [私有仓手册](https://github.com/Luolc/machine-setup/blob/main/docs/knowledge/crates-io-publishing.md) §4 用 `op run` 注入 token 并执行 `cargo publish` —— 命令以那份手册为准，这里不重复。可以先跑一次 `cargo publish --dry-run` 做**本地打包检查**，但**它不是发布成不成功的判据** (理由见上面那一节)。
 
-   完成判据：命令退出 0，且 <https://crates.io/crates/limae> 能打开、显示的版本号与 `Cargo.toml` 的 `version` 相同。
+   完成判据：`cargo publish` 退出 0 —— 只看退出码与状态，token 的值不进任何输出；且 <https://crates.io/crates/limae> 能打开、显示的版本号与 `Cargo.toml` 的 `version` 相同。
 
-5. 👤 推一个同版本的 tag，让二进制产物那条线也跑起来 —— 步骤见下面「三、二进制产物」。
+5. 推一个同版本的 tag，让二进制产物那条线也跑起来 —— 步骤见下面「三、二进制产物」。
 
 ## 二、首发之后：配置 Trusted Publishing
 
@@ -108,7 +114,7 @@ crate 一旦存在，就可以把 token 从 CI 里彻底去掉，改由 GitHub �
 
 `.github/workflows/release.yml` 在推 `v[0-9]+.[0-9]+.[0-9]+` 形状的 tag 时建 GitHub Release，并附上四个 target 的 `limae` 二进制：`x86_64-unknown-linux-musl`、`aarch64-unknown-linux-musl`、`x86_64-apple-darwin`、`aarch64-apple-darwin`。Linux 两个是全静态 musl —— 依赖树里没有 openssl，limae 本身也不做任何网络访问。
 
-1. 👤 **在维护者的开发机上**，仓库根目录，确认要打 tag 的 commit 已经在 `origin/main` 上：
+1. **在维护者的开发机上**，仓库根目录，确认要打 tag 的 commit 已经在 `origin/main` 上：
 
    ```sh
    git fetch origin && git rev-parse HEAD origin/main
@@ -116,7 +122,7 @@ crate 一旦存在，就可以把 token 从 CI 里彻底去掉，改由 GitHub �
 
    完成判据：两个 SHA 相同。不同就停下 —— 不要给未合入的 commit 打 tag。
 
-2. 👤 同一台机器，打 tag 并推上去 (把 `0.13.0` 换成 `Cargo.toml` 里的 `version`)：
+2. 同一台机器，打 tag 并推上去 (把 `0.13.0` 换成 `Cargo.toml` 里的 `version`)：
 
    ```sh
    git tag v0.13.0 && git push origin v0.13.0
@@ -124,7 +130,7 @@ crate 一旦存在，就可以把 token 从 CI 里彻底去掉，改由 GitHub �
 
    完成判据：`git ls-remote --tags origin v0.13.0` 打出一行。
 
-3. 👤 同一台机器，盯 workflow：
+3. 同一台机器，盯 workflow：
 
    ```sh
    gh run watch --exit-status "$(gh run list --workflow=release.yml --limit=1 --json databaseId --jq '.[0].databaseId')"
@@ -132,7 +138,7 @@ crate 一旦存在，就可以把 token 从 CI 里彻底去掉，改由 GitHub �
 
    完成判据：命令退出 0。
 
-4. 👤 同一台机器，核对产物真的挂上去了：
+4. 同一台机器，核对产物真的挂上去了：
 
    ```sh
    gh release view v0.13.0 --json assets --jq '.assets[].name'
