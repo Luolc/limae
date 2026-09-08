@@ -114,7 +114,7 @@ check_package() {
   mv "$missing_root/spec/wordlists/zh-word-1.toml" "$work_dir/removed-wordlist"
   if (
     cd "$missing_root"
-    CARGO_TARGET_DIR="$consumer_target" cargo build --locked --release --bin limae-rs \
+    CARGO_TARGET_DIR="$consumer_target" cargo build --locked --release --bin limae \
       >"$work_dir/missing-build.log" 2>&1
   ); then
     fail "package without the embedded terminology wordlist still built"
@@ -131,10 +131,10 @@ check_package() {
       --path . --locked --root "$work_dir/install"
   )
   mkdir "$work_dir/standalone"
-  mv "$work_dir/install/bin/limae-rs" "$work_dir/standalone/limae-rs"
+  mv "$work_dir/install/bin/limae" "$work_dir/standalone/limae"
   mv "$package_root" "$work_dir/source-unavailable"
   [[ ! -e "$package_root" ]] || fail 'unpacked source directory is still available'
-  run_business_smoke "$work_dir/standalone/limae-rs" package
+  run_business_smoke "$work_dir/standalone/limae" package
   printf '%s\n' 'Cargo package: unpacked, installed, and ran without source resources'
 }
 
@@ -151,9 +151,9 @@ check_target() {
   (
     cd "$repo_root"
     CARGO_TARGET_DIR="$cargo_target" cargo build \
-      --locked --release --target "$target" --bin limae-rs
+      --locked --release --target "$target" --bin limae
   )
-  binary="$cargo_target/$target/release/limae-rs"
+  binary="$cargo_target/$target/release/limae"
   [[ -x "$binary" ]] || fail "$target binary is not executable"
   run_business_smoke "$binary" "$target"
   printf '%s\n' "$target: business smoke passed"

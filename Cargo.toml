@@ -22,7 +22,7 @@ include = [
 path = "rust/lib.rs"
 
 [[bin]]
-name = "limae-rs"
+name = "limae"
 path = "rust/main.rs"
 
 [[example]]

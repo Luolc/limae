@@ -1,4 +1,4 @@
-//! Command-line orchestration for the temporary `limae-rs` binary.
+//! Command-line orchestration for the `limae` binary.
 
 use std::ffi::OsString;
 use std::io::{self, Write};
@@ -18,7 +18,7 @@ const SUCCESS: u8 = 0;
 const FINDINGS: u8 = 1;
 const USAGE: u8 = 2;
 
-/// Run `limae-rs` against the process arguments and standard streams.
+/// Run `limae` against the process arguments and standard streams.
 #[must_use]
 pub fn run_process() -> u8 {
     let mut stdout = io::stdout().lock();
@@ -122,7 +122,7 @@ pub fn run_from(
 }
 
 fn command() -> Command {
-    Command::new("limae-rs")
+    Command::new("limae")
         .disable_version_flag(true)
         .arg(
             Arg::new("all")

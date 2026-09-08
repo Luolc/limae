@@ -35,7 +35,7 @@ impl Drop for TempDir {
 }
 
 fn run(cwd: &Path, args: &[impl AsRef<OsStr>]) -> Result<Output, Box<dyn Error>> {
-    Ok(Command::new(env!("CARGO_BIN_EXE_limae-rs"))
+    Ok(Command::new(env!("CARGO_BIN_EXE_limae"))
         .current_dir(cwd)
         .env_clear()
         .env("PATH", std::env::var_os("PATH").ok_or("missing PATH")?)
@@ -159,7 +159,7 @@ fn run_from_uses_explicit_cwd_and_keeps_relative_error_paths() -> TestResult {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     let code = run_from(
-        ["limae-rs", "--fix", "t.md"].map(OsString::from),
+        ["limae", "--fix", "t.md"].map(OsString::from),
         root.path(),
         &mut stdout,
         &mut stderr,
@@ -169,7 +169,7 @@ fn run_from_uses_explicit_cwd_and_keeps_relative_error_paths() -> TestResult {
 
     stdout.clear();
     let code = run_from(
-        ["limae-rs", "missing.md"].map(OsString::from),
+        ["limae", "missing.md"].map(OsString::from),
         root.path(),
         &mut stdout,
         &mut stderr,
@@ -324,7 +324,7 @@ fn the_polish_subcommand_rewrites_standard_input_through_a_custom_command() -> T
         "[polish]\nengine = \"custom\"\ncommand = [\"mygateway\"]\n",
     )?;
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_limae-rs"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_limae"))
         .current_dir(root.path())
         .env_clear()
         .env("PATH", &bin)
@@ -388,7 +388,7 @@ fn the_hook_subcommand_answers_one_message_display_event_on_standard_input() -> 
         delta = serde_json::to_string(&message)?,
     );
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_limae-rs"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_limae"))
         .current_dir(root.path())
         .env_clear()
         .env("PATH", &bin)

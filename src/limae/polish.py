@@ -102,7 +102,7 @@ def _parser() -> argparse.ArgumentParser:
     The parser.
   """
   ap = argparse.ArgumentParser(
-      prog=f"limae {SUBCOMMAND}",
+      prog=f"limae-python {SUBCOMMAND}",
       description="rewrite prose with an LLM; reads stdin, writes stdout",
   )
   _ = ap.add_argument(

@@ -229,7 +229,7 @@ def test_probe_failures_are_not_normalized_into_a_match() -> None:
 def test_rust_artifact_validation_requires_the_probe(
     tmp_path: pathlib.Path,
 ) -> None:
-  binary = tmp_path / "limae-rs"
+  binary = tmp_path / "limae"
   binary.write_text("placeholder", encoding="utf-8")
   binary.chmod(0o755)
   with pytest.raises(pytest.UsageError, match="diff-probe"):
