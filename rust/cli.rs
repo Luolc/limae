@@ -189,7 +189,15 @@ fn execute(
         // Tracked selection cannot see a new file until it is indexed, so a
         // clean result would otherwise be indistinguishable from an unchecked
         // one. The count goes to stderr because stdout is the parsed result.
-        let unseen = not_ignored(&untracked_markdown(cwd)?, cwd)?;
+        //
+        // A diagnostic must not decide the run: when the untracked list or its
+        // ignore rules cannot be read, the note is dropped rather than raised.
+        // Nothing is hidden by that, because a fault which bears on what this
+        // run checks reaches the same two calls again on the selection below.
+        let unseen = untracked_markdown(cwd)
+            .ok()
+            .and_then(|paths| not_ignored(&paths, cwd).ok())
+            .unwrap_or_default();
         if !unseen.is_empty() {
             writeln!(
                 stderr,

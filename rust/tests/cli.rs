@@ -314,6 +314,30 @@ fn untracked_note_omits_ignored_markdown() -> TestResult {
 }
 
 #[test]
+fn an_unreadable_untracked_list_never_decides_the_exit_code() -> TestResult {
+    let root = TempDir::new()?;
+    git(root.path(), &["init", "-q"])?;
+    fs::write(root.path().join("new.md"), "你好,世界\n")?;
+    fs::write(root.path().join(".limae-ignore"), "!\n")?;
+
+    // Nothing is tracked, so the usage error is the whole contract and the
+    // ignore file is never this run's business. Reaching it for the note's
+    // sake must not turn that 2 into the 1 a real ignore fault would give.
+    let (code, stdout, stderr) = output_text(run(root.path(), &["--all"])?)?;
+    assert_eq!((code, stdout.as_str()), (2, ""));
+    assert!(stderr.contains("no files given (use --all or list files)"));
+    assert!(!stderr.contains("note:"));
+
+    // The same broken file is still a real error once it governs a selection,
+    // so the dropped diagnostic hides nothing that bears on the result.
+    git(root.path(), &["add", "new.md"])?;
+    let (code, stdout, stderr) = output_text(run(root.path(), &["--all"])?)?;
+    assert_eq!((code, stdout.as_str()), (1, ""));
+    assert!(stderr.contains("invalid ignore pattern"));
+    Ok(())
+}
+
+#[test]
 fn empty_selection_is_usage_but_git_failure_is_execution_error() -> TestResult {
     let root = TempDir::new()?;
     let (code, stdout, stderr) = output_text(run(root.path(), &[] as &[&str])?)?;
