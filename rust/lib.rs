@@ -10,4 +10,6 @@ pub mod pipeline;
 pub mod polish;
 mod resources;
 pub mod rules;
+#[cfg(test)]
+mod testing;
 pub mod text;

@@ -62,8 +62,10 @@ fn isolated_git_test(name: &str) -> Result<bool, Box<dyn Error>> {
         .output()?;
     assert!(
         output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stdout)
+        "isolated re-exec failed: {}\n--- child stdout ---\n{}\n--- child stderr ---\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
     );
     Ok(true)
 }
@@ -426,8 +428,10 @@ fn git_inherits_environment_routing_without_changing_the_caller() -> TestResult 
         let output = command.output()?;
         assert!(
             output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stdout)
+            "isolated re-exec failed: {}\n--- child stdout ---\n{}\n--- child stderr ---\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
         );
     }
     Ok(())

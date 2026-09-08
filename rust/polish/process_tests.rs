@@ -1,4 +1,5 @@
 use super::{CancellationToken, ProcessError, ProcessRequest, RunLimits, Stream, run};
+use crate::testing::NEVER_ELAPSES;
 use std::error::Error;
 use std::ffi::OsString;
 #[cfg(target_os = "linux")]
@@ -20,7 +21,8 @@ fn request(cwd: &Path, script: &str) -> ProcessRequest {
 
 fn limits() -> RunLimits {
     RunLimits {
-        deadline: Instant::now() + Duration::from_secs(2),
+        // Not this test's subject; see `NEVER_ELAPSES`.
+        deadline: Instant::now() + NEVER_ELAPSES,
         terminate_grace: Duration::from_millis(50),
         stdout: 128 * 1024,
         stderr: 128 * 1024,
@@ -227,8 +229,10 @@ fn process_tree_is_terminated_and_reaped_on_every_completion_path() -> TestResul
             .output()?;
         assert!(
             result.status.success(),
-            "{}",
-            String::from_utf8_lossy(&result.stdout)
+            "isolated re-exec failed: {}\n--- child stdout ---\n{}\n--- child stderr ---\n{}",
+            result.status,
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
         );
         return Ok(());
     }
@@ -260,6 +264,10 @@ fn process_tree_is_terminated_and_reaped_on_every_completion_path() -> TestResul
                 },
                 &token,
             );
+            // The subject is how long `run` takes to return. Taking the
+            // reading here keeps the reaping loop below, which is budgeted four
+            // seconds, out of the window this assertion measures.
+            let returned = started.elapsed();
             if let Some(handle) = canceller {
                 handle.join().map_err(|_| "canceller panicked")?;
             }
@@ -282,7 +290,11 @@ fn process_tree_is_terminated_and_reaped_on_every_completion_path() -> TestResul
                 std::thread::sleep(Duration::from_millis(5));
             }
             let (_, status) = reaped.ok_or("descendant not reaped")?;
-            assert!(started.elapsed() < Duration::from_secs(1), "{}", case.name);
+            assert!(
+                returned < Duration::from_secs(1),
+                "{} returned in {returned:?}",
+                case.name
+            );
             assert!(status.signaled(), "{} completed normally", case.name);
             if case.expect_kill {
                 assert_eq!(

@@ -1,5 +1,6 @@
 use super::GitError;
 use super::unix::{Limits, run};
+use crate::testing::NEVER_ELAPSES;
 use std::error::Error;
 #[cfg(target_os = "linux")]
 use std::fs;
@@ -12,7 +13,8 @@ type TestResult = Result<(), Box<dyn Error>>;
 
 fn limits() -> Limits {
     Limits {
-        timeout: Duration::from_secs(2),
+        // Not this test's subject; see `NEVER_ELAPSES`.
+        timeout: NEVER_ELAPSES,
         stdout: 128 * 1024,
         stderr: 128 * 1024,
     }
@@ -111,8 +113,10 @@ fn process_tree_recovery() -> TestResult {
             .output()?;
         assert!(
             result.status.success(),
-            "{}",
-            String::from_utf8_lossy(&result.stdout)
+            "isolated re-exec failed: {}\n--- child stdout ---\n{}\n--- child stderr ---\n{}",
+            result.status,
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
         );
         return Ok(());
     }
@@ -151,6 +155,10 @@ fn process_tree_recovery() -> TestResult {
                     ..limits()
                 },
             );
+            // The subject is how long `run` takes to return. Taking the reading
+            // here keeps the reaping loop below, which is budgeted four
+            // seconds, out of the window this assertion measures.
+            let returned = start.elapsed();
             let leader = read_pid(&root.join("leader"))?;
             let descendant = read_pid(&root.join("grandchild"))?;
             assert_eq!(
@@ -169,7 +177,10 @@ fn process_tree_recovery() -> TestResult {
                 std::thread::sleep(Duration::from_millis(5));
             }
             let (_, status) = reaped.ok_or("descendant not reaped")?;
-            assert!(start.elapsed() < Duration::from_secs(2));
+            assert!(
+                returned < Duration::from_secs(2),
+                "run returned in {returned:?}"
+            );
             assert!(
                 status.signaled(),
                 "descendant completed normally: {status:?}"
