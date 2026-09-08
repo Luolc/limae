@@ -7,7 +7,7 @@ import pytest
 
 
 def _python_binary() -> pathlib.Path:
-  return pathlib.Path(sys.executable).with_name("limae")
+  return pathlib.Path(sys.executable).with_name("limae-python")
 
 
 def _rust_artifacts(

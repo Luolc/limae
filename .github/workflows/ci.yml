@@ -96,10 +96,10 @@ jobs:
         run: tools/check_lexicon_render.sh
 
       - name: Rust differential artifacts
-        run: cargo build --locked --bin limae-rs --example diff-probe
+        run: cargo build --locked --bin limae --example diff-probe
 
       - name: Tests (Python / Rust parity)
-        run: uv run pytest -q --rust-bin target/debug/limae-rs
+        run: uv run pytest -q --rust-bin target/debug/limae
 
       # ruff + pyink + isort + basedpyright + pydoclint + uv-lock + limae.
       # basedpyright type-checks against .venv, so this runs after `uv sync`.

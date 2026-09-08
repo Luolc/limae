@@ -9,7 +9,7 @@
 //! compares the bytes.
 //!
 //! This is an example rather than a `[[bin]]` because it is a development tool
-//! and the shipped binary set is `limae-rs` alone; `diff-probe` sits here for
+//! and the shipped binary set is `limae` alone; `diff-probe` sits here for
 //! the same reason. Examples are packaged (`Cargo.toml` carries
 //! `rust/**/*.rs`) and compiled by `cargo test`, so the packaging gate keeps
 //! covering it, while nothing about a release build has to change.

@@ -21,8 +21,8 @@
 布局参考 [ruff](https://github.com/astral-sh/ruff) 仓：每种语言的实现都以仓根为项目根，源码进各自的子目录；规范与 fixture 独立于任何实现。
 
 - **规则规范与黄金 fixture 语言无关、所有实现共用**，放仓根 `spec/`：规范在 `spec/rules.md`，黄金集在 `spec/fixtures/`，AI 中文词典在 `spec/lexicon/zh.toml`，prompt spec 在 `spec/polish/`，规则词表在 `spec/wordlists/`；不放进任何单一实现的私有目录 (`src/`、`tests/`)。各部分的职责与格式见 `spec/README.md`，位置与理由见 `docs/adr/0001-standalone-repo-spec-first-shared-fixtures.md`。
-- **Python 参考实现 (reference implementation) 在仓根**：`pyproject.toml`、`src/limae/`、`tests/`；包 `limae`，命令 `limae`；用 uv 管理，锁文件 `uv.lock` 全仓唯一。Rust 迁移期间继续保留此入口与测试，不在 Rust 完成前声称已迁完。放仓根而不是 `python/` 子目录，是因为 pre-commit `language: python` 与 `uvx --from git+…` 都把仓根当作可安装的 Python 项目。
-- **Rust 在 A1 引入后是仓根 Cargo package**：根 `Cargo.toml`、`Cargo.lock` 与 `rust-toolchain.toml` 配套，源码在 `rust/`，集成测试在 `rust/tests/`；Rust 的 unit test、integration test 与 doctest 使用 Cargo 内建测试框架，仍对着同一套 `spec/` 与黄金 fixture 跑。toolchain pin 的唯一配置来源是 `rust-toolchain.toml`，不在此重复版本值，详见 ADR-0015 §六。根 `Cargo.toml` / `Cargo.lock` / `rust-toolchain.toml`、`rust/lib.rs` 接线、CI 与共享测试入口由当时的集成任务单独持有；加依赖与接线串行。
+- **Python 参考实现 (reference implementation) 在仓根**：`pyproject.toml`、`src/limae/`、`tests/`；包 `limae`，命令 `limae-python`；用 uv 管理，锁文件 `uv.lock` 全仓唯一。ADR-0015 阶段 E 之后它是 deprecated 的参考实现 —— 正式命令是 Rust binary `limae`，Python 入口改名让开这个名字，但入口与测试继续保留、继续跑，它是差分臂的对照一侧。放仓根而不是 `python/` 子目录，是因为 pre-commit `language: python` 与 `uvx --from git+…` 都把仓根当作可安装的 Python 项目。
+- **Rust 是仓根 Cargo package，也是正式实现**：根 `Cargo.toml`、`Cargo.lock` 与 `rust-toolchain.toml` 配套，源码在 `rust/`，集成测试在 `rust/tests/`；唯一发布的 binary 是 `limae`，`diff-probe` 与 `render-lexicon` 是开发期 example、不随发布分发；Rust 的 unit test、integration test 与 doctest 使用 Cargo 内建测试框架，仍对着同一套 `spec/` 与黄金 fixture 跑。toolchain pin 的唯一配置来源是 `rust-toolchain.toml`，不在此重复版本值，详见 ADR-0015 §六。根 `Cargo.toml` / `Cargo.lock` / `rust-toolchain.toml`、`rust/lib.rs` 接线、CI 与共享测试入口由当时的集成任务单独持有；加依赖与接线串行。
 - **静态站点在 `site/`**：`tools/render_lexicon.py` 从 `spec/lexicon/zh.toml` 生成 `site/index.html`；`site/` 放生成产物，生成脚本放 `tools/`。
 - **内容类 Markdown 在 `docs/`**：`docs/adr/` (决策记录)、`docs/knowledge/` (操作手册)、`docs/research/` (调研)。
 - 项目级 skill 只放在 `.agents/skills/<name>/`，见 `.agents/skills/README.md`。
@@ -39,8 +39,8 @@ RUSTDOCFLAGS=-Dwarnings cargo doc --no-deps --locked
 uv run pytest -q
 uv run python tools/render_diff_cases.py --check
 tools/check_lexicon_render.sh
-cargo build --locked --bin limae-rs --example diff-probe
-uv run pytest -q --rust-bin target/debug/limae-rs
+cargo build --locked --bin limae --example diff-probe
+uv run pytest -q --rust-bin target/debug/limae
 uv run pre-commit run --all-files --show-diff-on-failure
 tools/check_rust_precommit.sh
 tools/check_rust_package.sh package
@@ -53,7 +53,7 @@ tools/check_rust_package.sh target x86_64-unknown-linux-musl
 - 它扫的是**暂存区** (`--staged`)，也就是正要提交的这份内容：扫历史看不见它，而历史里的凭证已经跑掉了，只剩轮换与清史。命中时 `--redact` 只打印规则名与文件行号，不把命中的值打进终端或会话记录，这样验证凭证泄漏时也不会二次泄漏。版本钉在 `.pre-commit-config.yaml` 的 `rev`，pre-commit 用 Go 从源码装：首次约两分钟，之后每次约 2 秒。**升这个 `rev` 时必须重新核对上游 entry 仍带 `--staged`**：entry 会随 tag 变，`--staged` 一旦丢掉，钩子就退化成扫历史 —— 而扫历史看不见刚 `git add` 的 token，绿得像样却什么也没防住，正是这套配置要堵的那个洞。
 - CI 的 `Credential scan` 那一步是同一把扫描的另一半：CI 没有暂存区，它改扫已经落进历史的内容 (整份 clone，`fetch-depth: 0`)，兜住漏装钩子、或绕过钩子推上来的分支。它的版本与校验和跟 `.pre-commit-config.yaml` 的 `rev` 一起动，两处必须同版本。
 - 本仓用自己的 linter 检查自己的 Markdown (dogfooding)。规则一改、文档标红时，先判断是文档错还是规则错：检查器必然存在误报与漏报，判断是检查器错了就直接修它 (commit message 里说明理由)，规则确实错了就改规则与 `spec/` 下的规范和黄金集，不改文档迁就；拿不准的案例交给维护者裁决。
-- **Rust 质量门**：默认 `uv run pytest -q` 保持 Python-only；差分臂先构建 `limae-rs` 与 `diff-probe`，再以 `--rust-bin target/debug/limae-rs` 显式运行 Python / Rust 双臂。`cargo test --locked` 验收 doctest，`cargo doc` 单独验收文档构建。分发门所需的 Rust 工具链与 musl target 见 [Rust 分发预演](docs/knowledge/rust-binary-distribution.md)；CI 的 target 安装是前提，不计作质量门。commit hook 仍只放秒级检查，完整构建与分发重检查不进 hook。
+- **Rust 质量门**：默认 `uv run pytest -q` 保持 Python-only；差分臂先构建 `limae` 与 `diff-probe`，再以 `--rust-bin target/debug/limae` 显式运行 Python / Rust 双臂。`cargo test --locked` 验收 doctest，`cargo doc` 单独验收文档构建。分发门所需的 Rust 工具链与 musl target 见 [Rust 分发预演](docs/knowledge/rust-binary-distribution.md)；CI 的 target 安装是前提，不计作质量门。commit hook 仍只放秒级检查，完整构建与分发重检查不进 hook。
 - **Rust lint 默认**：根 `[lints.rust]` 设 `unsafe_code = "forbid"` 与 `unused_must_use = "deny"`，根 `[lints.clippy]` deny `unwrap_used`、`expect_used`、`dbg_macro`、`print_stdout` 与 `print_stderr`。测试默认返回 `Result`，不开全局 `unwrap` / `expect` 例外；确需窄范围例外时，只包住所需表达式，并写明 lint 名与理由。
 
 ## 合并

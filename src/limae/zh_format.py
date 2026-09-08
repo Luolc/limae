@@ -79,10 +79,17 @@ Two escape hatches sit below the configuration: the inline directives of
 ``.limae-ignore`` file drops whole input files (both in
 :mod:`limae.config`).
 
+Deprecated as a command since ADR-0015 stage E: the product CLI is the
+Rust ``limae`` binary, and this entry point was renamed to
+``limae-python`` to leave that name to it. It stays installed and
+tested — it is the reference implementation the differential arm
+compares against — but new callers should use the Rust binary.
+
 Usage (from the repo root)::
 
-  uv run limae [--fix] [--disable zh-typography-1,zh-typography-3] FILE...
-  uv run limae --all [--fix]
+  uv run limae-python [--fix] FILE...
+  uv run limae-python --all [--fix]
+  uv run limae-python --disable zh-typography-1,zh-typography-3 FILE...
 
 Exit code 0 = clean or warnings only, 1 = at least one error-level
 violation, 2 = bad configuration or bad inline directive
@@ -1331,11 +1338,11 @@ def _fix_in_place(path: pathlib.Path, settings: config.Settings) -> None:
 def main() -> int:
   """Run the checker CLI.
 
-  ``limae polish`` is dispatched to :mod:`limae.polish` and ``limae
-  hook`` to :mod:`limae.hook`; every other invocation is the checker,
-  whose exit codes are unchanged. The other two subcommands of ADR-0008
-  section 二 (``check`` and ``format``) are not split out yet, so the
-  bare form is still the checker.
+  ``limae-python polish`` is dispatched to :mod:`limae.polish` and
+  ``limae-python hook`` to :mod:`limae.hook`; every other invocation is
+  the checker, whose exit codes are unchanged. The other two subcommands
+  of ADR-0008 section 二 (``check`` and ``format``) are not split out
+  yet, so the bare form is still the checker.
 
   Returns:
     Process exit code (``spec/rules.md`` section 「退出码」): 0 when clean

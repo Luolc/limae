@@ -16,7 +16,7 @@
 
 本仓已经把 hook 写进 `.codex/config.toml`，不会改 `~/.codex/config.toml`，也不会影响其它仓库；所有安装了 limae 并信任 limae checkout 的 clone 都会启用。试用配置把 A/B 采样率固定为 0，所以每条回复最多追加一份润色版。
 
-1. 在运行 Codex 的开发机终端进入 limae checkout，执行 `uv sync`。看到结尾没有 error，且 `.venv/bin/limae` 存在，即为完成。
+1. 在运行 Codex 的开发机终端进入 limae checkout，执行 `cargo build`。看到结尾一行 `Finished`，且 `target/debug/limae` 存在，即为完成。
 2. 在同一终端从这个 checkout 启动一个新的 Codex 会话。若出现 hook trust 界面，先确认正文列出的命令来自本仓 `.codex/config.toml`，再选择信任；进入输入框即为完成。
 3. 在 Codex 输入一段超过 200 个非空白字符的合成中文正文。原回复下方出现 `── 润色 ──` warning 块，或会话态诊断记录了失败原因，即为 hook 已触发。
 
@@ -36,7 +36,7 @@ hook 配置写进 `.claude/settings.local.json`。这个文件不入库 (见 `.g
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR/.venv/bin/limae\" hook",
+            "command": "\"$CLAUDE_PROJECT_DIR/target/debug/limae\" hook",
             "timeout": 120
           }
         ]
@@ -47,7 +47,7 @@ hook 配置写进 `.claude/settings.local.json`。这个文件不入库 (见 `.g
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR/.venv/bin/limae\" hook",
+            "command": "\"$CLAUDE_PROJECT_DIR/target/debug/limae\" hook",
             "timeout": 15
           }
         ]
@@ -61,7 +61,7 @@ hook 配置写进 `.claude/settings.local.json`。这个文件不入库 (见 `.g
 
 - **`timeout` 必须给，而且要大于模型一次调用的时间**。`MessageDisplay` 事件在宿主里的默认超时是 10 秒 (2026-09-01 在 Claude Code `2.1.257` 的二进制里核到：每个 hook 取 `timeout * 1000`，没写才用事件的默认值，`MessageDisplay` 那个默认值是 `1e4`)。不给 `timeout`，模型永远赶不上，每条回复都白跑一次。
 - **两个事件用同一条命令**：进程按 stdin 里的 `hook_event_name` 自己分流，不需要参数。
-- **走 `.venv/bin/limae` 而不是 `uv run limae`**：这条命令每批新行都要起一次进程 (一条回复约十次)，本机实测前者约 150 ms、后者约 190 ms。没有 `.venv` 就先 `uv sync`。
+- **走 `target/debug/limae` 这个已建好的 binary，不要写 `cargo run`**：这条命令每批新行都要起一次进程 (一条回复约十次)，而且 `MessageDisplay` 的各批是并发派发的 —— `cargo run` 会让它们排在 Cargo 的 build 目录锁上，一个一个来。没有 `target/debug/limae` 就先 `cargo build`；**改完 Rust 源码要重建**，否则挂着的是上一次建出来的那个。本机 2026-09-07 实测 (各 10 次)：Rust binary 约 2 ms 一次，改名前的 Python 入口 (`.venv/bin/limae-python`) 约 164 ms。
 
 改完**重开一个 Claude Code 会话**才生效。
 
@@ -197,10 +197,10 @@ tail "${TMPDIR:-/tmp}"/limae-hook/*/diagnostics.jsonl
 printf '%s' '{"session_id":"probe","transcript_path":"/dev/null","cwd":"'"$PWD"'",
 "hook_event_name":"MessageDisplay","turn_id":"t","message_id":"m","index":0,
 "final":true,"delta":"<把一段两百字以上的中文粘在这里>"}' \
-  | TMPDIR=$(mktemp -d) ./.venv/bin/limae hook
+  | TMPDIR=$(mktemp -d) ./target/debug/limae hook
 ```
 
-- 什么都不输出：先看这段文字够不够 200 字 (`LIMAE_HOOK_MIN_CHARS`)，再用 `printf '%s' '<同一段文字>' | ./.venv/bin/limae polish -` 单跑一次 —— CLI 那侧失败会把诊断打出来 (ADR-0008 §六 两侧的失败语义本就不同)。
+- 什么都不输出：先看这段文字够不够 200 字 (`LIMAE_HOOK_MIN_CHARS`)，再用 `printf '%s' '<同一段文字>' | ./target/debug/limae polish -` 单跑一次 —— CLI 那侧失败会把诊断打出来 (ADR-0008 §六 两侧的失败语义本就不同)。
 - 输出了但会话里没效果：多半是 `timeout` 没配 (第一节) 或者会话没重开。
 - stderr 出现 `limae hook: m/n batches arrived`：宿主是并发派发每一批的，这条说明有一批没在 2 秒内落盘。这一轮按原文显示，不会拿残缺的正文去润色 —— 只记片数，不记内容。同一件事在 `diagnostics.jsonl` 里是一行 `assemble` / `incomplete`。
 - **消息被杀在流中间** (会话被打断，或者 `--resume` 重启)：宿主不再发末批，这条消息就永远拼不起来，屏幕上也不会有润色。这是正常的，不是缺陷 —— 末批是唯一确定的「消息结束」信号，没有它就只能显示原文，绝不能猜。它留下的分片目录会在一小时后被扫掉。

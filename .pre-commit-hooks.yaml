@@ -2,11 +2,11 @@
   name: Lint Markdown with limae
   description: Check Markdown files against limae's Chinese typography rules.
   entry: limae
-  language: python
-  files: \.md$
-- id: limae-rs
-  name: Lint Markdown with limae (Rust)
-  description: Opt in to the Rust implementation of limae's Markdown rules.
-  entry: limae-rs
   language: rust
+  files: \.md$
+- id: limae-python
+  name: Lint Markdown with limae (Python reference)
+  description: Deprecated Python reference implementation, kept as the rollback path.
+  entry: limae-python
+  language: python
   files: \.md$

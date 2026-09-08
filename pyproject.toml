@@ -1,7 +1,7 @@
 [project]
 name = "limae"
 version = "0.13.0"
-description = "Markdown linter, starting from Chinese technical-writing typography rules"
+description = "Deprecated Python reference implementation of limae, a Markdown linter starting from Chinese technical-writing typography rules; the product CLI is the Rust `limae` binary"
 requires-python = ">=3.13,<3.14"
 license = "Apache-2.0"
 # gitignore pattern matching for the `.limae-ignore` file; the
@@ -9,7 +9,7 @@ license = "Apache-2.0"
 dependencies = ["pathspec>=0.12.1"]
 
 [project.scripts]
-limae = "limae.zh_format:main"
+limae-python = "limae.zh_format:main"
 
 [build-system]
 requires = ["hatchling"]

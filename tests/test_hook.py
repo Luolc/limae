@@ -412,7 +412,7 @@ def test_the_disable_variable_turns_the_hook_off(
   assert calls(tmp_path) == 1
 
 
-def test_the_codex_hook_command_fails_open_until_limae_is_installed(
+def test_the_codex_hook_command_fails_open_until_limae_is_built(
     tmp_path: pathlib.Path,
 ):
   with CODEX_CONFIG.open("rb") as f:
@@ -444,7 +444,7 @@ def test_the_codex_hook_command_fails_open_until_limae_is_installed(
   assert missing.returncode == 0
 
   marker = tmp_path / "ran"
-  stub(tmp_path / ".venv" / "bin", "limae", f"touch {marker}\nexit 7")
+  stub(tmp_path / "target" / "debug", "limae", f"touch {marker}\nexit 7")
   installed = subprocess.run(  # noqa: S603
       ["sh", "-c", command],
       env=environment,

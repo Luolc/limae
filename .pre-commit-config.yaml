@@ -53,11 +53,23 @@ repos:
     hooks:
       - id: uv-lock
         files: pyproject\.toml$
-  # Dogfooding: this repo's own Markdown is checked by this repo's linter.
+  # Dogfooding: this repo's own Markdown is checked by this repo's linter —
+  # the Rust one, which is now the product (ADR-0015 stage E).
+  #
+  # `cargo run` rather than `target/debug/limae` directly: a path to a
+  # prebuilt binary passes just as green when that binary was built from a
+  # commit weeks old, so the gate would be checking this repo's Markdown
+  # against a ruleset that is not this repo's. `cargo run` cannot be stale.
+  # Warm, it costs about the same as the Python entry point did; a commit
+  # that touched Rust sources pays for the rebuild it already owed.
+  #
+  # `require_serial` because concurrent invocations would queue on Cargo's
+  # build-directory lock instead of on the files.
   - repo: local
     hooks:
       - id: limae
         name: chinese markdown format (limae)
         language: system
-        entry: uv run limae
+        entry: cargo run --quiet --locked --bin limae --
         files: \.md$
+        require_serial: true
