@@ -473,7 +473,16 @@ def test_all_uses_only_tracked_markdown_and_preserves_git_order(
   completed = limae_cli.run(["--all"], tmp_path)
 
   assert completed.returncode == 1
-  assert completed.stderr == ""
+  # Diagnostic output is the one place the arms may differ: the Python
+  # reference is frozen (user ruling 2026-09-08) while Rust adds a note so a
+  # new file that selection cannot see stops looking like a clean tree.
+  # Checking behaviour — findings, selection, stdout, exit code — stays
+  # identical, so each arm states its own exact stderr instead of skipping it.
+  assert completed.stderr == (
+      "note: 1 untracked *.md not checked (git add them to include)\n"
+      if limae_cli.name == "rust"
+      else ""
+  )
   assert completed.stdout == (
       "a.md:1: error: [zh-typography-4 no space between CJK and Latin] …中A…\n"
       "b.md:1: error: [zh-typography-4 no space between CJK and Latin] …文B…\n"

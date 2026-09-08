@@ -9,7 +9,7 @@ use soft_canonicalize::soft_canonicalize;
 use thiserror::Error;
 
 mod git;
-pub use git::{GitError, tracked_markdown};
+pub use git::{GitError, tracked_markdown, untracked_markdown};
 mod io;
 pub use io::{FileError, FileText, FixStatus, fix_file};
 

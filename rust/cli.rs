@@ -11,6 +11,7 @@ use thiserror::Error;
 use crate::config::{CliOverrides, ConfigError, Severity, resolve};
 use crate::files::{
     FileError, FileText, FixStatus, GitError, IgnoreError, fix_file, not_ignored, tracked_markdown,
+    untracked_markdown,
 };
 use crate::pipeline::{InitError, Pipeline};
 
@@ -108,7 +109,7 @@ pub fn run_from(
             .unwrap_or_default(),
     };
 
-    match execute(&options, cwd, stdout) {
+    match execute(&options, cwd, stdout, stderr) {
         Ok(code) => code,
         Err(RunError::NoFiles) => write_clap_error(
             command.error(
@@ -171,7 +172,12 @@ struct Options {
     files: Vec<PathBuf>,
 }
 
-fn execute(options: &Options, cwd: &Path, stdout: &mut dyn Write) -> Result<u8, RunError> {
+fn execute(
+    options: &Options,
+    cwd: &Path,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> Result<u8, RunError> {
     let config = resolve(
         cwd,
         CliOverrides {
@@ -180,6 +186,25 @@ fn execute(options: &Options, cwd: &Path, stdout: &mut dyn Write) -> Result<u8, 
         },
     )?;
     let selected = if options.all {
+        // Tracked selection cannot see a new file until it is indexed, so a
+        // clean result would otherwise be indistinguishable from an unchecked
+        // one. The count goes to stderr because stdout is the parsed result.
+        //
+        // A diagnostic must not decide the run: when the untracked list or its
+        // ignore rules cannot be read, the note is dropped rather than raised.
+        // Nothing is hidden by that, because a fault which bears on what this
+        // run checks reaches the same two calls again on the selection below.
+        let unseen = untracked_markdown(cwd)
+            .ok()
+            .and_then(|paths| not_ignored(&paths, cwd).ok())
+            .unwrap_or_default();
+        if !unseen.is_empty() {
+            writeln!(
+                stderr,
+                "note: {} untracked *.md not checked (git add them to include)",
+                unseen.len(),
+            )?;
+        }
         tracked_markdown(cwd)?
     } else {
         options.files.clone()
