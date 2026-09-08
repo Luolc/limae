@@ -62,6 +62,13 @@ backlog 的正本，由 `limae-orchestra` 在合入后记账 (全局守则「多
 
   **修复未在负载下验证**：对照臂 (修复后的二进制在同等负载下重跑) 没跑完就停手了，所以这里不写「已确认修复」。**这个缺口不补** —— 补它要再起一次负载实验，而那正是下面这条禁掉的事。
 
+- **crates.io Trusted Publishing 的 publish job** (2026-09-08，本 PR)：`limae 0.13.0` 今天已带 API token 首发到 crates.io，crate 存在了，Trusted Publishing 因此可以配置。本 PR 在 `.github/workflows/release.yml` 里加两个 job：`publish` (tag 触发，checkout → `rust-lang/crates-io-auth-action@v1` → `cargo publish`，`CARGO_REGISTRY_TOKEN` 取 `steps.auth.outputs.token`) 与 `auth-check` (`workflow_dispatch` 触发，只认证不发布)。两个 job 的 `if:` 互斥且显式 (`github.event_name == 'push'` / `== 'workflow_dispatch'`)，`create-release` 也补上同一个条件 —— 加 `workflow_dispatch` 之前它没有被触发到的机会，加了之后手动触发会让它在一个非 tag 的 ref 上建 release；`upload-assets` 经 `needs` 一并跳过。job 级 `permissions` 只有 `id-token: write` 与 `contents: read`，后者的理由**是 `actions/checkout` 要读仓库，不是 crates.io 要求它** —— 官方示例里没有这一行，本仓 `ci.yml` 顶层那个 `contents: read` 是它自己的最小权限选择，两者不能混为一谈。
+
+  **`auth-check` 的结论是单向的**，这一点写进了 workflow 注释与手册：成功 ⇒ owner / repository / workflow 文件名三项都对上、OIDC 链路通，确定；失败 ⇒ **不能据此判定配置错**，因为 crates.io 是否接受 `workflow_dispatch` 触发的 token 官方文档没有写 (2026-09-08 核那份 svelte 文档页)，「配置填错」与「事件类型不算数」在失败时给出相同输出、分不开。另一个坑一并记：**workflow 文件名是配置的一部分**，所以这个认证测试必须留在 `release.yml` 里，挪进新建的 `tp-test.yml` 会在配置完全正确时也失败 —— 假阴性。token 只按存在断言 (`[ -n "$VAR" ]` 后 echo 一个状态字)，值不进日志、artifact 或 step summary。
+
+  **本 PR 的任何部分都无法在合入前被验证**，这一点不含糊其辞：`workflow_dispatch` 的入口只在默认分支上暴露，而认证本身还要等用户先在浏览器里把受信任的发布者配好。已验的只有静态性质 —— YAML 能解析 (pyyaml)、两个 `if:` 在 `on:` 的两个触发器下互斥且穷尽、action 名与版本、`cargo publish` 的调用形状与手册一致、没有任何一处会打印 token。未验的是 OIDC 交换本身、crates.io 收不收 `workflow_dispatch` 的 token、`id-token: write` 够不够、runner 上的实际行为。
+
+  手册 [`docs/knowledge/release.md`](knowledge/release.md) 同步四处：字段 4 的措辞改准 (对本仓**就是** `release.yml`，不是举例)；补一节写清三种验证方式与各自的分辨力 (A 只跑认证：免费、成功即定论、失败结论不确定；B 等下次真发布：确定，且失败代价小 —— `cargo publish` 服务端原子、不会发一半，认证失败只红这一个 job，版本号不消耗，GitHub Release 那条线不受影响；C 故意烧一个补丁版号：立刻确定，代价是一个不可删除的版本号)，**不替用户选**；token 现状写准 —— 用户 2026-09-08 裁决**保留**那枚 crates.io token (以后还有别的 Rust project 要发)，所以配好之后不再需要长期 token 的是**limae 的 CI**，那枚 token 仍然存在且半径不变 (无有效期、crate scope 留空、覆盖账号下全部 crate)，**不写成「长期 token 已消除」**；「三」末尾那句「这个 workflow 至今没有被任何一次真实的 tag 推送执行过」已过期，改为记读数 —— `v0.13.0` 于 2026-09-08 触发 release workflow (run `34213744281`) 结论 success、`gh release view v0.13.0` 列出八个文件名，并明写这次运行**不覆盖**本 PR 后加的两个 job。
 - **flaky 复现需要隔离环境** (待办，2026-09-08)：上一条的对照臂与任何未来的 flaky 高负载复现，都需要一个**资源受限的容器** (如 `docker run --cpus 1 --memory …`)，且 1 分钟 loadavg 不得超过容器的 nproc。**共享开发机上不得起任何负载发生器** —— 忙循环、并发压测、故意超核数的并行一律不许：负载实验改变的是所有人脚下的地面，那台机器上同时有用户的交互 SSH 会话与五个 workspace 的 agent (2026-09-08 本仓实测：96 个忙循环把 4 核机的 1 分钟 loadavg 顶到 116，整机卡住)。做不到隔离就停在这条待办上、交用户裁决，不要为了交付一个「复现」而牺牲那台机器。需要裁决的是：给不给一台 (或一个容器配额) 专门跑这类实验的隔离环境。
 
 ## 愿景 (正本 `docs/adr/0005-agent-native-positioning.md`，这里只记条目)

@@ -1,6 +1,6 @@
 # 发布手册
 
-`limae` 的发布分两条独立的线：**GitHub Release 的二进制产物**由 tag 触发的 workflow 自动产出，**crates.io 的 `cargo publish`** 在维护者的开发机上执行，走 API token 路径而不是 Trusted Publishing。本文覆盖两条线各自的步骤、判据与它们之间的先后关系。
+`limae` 的发布分两条独立的线：**GitHub Release 的二进制产物**由 tag 触发的 workflow 自动产出，**crates.io 的 `cargo publish`** 首发时在维护者的开发机上带 API token 执行 (0.13.0 即如此)，此后交给同一个 tag 触发的 workflow、走 Trusted Publishing 的 OIDC 路径。本文覆盖两条线各自的步骤、判据与它们之间的先后关系。
 
 本文的步骤默认可以由 agent 执行；标了 👤 的那几步必须由人做，因为它们在浏览器里，不是命令。
 
@@ -77,16 +77,18 @@ crates.io 的 Trusted Publishing 无法在 crate 存在之前配置，官方原�
 
 crate 一旦存在，就可以把 token 从 CI 里彻底去掉，改由 GitHub 的 OIDC 换取一枚短时 token。
 
+**措辞要准：这去掉的是 limae 的 CI 对长期 token 的需要，不是那枚 token。** 用户 2026-09-08 裁决**保留**它 (以后还有别的 Rust project 要发)，所以配好 Trusted Publishing 之后它**仍然存在、半径不变** —— 无有效期、crate scope 留空、覆盖账号下的全部 crate。不要把这件事写成「长期 token 已消除」。
+
 1. 👤 **在浏览器里**打开 <https://crates.io/crates/limae>，进入 Settings → Trusted Publishing，点 "Add"，选择 GitHub，按官方文档填四个字段：
 
    - **Repository owner:** `Luolc`
    - **Repository name:** `limae`
-   - **Workflow filename:** 那个要发布的 workflow 的文件名 (官方举的例子就是 `release.yml`)
+   - **Workflow filename:** `release.yml` —— 发布 job 所在的 workflow 文件名，本仓就是这个值 (官方文档举的例子恰好也是 `release.yml`)
    - **Environment:** 可选；只有在仓库里建了 GitHub Actions environment 时才填
 
    完成判据：Trusted Publishing 列表里出现一条指向 `Luolc/limae` 的记录。
 
-2. 之后**另开一个 PR**把 publish job 加进 workflow。官方文档给的形状是：
+2. publish job 已经在 `.github/workflows/release.yml` 里，这一步不必再做，留在这里的是它的出处与形状。官方文档给的形状是：
 
    ```yaml
    jobs:
@@ -109,6 +111,20 @@ crate 一旦存在，就可以把 token 从 CI 里彻底去掉，改由 GitHub �
    **官方这份示例的 `permissions:` 只有 `id-token: write`，没有 `contents: read`。** 本仓的 `ci.yml` 顶层写着 `permissions: contents: read`，那是它自己的最小权限选择，不是 Trusted Publishing 的要求；把两者混在一起会写出一份官方没有背书的配置。真要加 `contents: read`，理由是 `actions/checkout` 需要读仓库，而不是 crates.io 要求它。
 
    `rust-lang/crates-io-auth-action` 的 README 只写了 `token` 这一个输出，以及「The action's `post` step automatically revokes the token when the job completes」；permissions 与 `CARGO_REGISTRY_TOKEN` 的接线它没写，要看上面 crates.io 文档那一段。
+
+   仓内那份与官方示例的差异只有三处，各有理由：`actions/checkout` 用本仓其余 workflow 的同一个大版本而不是示例里的版本；不写 `environment:` (仓库里没有建 GitHub Actions environment，字段 4 旁边那个 Environment 也因此留空)；**加了 `contents: read`**，理由就是上一段那条 —— job 级 `permissions:` 会把没列出的 scope 全部置为 none，而 `actions/checkout` 要读仓库。
+
+### 三种验证方式与各自的分辨力
+
+配好之后想确认它真的能用，有三条路，代价与结论的确定性各不相同。**这里不替你选**，只写清楚每条路给得出什么。
+
+- **A. 只跑认证，不发布。** `release.yml` 里的 `auth-check` job：在 Actions 页面手动触发 (`workflow_dispatch`)，它做 checkout + auth action，断言拿到了 token 就停，不跑 `cargo publish`。不消耗版本号，随时可重跑。**结论是单向的** —— 成功 ⇒ owner / repository / workflow 文件名三项都对上了、OIDC 链路通，这一步确定；失败 ⇒ **不能据此判定配置错**，因为它也可能是 crates.io 不接受 `workflow_dispatch` 触发的 token，而 crates.io 文档没有写事件类型算不算数 (2026-09-08 核那份 svelte 文档页)。两种原因在失败时给出相同的输出，分不开。
+
+  另有一条形状上的约束：**workflow 文件名是配置的一部分**，所以这个认证测试必须跑在 `release.yml` 里面。把它挪进一个新建的 `tp-test.yml`，即使配置完全正确也会失败 —— 那是假阴性。同理，`workflow_dispatch` 的入口只在默认分支上暴露，所以要先合进 main 才点得到。
+
+- **B. 等下一次真发布。** 什么都不做，下次推 tag 时由 `publish` job 给出答复。**确定**，且失败的代价比看起来小：`cargo publish` 的服务端是原子的，不会发出去一半；认证失败只是这一个 job 红，改完重跑即可，版本号没被消耗，GitHub Release 与二进制产物那条线由别的 job 承担、不受影响。
+
+- **C. 故意烧一个补丁版号。** 现在就 bump 一个 patch 版本、推 tag，让真发布立刻给出答复。**立刻确定**，代价是 crates.io 上多一个版本号 —— crates.io 的版本不可删除 (只能 yank)。
 
 ## 三、二进制产物 (GitHub Release)
 
@@ -146,4 +162,6 @@ crate 一旦存在，就可以把 token 从 CI 里彻底去掉，改由 GitHub �
 
    完成判据：四个 target 各有一个 `limae-<target>.tar.gz` 与一个对应的 `.sha256`，共八个文件名。
 
-**这个 workflow 至今没有被任何一次真实的 tag 推送执行过。** 静态检查 (YAML 能解析、action 名与版本、`bin:` 与 `[[bin]] name` 一致、tag glob 匹配) 全部通过，但那些检查对「它在 GitHub 上跑不跑得起来」零分辨力 —— 第一次真推 tag 之前，上面第 3、4 步的完成判据都还没有被验证过。
+这条线**已经被一次真实的 tag 推送执行过**：`v0.13.0` 于 2026-09-08 触发 release workflow (run `34213744281`)，结论 success，`gh release view v0.13.0` 列出八个文件名 —— 四个 target 各一个 `.tar.gz` 与一个 `.sha256`。上面第 3、4 步的完成判据至此都拿到了读数。
+
+**这不覆盖同一个文件里后加的两个 job** (`publish` 与 `auth-check`，见「二」)：那次运行发生在它们存在之前，它们各自的第一次真实执行仍未发生。
