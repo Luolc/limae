@@ -53,3 +53,5 @@ Codex 输入没有 Claude Code 的 `message_id`，单路记录改用同一事件
 ## 状态
 
 accepted (2026-09-05)。
+
+§二 里「配置通过 `git rev-parse --show-toplevel` 找到本 checkout 的 `.venv/bin/limae`」那句由 [ADR-0015](0015-rust-migration.md) 阶段 E 的入口改名取代 (2026-09-07)：正式 CLI 是 Rust binary `limae`，本仓 `.codex/config.toml` 指向 `target/debug/limae`，新 checkout 要先构建而不是 `uv sync`；操作正本是 [Codex hook 自试用手册](../knowledge/polish-hook-self-trial.md)。§二 的其余决定 (配置提交在 `.codex/config.toml`、只本仓 opt-in、`LIMAE_HOOK_AB_RATE=0`) 与其它各节不变。
