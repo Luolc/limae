@@ -3,6 +3,11 @@ name = "limae"
 version = "0.13.0"
 edition = "2024"
 license = "Apache-2.0"
+description = "A Markdown linter that starts from Chinese technical-writing typography rules, with opt-in experimental rules for AI tells and terminology"
+repository = "https://github.com/Luolc/limae"
+readme = "README.md"
+keywords = ["markdown", "linter", "typography", "chinese", "cjk"]
+categories = ["command-line-utilities", "development-tools", "text-processing"]
 publish = false
 include = [
   "/Cargo.toml",
