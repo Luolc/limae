@@ -3,6 +3,7 @@ use super::{
 };
 use crate::polish::diagnosis::{EngineState, FailureReason};
 use crate::polish::process::{CancellationToken, ProcessError, Stream};
+use crate::testing::NEVER_ELAPSES;
 use std::error::Error;
 use std::ffi::OsString;
 use std::fs;
@@ -43,7 +44,8 @@ impl Drop for TempDir {
 
 fn limits() -> EngineLimits {
     EngineLimits {
-        timeout: Duration::from_secs(2),
+        // Not this test's subject; see `NEVER_ELAPSES`.
+        timeout: NEVER_ELAPSES,
         terminate_grace: Duration::from_millis(10),
         stdout: 128 * 1024,
         stderr: 128 * 1024,

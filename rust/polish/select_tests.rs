@@ -4,6 +4,7 @@ use super::{
 };
 use crate::polish::engines::{EngineError, EngineRequest};
 use crate::polish::process::CancellationToken;
+use crate::testing::NEVER_ELAPSES;
 use std::error::Error;
 use std::ffi::OsString;
 use std::fs;
@@ -75,7 +76,8 @@ fn names(engines: &[&'static Engine]) -> Vec<&'static str> {
 
 fn limits() -> EngineLimits {
     EngineLimits {
-        timeout: Duration::from_secs(2),
+        // Not this test's subject; see `NEVER_ELAPSES`.
+        timeout: NEVER_ELAPSES,
         terminate_grace: Duration::from_millis(10),
         stdout: 64 * 1024,
         stderr: 64 * 1024,
