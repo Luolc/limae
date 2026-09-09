@@ -1,6 +1,6 @@
 # Tracker
 
-backlog 的正本，由 `limae-orchestra` 在合入后记账 (全局守则「多 agent 协作」)。规则语义的正本在 `spec/rules.md`，这里只记还没做的事与一句话去向；证据链在 `docs/research/`。
+backlog 的正本，由实现方在改动所属的 PR 里记账，`limae-orchestra` 负责合入后核对与串行编排动 tracker 的 PR。这是本仓对全局守则「多 agent 协作」那条 (tracker 只由 orchestra 在合入后记账) 的有意偏离，理由是记账与改动原子落地、不挂在「记得」上，且读数在实现方手里是第一手的；冲突由编排上的串行解决，不靠限定作者。规则语义的正本在 `spec/rules.md`，这里只记还没做的事与一句话去向；证据链在 `docs/research/`。
 
 ## 规则与配置
 
