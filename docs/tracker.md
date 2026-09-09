@@ -128,3 +128,9 @@ backlog 的正本，由实现方在改动所属的 PR 里记账，`limae-orchest
 - **P1 `polish` 的文件形态**：单文件改写，以及按 git 变更集 (dirty 或最近一个 commit 碰过的 Markdown) 批量；P2 再做跨文件协调改写 (ADR-0008 §十)。
 - **zh-tell-5 补「零 + 拉丁 / 混合名词」**：现判定只取「零」右侧的连续汉字串，漏掉「零 SA 需要读它」「零 service account 需要读它」这类「零 + 拉丁或中英混合名词 + 谓语」的形态 (`machine-setup` 2026-08-31 用 v0.9.0 跑改写前语料时发现，当次靠人工改写)。匹配单位要扩到拉丁词与混合串，边界与白名单语义随之定案。
 - **实验规则的 per-file 豁免写进规则文档**：各仓的 tracker / journal 这类历史账按约定不改写，zh-tell-5 / zh-word-2 将来若转 stable，这些文件需要整份跳过。`.limae-ignore` (v0.5.0) 已经能做，缺的是在规则文档里写明这条建议做法。
+
+## 词典静态页选型调研产出 (`docs/research/lexicon-static-site-survey.md`)
+
+- **本调研已入库，其中的建议尚未实施**：结论一句话 —— 当前这一页不需要 React，也不建议引入静态站点生成器 (static site generator, SSG)；缺的不是框架，是 HTML 文档层与流程层的补齐。
+  推荐的模板分离 (把 `site/index.html` 的 HTML 从生成代码里抽成 [Askama](https://docs.rs/askama/latest/askama/) 模板) 还没有做；文档缺失的
+  `<!DOCTYPE html>`、`<html lang>`、`<meta charset>`、`<meta viewport>` 这四项也都还没有补。两者都是独立的后续任务，谁来做、何时做未定案。
