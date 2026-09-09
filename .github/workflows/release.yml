@@ -4,22 +4,31 @@
 # OpenSSL-free: limae does no networking at all (`Cargo.lock` has no
 # openssl / openssl-sys entry).
 #
-# The crates.io publish job is deliberately absent. Trusted Publishing
-# cannot be configured until the crate already exists, so the first
-# release is published by hand from the maintainer's machine; the job is
-# added after that. See docs/knowledge/release.md.
+# 0.13.0 was published to crates.io with an API token, because Trusted
+# Publishing cannot be configured before the crate exists. Now that it
+# does, `publish` below exchanges GitHub's OIDC identity for a short-lived
+# registry token instead. See docs/knowledge/release.md.
 name: release
 
 on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
+  # Manual entry point for `auth-check` only — it never publishes. GitHub
+  # exposes this trigger on the default branch, so the job it runs has to
+  # live in this file (see the note on the job itself).
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  # Every job below except `auth-check` belongs to a tag push. `on:` has
+  # exactly two triggers, so `github.event_name == 'push'` is the tag
+  # push and nothing else; `upload-assets` needs this job and is skipped
+  # with it.
   create-release:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -59,3 +68,83 @@ jobs:
           tar: unix
           checksum: sha256
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  # Trusted Publishing: no long-lived token in CI. The auth action swaps
+  # the job's OIDC identity for a short-lived crates.io token and revokes
+  # it in its post step. Shape taken from the crates.io docs; see
+  # docs/knowledge/release.md, which records the source verbatim.
+  publish:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      # Required for the OIDC token exchange — the only permission
+      # crates.io asks for. `contents: read` is here because job-level
+      # permissions zero out everything unlisted and actions/checkout
+      # needs to read the repository; it is not a Trusted Publishing
+      # requirement.
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      # `cargo publish` uploads whatever `[package].version` says; the tag is
+      # not an input to it. Pushing v0.13.1 at a commit whose manifest reads
+      # 0.14.0 would publish 0.14.0 — a version crates.io cannot delete or
+      # overwrite — while the GitHub Release still calls itself v0.13.1. So
+      # assert equality first, in the positive form: the version has to be
+      # read and has to equal the tag, and anything else stops the job before
+      # it authenticates. This guard belongs to `publish` alone; `auth-check`
+      # verifies OIDC and must stay free of the version policy.
+      - name: Assert the tag matches the manifest version
+        run: |
+          set -euo pipefail
+          version="$(cargo metadata --no-deps --format-version 1 --locked |
+            jq -er '.packages[] | select(.name == "limae") | .version')"
+          echo "tag=$GITHUB_REF_NAME manifest=v$version"
+          [ "$GITHUB_REF_NAME" = "v$version" ]
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      - run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+  # Verifies the Trusted Publishing configuration without spending a
+  # version number: it authenticates and stops. Run it by hand from the
+  # Actions tab.
+  #
+  # The conclusion is one-way:
+  #   success => owner, repository and workflow filename all matched and
+  #              the OIDC exchange works. Certain.
+  #   failure => NOT evidence that the configuration is wrong. It is also
+  #              what a crates.io that declines `workflow_dispatch`-issued
+  #              tokens would look like, and the crates.io docs do not say
+  #              whether the event type counts (checked 2026-09-08). The
+  #              two causes give the same output; failure cannot tell them
+  #              apart.
+  #
+  # This job has to live in release.yml. The workflow filename is part of
+  # the trusted publisher configuration, so the same job in, say,
+  # tp-test.yml would fail even with a perfectly correct configuration —
+  # a false negative.
+  auth-check:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      # Status only. The token's value never reaches the log, an
+      # artifact or the step summary — the check is existence, and
+      # `echo`ing the variable itself would defeat the whole point.
+      - name: Assert a token was issued
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          if [ -n "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "auth: token issued"
+          else
+            echo "auth: no token issued" >&2
+            exit 1
+          fi
