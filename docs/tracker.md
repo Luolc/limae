@@ -89,6 +89,22 @@ backlog 的正本，由实现方在改动所属的 PR 里记账，`limae-orchest
 
 - **flaky 复现需要隔离环境** (待办，2026-09-08)：上一条的对照臂与任何未来的 flaky 高负载复现，都需要一个**资源受限的容器** (如 `docker run --cpus 1 --memory …`)，且 1 分钟 loadavg 不得超过容器的 nproc。**共享开发机上不得起任何负载发生器** —— 忙循环、并发压测、故意超核数的并行一律不许：负载实验改变的是所有人脚下的地面，那台机器上同时有用户的交互 SSH 会话与五个 workspace 的 agent (2026-09-08 本仓实测：96 个忙循环把 4 核机的 1 分钟 loadavg 顶到 116，整机卡住)。做不到隔离就停在这条待办上、交用户裁决，不要为了交付一个「复现」而牺牲那台机器。需要裁决的是：给不给一台 (或一个容器配额) 专门跑这类实验的隔离环境。
 
+- **发布出去的二进制没有 `--version`** (待办，2026-09-08)：实测 (从 [GitHub Release](https://github.com/Luolc/limae/releases/tag/v0.13.0) 下载的 `limae-x86_64-unknown-linux-musl`，2026-09-08)：
+
+  ```
+  $ limae --version
+  error: unexpected argument '--version' found
+    tip: to pass '--version' as a value, use '-- --version'
+  ```
+
+  退出码 2。用户装完这个二进制后没有办法确认自己装的是哪一版；分发形态见 [发布手册](knowledge/release.md)。三个方向，**不替用户选**：
+
+  - **A. 加标准 `--version`**：clap 的内建版本支持，输出 `limae <version>`。代价最小，是 CLI 的通行做法，不引入任何构建期机制。**推荐这个**，理由是 YAGNI —— 没有证据说明需要 B 的额外信息之前，不应该先把机制建起来。
+  - **B. 加带更多信息的 `--version`**：版本号之外再带 commit 与 target (类似 `rustc -vV`)，对 bug 报告更有用。代价是需要一套构建期注入 commit 与 target 的机制，且要维护它与实际产物的一致性。
+  - **C. 不加**：唯一站得住的理由会是「用户从包管理器知道自己装的是哪一版」，但这条对当前的分发形态不成立 —— 二进制是从 GitHub Release 直接下载的，不经任何包管理器，装的时候和装完之后都没有版本号来源。**这一条弱**。
+
+  状态：等用户裁决。触发点：用户给出三选一的选择。
+
 ## 愿景 (正本 `docs/adr/0005-agent-native-positioning.md`，这里只记条目)
 
 - **LLM 语义润色**：agent 调用的语义层润色特性，与确定性 lint 互补。
