@@ -41,7 +41,7 @@ description: limae 仓 PR 审查增量：AI 中文词典 (spec/lexicon/zh.toml) 
 ## 四、页面与两个生成器
 
 - `L13` **样式与页面结构有两个生成器**：`tools/render_lexicon.py` (Python 参考实现) 与 `rust/examples/render_lexicon.rs` (Cargo example `render-lexicon`)，CSS 在两边各有一份，验收判据是同源产物逐字节一致。只改了一边是 P0 —— `tools/check_lexicon_render.sh` 会红，按 `B2` 处置。
-- `L14` **`site/index.html` 是生成产物**：手改的痕迹一律不许进 PR，看到就是 P1，指出它该回到哪个生成器里。「页面忘了重新生成」不必单独报 —— `tools/check_lexicon_render.sh` 已经覆盖，按用户级的 `## Out of scope` 处理；要确认的是这道门真的跑过。
+- `L14` **`site/index.html` 是生成产物**，手改的痕迹一律不许进 PR。手改与「改了词典忘了重新生成页面」是同一个可观测后果 —— `tools/check_lexicon_render.sh` 红 (前者走 `site/index.html is out of date` 那条分支)，按用户级 `B2` **这就是 P0**，不另开一条 finding、也不降级成 P1。本文件的增量只在于**怎么说**：手改要指出它该回到哪个生成器里 (`L13`)，页面过期要指出重新生成那一步没跑。反过来，这道门绿着就说明提交的页面与生成结果逐字节相同，此时「看着像手改过」是看错了，不报。
 - `L15` 词典条目自身、`site/index.html`、`spec/wordlists/` 的注释与 fixture 里出现词典收过的词，不算 dogfooding 违规，不报。
 
 ## 五、措辞归谁管
