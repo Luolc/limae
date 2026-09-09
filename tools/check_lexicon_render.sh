@@ -91,6 +91,7 @@ term = "对照臂"
 pinyin = ["ǎn", "zhào", "bì"]
 plain = "control arm & <b> 'quoted' \"both ways\""
 gloss = "只在 `tools/check_lexicon_render.sh` 的对照臂里出现，不进 spec。"
+fault = "对照臂的 `fault`：<b> & \"quotes\" 也要走同一条转义。"
 examples = [
   { before = "a < b && c > d", after = "`code` 与 'quotes' 与 \"quotes\"" },
 ]
@@ -103,4 +104,11 @@ fi
 if cmp -s "$(page perturbed python)" "$repo_root/site/index.html"; then
   fail 'the perturbed source rendered to the committed page; the comparison is vacuous'
 fi
-printf '%s\n' 'control arm: both generators followed the changed source, and the page changed with it'
+# Agreement plus a changed page is still what two generators that both
+# dropped `fault` would show: the other fields of the appended entry move the
+# page on their own. So the field's rendering is asserted directly, on the
+# escaped form the page must carry.
+expected_fault='<p class="fault"><span class="label">病</span>对照臂的 <code>fault</code>：&lt;b&gt; &amp; &quot;quotes&quot; 也要走同一条转义。</p>'
+grep -qF -- "$expected_fault" "$(page perturbed python)" ||
+  fail 'the perturbed source did not render its `fault` as the expected escaped HTML'
+printf '%s\n' 'control arm: both generators followed the changed source, the page changed with it, and `fault` rendered as expected'
