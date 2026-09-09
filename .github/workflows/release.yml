@@ -111,20 +111,13 @@ jobs:
   # version number: it authenticates and stops. Run it by hand from the
   # Actions tab.
   #
-  # The conclusion is one-way:
-  #   success => owner, repository and workflow filename all matched and
-  #              the OIDC exchange works. Certain.
-  #   failure => NOT evidence that the configuration is wrong. It is also
-  #              what a crates.io that declines `workflow_dispatch`-issued
-  #              tokens would look like, and the crates.io docs do not say
-  #              whether the event type counts (checked 2026-09-08). The
-  #              two causes give the same output; failure cannot tell them
-  #              apart.
-  #
   # This job has to live in release.yml. The workflow filename is part of
   # the trusted publisher configuration, so the same job in, say,
   # tp-test.yml would fail even with a perfectly correct configuration —
   # a false negative.
+  #
+  # What a success or failure of this job actually proves: see
+  # docs/knowledge/release.md.
   auth-check:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest

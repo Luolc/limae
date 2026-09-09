@@ -128,7 +128,7 @@ crate 一旦存在，就可以把 token 从 CI 里彻底去掉，改由 GitHub �
 
 配好之后想确认它真的能用，有三条路，代价与结论的确定性各不相同。**这里不替你选**，只写清楚每条路给得出什么。
 
-- **A. 只跑认证，不发布。** `release.yml` 里的 `auth-check` job：在 Actions 页面手动触发 (`workflow_dispatch`)，它做 checkout + auth action，断言拿到了 token 就停，不跑 `cargo publish`。不消耗版本号，随时可重跑。**结论是单向的** —— 成功 ⇒ owner / repository / workflow 文件名三项都对上了、OIDC 链路通，这一步确定；失败 ⇒ **不能据此判定配置错**，因为它也可能是 crates.io 不接受 `workflow_dispatch` 触发的 token，而 crates.io 文档没有写事件类型算不算数 (2026-09-08 核那份 svelte 文档页)。两种原因在失败时给出相同的输出，分不开。
+- **A. 只跑认证，不发布。** `release.yml` 里的 `auth-check` job：在 Actions 页面手动触发 (`workflow_dispatch`)，它做 checkout + auth action，断言拿到了 token 就停，不跑 `cargo publish`。不消耗版本号，随时可重跑。**结论是单向的** —— 成功 ⇒ owner / repository / workflow 文件名三项都对上了、OIDC 链路通，这一步确定；失败 ⇒ 指向的是配置或链路本身，**不再与「事件类型不被接受」混同** —— 这条原因已被实测排除：合入 #144 后 `gh workflow run release.yml --ref main` 触发了 run `34293764632` (event `workflow_dispatch`)，`auth-check` 结论 `success` (2026-09-08 实测)，说明 crates.io 接受 `workflow_dispatch` 触发的 OIDC token。同一次运行里 `publish`、`create-release`、`upload-assets` 三个 job 全部 `skipped`，证明 `if` 条件按设计工作、手动触发不会在非 tag 的 ref 上建 Release。**这不是「已完全验证」**：这次运行证明的只是认证那一步通了，`publish` job 本身 (认证之后的 `cargo publish`，以及 tag 与 manifest 一致性守卫在 runner 上的实际行为) 仍然一次都没被真实执行过。
 
   另有一条形状上的约束：**workflow 文件名是配置的一部分**，所以这个认证测试必须跑在 `release.yml` 里面。把它挪进一个新建的 `tp-test.yml`，即使配置完全正确也会失败 —— 那是假阴性。同理，`workflow_dispatch` 的入口只在默认分支上暴露，所以要先合进 main 才点得到。
 
