@@ -181,9 +181,7 @@ fn earlier_writes_survive_later_directive_and_read_errors() -> TestResult {
     let error = fix_file(&second, &pipeline, &config)
         .err()
         .ok_or("missing directive error")?;
-    assert!(
-        matches!(&error, FileError::Directive { path, source } if path == &second && source.line() == 2)
-    );
+    assert_matches!(&error, FileError::Directive { path, source } if path == &second && source.line() == 2);
     assert!(!format!("{error:?} {error}").contains("ACME-CONTEXT-MARKER"));
     assert_eq!(fs::read_to_string(&first)?, "中 A");
     assert_eq!(
@@ -196,11 +194,11 @@ fn earlier_writes_survive_later_directive_and_read_errors() -> TestResult {
     let missing = read_root.path().join("missing.md");
     fs::write(&first, "文B")?;
     assert_eq!(fix_file(&first, &pipeline, &config)?, FixStatus::Written);
-    assert!(matches!(
+    assert_matches!(
         fix_file(&missing, &pipeline, &config),
         Err(FileError::Read { path, source })
-            if path == missing && source.kind() == std::io::ErrorKind::NotFound
-    ));
+            if path == &missing && source.kind() == std::io::ErrorKind::NotFound
+    );
     assert_eq!(fs::read_to_string(&first)?, "文 B");
     Ok(())
 }
@@ -213,21 +211,19 @@ fn decode_and_filesystem_failures_keep_their_paths_and_sources() -> TestResult {
     let error = FileText::read(&invalid)
         .err()
         .ok_or("missing UTF-8 error")?;
-    assert!(
-        matches!(&error, FileError::Utf8 { path, source } if path == &invalid && source.valid_up_to() == 0)
-    );
+    assert_matches!(&error, FileError::Utf8 { path, source } if path == &invalid && source.valid_up_to() == 0);
     assert!(error.source().is_some());
 
     let missing = root.path().join("missing.md");
-    assert!(matches!(
-        FileText::read(&missing),
-        Err(FileError::Read { path, source })
-            if path == missing && source.kind() == std::io::ErrorKind::NotFound
-    ));
-    assert!(matches!(
-        FileText::read(root.path()),
-        Err(FileError::Read { path, .. }) if path == root.path()
-    ));
+    assert_matches!(
+        FileText::read(&missing).as_ref().err(),
+        Some(FileError::Read { path, source })
+            if path == &missing && source.kind() == std::io::ErrorKind::NotFound
+    );
+    assert_matches!(
+        FileText::read(root.path()).as_ref().err(),
+        Some(FileError::Read { path, .. }) if path == root.path()
+    );
     Ok(())
 }
 
@@ -246,22 +242,22 @@ fn permission_errors_are_asserted_only_when_the_identity_cannot_bypass_them() ->
     fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o000))?;
     let read_result = FileText::read(&unreadable);
     fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o600))?;
-    assert!(matches!(
-        read_result,
-        Err(FileError::Read { path, source })
-            if path == unreadable && source.kind() == std::io::ErrorKind::PermissionDenied
-    ));
+    assert_matches!(
+        read_result.as_ref().err(),
+        Some(FileError::Read { path, source })
+            if path == &unreadable && source.kind() == std::io::ErrorKind::PermissionDenied
+    );
 
     let unwritable = root.path().join("unwritable.md");
     fs::write(&unwritable, "中A")?;
     fs::set_permissions(&unwritable, fs::Permissions::from_mode(0o400))?;
     let write_result = fix_file(&unwritable, &Pipeline::new()?, &ResolvedConfig::default());
     fs::set_permissions(&unwritable, fs::Permissions::from_mode(0o600))?;
-    assert!(matches!(
+    assert_matches!(
         write_result,
         Err(FileError::Write { path, source })
-            if path == unwritable && source.kind() == std::io::ErrorKind::PermissionDenied
-    ));
+            if path == &unwritable && source.kind() == std::io::ErrorKind::PermissionDenied
+    );
     assert_eq!(fs::read_to_string(&unwritable)?, "中A");
     Ok(())
 }

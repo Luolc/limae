@@ -1,3 +1,7 @@
+#[macro_use]
+#[path = "../asserts.rs"]
+mod asserts;
+
 mod cli;
 mod config;
 mod fileio;

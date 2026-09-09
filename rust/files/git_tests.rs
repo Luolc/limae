@@ -42,14 +42,14 @@ fn both_pipes_are_drained_and_limits_are_inclusive() -> TestResult {
             ..limits()
         },
     );
-    assert!(matches!(
+    assert_matches!(
         out,
         Err(GitError::OutputLimit {
             stream: "stdout",
             limit: 19999,
             ..
         })
-    ));
+    );
     let err = run(
         &mut command,
         &cwd,
@@ -58,14 +58,14 @@ fn both_pipes_are_drained_and_limits_are_inclusive() -> TestResult {
             ..limits()
         },
     );
-    assert!(matches!(
+    assert_matches!(
         err,
         Err(GitError::OutputLimit {
             stream: "stderr",
             limit: 19999,
             ..
         })
-    ));
+    );
     Ok(())
 }
 
@@ -75,7 +75,7 @@ fn timeout_failure_and_success_are_distinct() -> TestResult {
     let mut command = Command::new("/bin/sh");
     command.args(["-c", "exec /bin/sleep 1"]);
     let start = Instant::now();
-    assert!(matches!(
+    assert_matches!(
         run(
             &mut command,
             &cwd,
@@ -85,14 +85,12 @@ fn timeout_failure_and_success_are_distinct() -> TestResult {
             }
         ),
         Err(GitError::Timeout { .. })
-    ));
+    );
     assert!(start.elapsed() < Duration::from_secs(1));
     assert_eq!(run(&mut command, &cwd, limits())?, Vec::<u8>::new());
     let mut failed = Command::new("/bin/sh");
     failed.args(["-c", "printf synthetic-error >&2; exit 7"]);
-    assert!(
-        matches!(run(&mut failed, &cwd, limits()), Err(GitError::Failed { status, .. }) if status.code() == Some(7))
-    );
+    assert_matches!(run(&mut failed, &cwd, limits()), Err(GitError::Failed { status, .. }) if status.code() == Some(7));
     Ok(())
 }
 
@@ -124,22 +122,30 @@ fn process_tree_recovery() -> TestResult {
     let root = std::env::temp_dir().join(format!("limae-git-reaper-{}", std::process::id()));
     fs::create_dir(&root)?;
     let result = (|| -> TestResult {
-        for (script, expected) in [
+        // Only the two cases whose subject is the deadline carry a short one;
+        // see `NEVER_ELAPSES`. The other two are decided by the stdout limit and
+        // by `run` returning at all, and the promptness assertion below is what
+        // detects a `run` that waits for the detached descendant.
+        for (script, expected, timeout) in [
             (
                 "trap '' TERM; /bin/sleep 3 & printf '%s' $! > grandchild; printf '%s' $$ > leader; wait",
                 "timeout",
+                Duration::from_millis(100),
             ),
             (
                 "/bin/sleep 3 & printf '%s' $! > grandchild; printf '%s' $$ > leader; exit 0",
                 "timeout",
+                Duration::from_millis(100),
             ),
             (
                 "/bin/sleep 3 >/dev/null 2>&1 & printf '%s' $! > grandchild; printf '%s' $$ > leader; exit 0",
                 "success",
+                NEVER_ELAPSES,
             ),
             (
                 "trap '' TERM; /bin/sleep 3 & printf '%s' $! > grandchild; printf '%s' $$ > leader; while :; do printf xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx; done",
                 "limit",
+                NEVER_ELAPSES,
             ),
         ] {
             let mut command = Command::new("/bin/sh");
@@ -150,7 +156,7 @@ fn process_tree_recovery() -> TestResult {
                 &mut command,
                 &root,
                 Limits {
-                    timeout: Duration::from_millis(100),
+                    timeout,
                     stdout: 1024,
                     ..limits()
                 },
@@ -188,13 +194,13 @@ fn process_tree_recovery() -> TestResult {
             if script.starts_with("trap") {
                 assert_eq!(status.terminating_signal(), Some(Signal::KILL.as_raw()));
             }
-            assert!(matches!(
+            assert_matches!(
                 waitpid(Some(leader), WaitOptions::NOHANG),
                 Err(Errno::CHILD)
-            ));
+            );
             match expected {
-                "timeout" => assert!(matches!(outcome, Err(GitError::Timeout { .. }))),
-                "limit" => assert!(matches!(outcome, Err(GitError::OutputLimit { .. }))),
+                "timeout" => assert_matches!(outcome, Err(GitError::Timeout { .. })),
+                "limit" => assert_matches!(outcome, Err(GitError::OutputLimit { .. })),
                 _ => {
                     let _ = outcome?;
                 }

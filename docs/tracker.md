@@ -1,6 +1,6 @@
 # Tracker
 
-backlog 的正本，由 `limae-orchestra` 在合入后记账 (全局守则「多 agent 协作」)。规则语义的正本在 `spec/rules.md`，这里只记还没做的事与一句话去向；证据链在 `docs/research/`。
+backlog 的正本，由实现方在改动所属的 PR 里记账，`limae-orchestra` 负责合入后核对与串行编排动 tracker 的 PR。这是本仓对全局守则「多 agent 协作」那条 (tracker 只由 orchestra 在合入后记账) 的有意偏离，理由是记账与改动原子落地、不挂在「记得」上，且读数在实现方手里是第一手的；冲突由编排上的串行解决，不靠限定作者。规则语义的正本在 `spec/rules.md`，这里只记还没做的事与一句话去向；证据链在 `docs/research/`。
 
 ## 规则与配置
 
@@ -73,6 +73,20 @@ backlog 的正本，由 `limae-orchestra` 在合入后记账 (全局守则「多
   手册 [`docs/knowledge/release.md`](knowledge/release.md) 同步四处：字段 4 的措辞改准 (对本仓**就是** `release.yml`，不是举例)；补一节写清三种验证方式与各自的分辨力 (A 只跑认证：免费、成功即定论、失败结论不确定；B 等下次真发布：确定，且失败代价小 —— `cargo publish` 服务端原子、不会发一半，认证失败只红这一个 job，版本号不消耗，GitHub Release 那条线不受影响；C 故意烧一个补丁版号：立刻确定，代价是一个不可删除的版本号)，**不替用户选**；token 现状写准 —— 用户 2026-09-08 裁决**保留**那枚 crates.io token (以后还有别的 Rust project 要发)，所以配好之后不再需要长期 token 的是**limae 的 CI**，那枚 token 仍然存在且半径不变 (无有效期、crate scope 留空、覆盖账号下全部 crate)，**不写成「长期 token 已消除」**；「三」末尾那句「这个 workflow 至今没有被任何一次真实的 tag 推送执行过」已过期，改为记读数 —— `v0.13.0` 于 2026-09-08 触发 release workflow (run `34213744281`) 结论 success、`gh release view v0.13.0` 列出八个文件名，并明写这次运行**不覆盖**本 PR 后加的两个 job。
 
   **后续 (2026-09-08，本 PR)**：上面「A 只跑认证」那栏「失败结论不确定」里的两个原因，现在收窄了一个。合入 #144 后 `gh workflow run release.yml --ref main` 手动触发了 run `34293764632` (event `workflow_dispatch`)，`auth-check` 结论 `success`，`publish` / `create-release` / `upload-assets` 三个 job 全部 `skipped`。据此 (1) crates.io 接受 `workflow_dispatch` 触发的 OIDC token 这一条已被实测排除，`auth-check` 将来若红不再与「事件类型不被接受」混同；(2) 三个 job 的 `skipped` 证明 `if` 条件按设计工作、手动触发不会在非 tag 的 ref 上建 Release。手册同步改了这一段措辞。**边界没变**：这次运行证明的只是认证那一步通了，`publish` job 本身 (认证之后的 `cargo publish`、tag 与 manifest 一致性守卫在 runner 上的实际行为) 仍未被真实执行过，不写成「已完全验证」。
+- **贫瘠的断言与 `process_tree_recovery` 的 git deadline** (2026-09-08，本 PR)：PR #145 (纯文档) 的 required check 红过两次又绿，两次是同一次运行 (`34295425331`) 的 attempt 1 与 2 —— **`gh run list` 看不见它们**，重跑会替换结论，要 `gh api repos/Luolc/limae/actions/runs/<id>` 读 `run_attempt` 才知道是 3 次尝试、前两次 failure。这两次红是一组现成的对照：#143 修过断言的 `files::git::tests::process_tree_recovery` 吐出了 `Error: Timeout { cwd: "/tmp/limae-git-reaper-4193" }`，没修的 `polish::engines::tests::empty_answer_is_rejected_and_temporary_resources_are_cleaned` 只留下 `assertion failed: matches!(result, Err(EngineError::EmptyAnswer))` —— 同一次运行、同一台 runner，差别只在断言写法。
+
+  **可观测性**：`assert!(matches!(actual, Pat))` 失败时只打印失败的表达式，说得出期望的变体、说不出到达的是哪一个。新的 `assert_matches!` (`rust/asserts.rs`，`#[macro_use]` 供单元测试，integration 测试 crate 经 `#[path]` 引同一份) 在 `match` 的兜底臂上打 `expected <pattern>, got <actual:?>`；值只按引用匹配，所以被断言的值之后照旧可用。改的是**这一族**、共 49 处 (`git_tests` 7、`engines_tests` 13、`process_tests` 9、`select_tests` 2、`resources` 2、`tests/config` 3、`tests/fileio` 7、`tests/files` 6)，判据是「匹配一个具体变体、失败却不打印实际内容」，不是全仓给所有 `assert!` 加消息。
+
+  **两条边界逐项列名，因为它们看起来像遗漏**：① `AnswerSource` 那三处 (`engines_tests` 136/168/188) 保持 `assert!(matches!(…))` 不动 —— 该类型**有意没有 `Debug`**，理由写在 `polish/engines.rs` 的类型文档里 (临时路径不得被折进错误)，而它只有两个变体，「不是 Stdout」本身就等于答案；② `ProcessOutput` / `FileText` / `ResolvedConfig` / `Term` 同样有意没有 `Debug` (前两者写明是怕子进程内容与用户正文进日志)，这些 `Result` 改成 `.as_ref().err()` 配 `Some(…)` 断言，共 15 处：失败时报出到达的错误变体，成功时报 `None`，都不打印成功值。**不为让消息更漂亮去给这些类型加 `Debug`** —— 那是在动一条隐私边界。
+
+  **判据用一个对照臂覆盖全部 49 处，而不是逐条手写**：把宏的兜底臂提到最前、`panic!` 换成 `eprintln!`，于是每个站点都在通过的一轮里打出自己的消息 (`file!()`/`line!()` 标注)。读数：全量 `cargo test --nocapture` 命中 40 处，另外 9 处 (`git_tests` 197/202/203、`process_tests` 311/349/371/382、`tests/files` 176/180) 在 re-exec 出来的子进程里、其 stderr 只在失败时才回显，带隔离环境变量 (`LIMAE_TEST_GIT_REAPER` / `LIMAE_TEST_PROCESS_REAPER` / `LIMAE_TEST_GIT_ISOLATED`) 单独跑那三个测试后同样命中 —— **49 / 49 的 `got` 都是实际值**，例如 `got Err(Failed { cwd: "…", status: ExitStatus(unix_wait_status(1792)) })`。真失败臂另跑一次：把 CI attempt 1 红过的那一处期望改成另一个变体，消息是 `expected Err(EngineError::EmptyCommand), got Err(EmptyAnswer)`，正是那次 CI 缺的那半句。**这一族的收益要等下一次真实 CI 复发才谈得上验证**，本 PR 不写「已确认修复」。
+
+  **`process_tree_recovery` 的 deadline 已定位，是背景噪声**：它不是产品的 `Limits::GIT` (10 秒)，而是这个测试**自己在调用点写死的 100 毫秒**，四个 case 共用。四个 case 里只有两个的被测对象是超时 (leader 忽略 TERM、或 leader 退出而孙进程仍持有管道)；第三个 case 期望 success、第四个期望 `OutputLimit`，它们的正确性断言此前一样挂在这 100 毫秒上。CI 那次红出在**第三个 (success) case**：它是循环里唯一用 `?` 上抛 `GitError` 的分支，所以子进程的 libtest 打出 `Error: Timeout { cwd: … }` 而不是 panic —— 与 CI attempt 2 的输出逐字一致。按 #143 已确立的那条正向性质，deadline 改成 per-case：两个测超时的 case 保留 100 毫秒，另外两个用 `NEVER_ELAPSES`。
+
+  **三个臂**：① 把 success case 的预算改回一个短值 (1 毫秒)，测试红，输出 `Error: Timeout { cwd: "/tmp/limae-git-reaper-…" }` —— 与 CI 的读数同形，归因成立；② 修复在场时该 case 绿；③ **检出力没有被换掉**：在 `run` 返回与取读数之间注入 3 秒延迟，`NEVER_ELAPSES` 下测试仍红在 `run returned in 3.102698761s` —— 「`run` 等了那个被分离的孙进程」由 promptness 断言 (2 秒) 抓，不由预算抓，而这条断言的被测对象**本来就是**墙钟。第四个臂管另一侧：把两个测超时的 case 的预算放长到 5 秒 (脚本 3 秒就结束)，它们变红，所以那两处的短预算是被测对象、不能改。
+
+  **一条已确立的读数与它的边界**：失败那棵树 (`68c048a`，不是 main) 上 `git merge-base --is-ancestor 0ce0027 68c048a` 退出 0，`engines_tests.rs` 第 47-48 行确实是 `timeout: NEVER_ELAPSES`、`NEVER_ELAPSES` 是 600 秒，整份 212 个测试 4.85 秒跑完。因此撑得住的只有 **`limits()` 的那条 wall-clock 路径不解释 attempt 1 那次失败**，600 秒没有任何东西接近过。撑不住的是「wall-clock 与这个测试无关」 —— 那条断言分辨不出 `result` 究竟是什么，别处若还有生效的时限它看不见。正确措辞是**「`limits()` 路径已排除，机制仍未知」**，不是「假说被证伪」。
+
 - **flaky 复现需要隔离环境** (待办，2026-09-08)：上一条的对照臂与任何未来的 flaky 高负载复现，都需要一个**资源受限的容器** (如 `docker run --cpus 1 --memory …`)，且 1 分钟 loadavg 不得超过容器的 nproc。**共享开发机上不得起任何负载发生器** —— 忙循环、并发压测、故意超核数的并行一律不许：负载实验改变的是所有人脚下的地面，那台机器上同时有用户的交互 SSH 会话与五个 workspace 的 agent (2026-09-08 本仓实测：96 个忙循环把 4 核机的 1 分钟 loadavg 顶到 116，整机卡住)。做不到隔离就停在这条待办上、交用户裁决，不要为了交付一个「复现」而牺牲那台机器。需要裁决的是：给不给一台 (或一个容器配额) 专门跑这类实验的隔离环境。
 
 ## 愿景 (正本 `docs/adr/0005-agent-native-positioning.md`，这里只记条目)

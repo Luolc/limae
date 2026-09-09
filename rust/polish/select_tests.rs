@@ -510,7 +510,7 @@ fn a_remembered_answer_stands_in_for_the_probe() -> TestResult {
     // The stub would answer, so anything but the remembered failure selects it.
     cache::remember(&path, &Engine::Claude, EngineState::Unauthorized, now());
     let error = selected(&env).err().ok_or("an engine was selected")?;
-    assert!(matches!(error, EngineError::NoUsableEngine { .. }));
+    assert_matches!(error, EngineError::NoUsableEngine { .. });
     assert!(!ran.exists(), "the CLI was run despite a remembered answer");
 
     // Once the answer is past its TTL the engine is asked again.
@@ -677,7 +677,7 @@ fn a_real_failure_is_written_over_a_remembered_answer() -> TestResult {
     let error = polish(&request, limits(), &CancellationToken::new(), now())
         .err()
         .ok_or("the stub answered")?;
-    assert!(matches!(error, EngineError::Exit { .. }));
+    assert_matches!(error, EngineError::Exit { .. });
 
     let remembered = cache::remembered(&path, now());
     let (engine, observed) = remembered.first().ok_or("nothing was remembered")?;

@@ -131,7 +131,7 @@ mod tests {
     fn term_resource_errors_keep_the_cause_without_source_text() -> Result<(), Box<dyn Error>> {
         let source = "# synthetic private document marker\nentries = [";
         let error = super::terms(source).err().ok_or("expected parse error")?;
-        assert!(matches!(error, super::TermResourceError::Parse { .. }));
+        assert_matches!(error, super::TermResourceError::Parse { .. });
         assert!(error.to_string().contains("spec/wordlists/zh-word-1.toml"));
         let cause = error.source().ok_or("missing TOML cause")?;
         assert!(!cause.to_string().is_empty());
@@ -172,10 +172,10 @@ mod tests {
             };
             assert_eq!(actual, key);
         }
-        assert!(matches!(
-            super::terms(&entry.repeat(2)),
-            Err(super::TermResourceError::DuplicateWrong { entry: 1 })
-        ));
+        assert_matches!(
+            super::terms(&entry.repeat(2)).as_ref().err(),
+            Some(super::TermResourceError::DuplicateWrong { entry: 1 })
+        );
         Ok(())
     }
 
