@@ -405,7 +405,7 @@ fn stdout_and_file_answers_enforce_independent_inclusive_caps() -> TestResult {
         },
         &CancellationToken::new(),
     );
-    assert!(matches!(
+    assert_matches!(
         stdout,
         Err(EngineError::Process {
             source: ProcessError::OutputLimit {
@@ -413,7 +413,7 @@ fn stdout_and_file_answers_enforce_independent_inclusive_caps() -> TestResult {
                 limit: 5
             }
         })
-    ));
+    );
 
     stub(
         &bin,
@@ -444,10 +444,7 @@ fn stdout_and_file_answers_enforce_independent_inclusive_caps() -> TestResult {
         },
         &CancellationToken::new(),
     );
-    assert!(matches!(
-        excessive,
-        Err(EngineError::AnswerLimit { limit: 5 })
-    ));
+    assert_matches!(excessive, Err(EngineError::AnswerLimit { limit: 5 }));
     Ok(())
 }
 
@@ -568,7 +565,7 @@ fn empty_answer_is_rejected_and_temporary_resources_are_cleaned() -> TestResult 
         limits(),
         &CancellationToken::new(),
     );
-    assert!(matches!(result, Err(EngineError::EmptyAnswer)));
+    assert_matches!(result, Err(EngineError::EmptyAnswer));
     let spec = PathBuf::from(fs::read_to_string(observed)?);
     assert!(!spec.exists());
     assert!(!spec.parent().ok_or("missing spec parent")?.exists());
@@ -585,7 +582,7 @@ fn empty_custom_command_is_rejected_without_spawning() -> TestResult {
         limits(),
         &CancellationToken::new(),
     );
-    assert!(matches!(result, Err(EngineError::EmptyCommand)));
+    assert_matches!(result, Err(EngineError::EmptyCommand));
     Ok(())
 }
 
@@ -602,10 +599,10 @@ fn answer_normalization_uses_the_python_whitespace_contract() -> TestResult {
         super::normalize("\u{1c} polished \u{1f}".as_bytes().to_vec())?,
         "polished\n"
     );
-    assert!(matches!(
+    assert_matches!(
         super::normalize("\u{1c}\u{1f}".as_bytes().to_vec()),
         Err(EngineError::EmptyAnswer)
-    ));
+    );
     Ok(())
 }
 
@@ -636,12 +633,12 @@ fn nonzero_exit_is_diagnosed_from_output_that_stays_out_of_the_error() -> TestRe
         "rejected",
         &format!("printf '%s' '{rejected_output}' >&2; exit 7"),
     )?;
-    assert!(matches!(
+    assert_matches!(
         rejected,
         EngineError::Exit {
             state: EngineState::Unauthorized
         }
-    ));
+    );
     assert_eq!(rejected.reason(), FailureReason::Rejected);
 
     let unreachable = failing_stub(
@@ -649,12 +646,12 @@ fn nonzero_exit_is_diagnosed_from_output_that_stays_out_of_the_error() -> TestRe
         "unreachable",
         &format!("printf '%s' 'getaddrinfo ENOTFOUND gateway.invalid {SYNTHETIC_VALUE}'; exit 7"),
     )?;
-    assert!(matches!(
+    assert_matches!(
         unreachable,
         EngineError::Exit {
             state: EngineState::Unreachable
         }
-    ));
+    );
     assert_eq!(unreachable.reason(), FailureReason::Unreachable);
 
     let unknown = failing_stub(
@@ -662,12 +659,12 @@ fn nonzero_exit_is_diagnosed_from_output_that_stays_out_of_the_error() -> TestRe
         "unknown",
         &format!("printf '%s' 'the reactor rejected widget {SYNTHETIC_VALUE}' >&2; exit 7"),
     )?;
-    assert!(matches!(
+    assert_matches!(
         unknown,
         EngineError::Exit {
             state: EngineState::Failed
         }
-    ));
+    );
     assert_eq!(unknown.reason(), FailureReason::NonzeroExit);
 
     // The three arms end with the same nonzero status and differ only in what
@@ -709,12 +706,12 @@ fn every_invocation_outcome_carries_its_reference_reason() -> TestResult {
     )
     .err()
     .ok_or("slow command unexpectedly succeeded")?;
-    assert!(matches!(
+    assert_matches!(
         timed_out,
         EngineError::Process {
             source: ProcessError::Timeout
         }
-    ));
+    );
     assert_eq!(timed_out.reason(), FailureReason::TimedOut);
 
     let absent = Engine::Custom(vec![
@@ -730,12 +727,12 @@ fn every_invocation_outcome_carries_its_reference_reason() -> TestResult {
     )
     .err()
     .ok_or("missing command unexpectedly succeeded")?;
-    assert!(matches!(
+    assert_matches!(
         missing,
         EngineError::Process {
             source: ProcessError::Spawn { .. }
         }
-    ));
+    );
     assert_eq!(missing.reason(), FailureReason::NotInstalled);
 
     let cancellation = CancellationToken::new();
@@ -749,16 +746,16 @@ fn every_invocation_outcome_carries_its_reference_reason() -> TestResult {
     )
     .err()
     .ok_or("cancelled command unexpectedly succeeded")?;
-    assert!(matches!(
+    assert_matches!(
         cancelled,
         EngineError::Process {
             source: ProcessError::Cancelled
         }
-    ));
+    );
     assert_eq!(cancelled.reason(), FailureReason::Other);
 
     let silent = failing_stub(&root, "silent", "printf '   '")?;
-    assert!(matches!(silent, EngineError::EmptyAnswer));
+    assert_matches!(silent, EngineError::EmptyAnswer);
     assert_eq!(silent.reason(), FailureReason::EmptyAnswer);
 
     stub(&bin, "codex", "cat > /dev/null")?;
@@ -770,7 +767,7 @@ fn every_invocation_outcome_carries_its_reference_reason() -> TestResult {
     )
     .err()
     .ok_or("absent answer file unexpectedly succeeded")?;
-    assert!(matches!(unreadable, EngineError::AnswerRead { .. }));
+    assert_matches!(unreadable, EngineError::AnswerRead { .. });
     assert_eq!(unreadable.reason(), FailureReason::UnreadableAnswer);
 
     assert_eq!(EngineError::EmptyCommand.reason(), FailureReason::NoEngine);

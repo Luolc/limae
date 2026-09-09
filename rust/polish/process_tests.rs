@@ -37,10 +37,12 @@ fn empty_argv_is_rejected_before_spawning() {
         cwd: PathBuf::new(),
         env: Vec::new(),
     };
-    assert!(matches!(
-        run(&command, limits(), &CancellationToken::new()),
-        Err(ProcessError::EmptyArgv)
-    ));
+    assert_matches!(
+        run(&command, limits(), &CancellationToken::new())
+            .as_ref()
+            .err(),
+        Some(ProcessError::EmptyArgv)
+    );
 }
 
 #[test]
@@ -134,13 +136,13 @@ fn both_pipes_are_drained_and_byte_limits_are_inclusive() -> TestResult {
         },
         &CancellationToken::new(),
     );
-    assert!(matches!(
-        stdout,
-        Err(ProcessError::OutputLimit {
+    assert_matches!(
+        stdout.as_ref().err(),
+        Some(ProcessError::OutputLimit {
             stream: Stream::Stdout,
             limit: 19_999
         })
-    ));
+    );
     let stderr = run(
         &command,
         RunLimits {
@@ -149,13 +151,13 @@ fn both_pipes_are_drained_and_byte_limits_are_inclusive() -> TestResult {
         },
         &CancellationToken::new(),
     );
-    assert!(matches!(
-        stderr,
-        Err(ProcessError::OutputLimit {
+    assert_matches!(
+        stderr.as_ref().err(),
+        Some(ProcessError::OutputLimit {
             stream: Stream::Stderr,
             limit: 19_999
         })
-    ));
+    );
     Ok(())
 }
 
@@ -165,7 +167,7 @@ fn blocked_stdin_cannot_escape_the_deadline() -> TestResult {
     let mut command = request(&cwd, "exec /bin/sleep 2");
     command.stdin = vec![b'x'; 1024 * 1024];
     let started = Instant::now();
-    assert!(matches!(
+    assert_matches!(
         run(
             &command,
             RunLimits {
@@ -173,9 +175,11 @@ fn blocked_stdin_cannot_escape_the_deadline() -> TestResult {
                 ..limits()
             },
             &CancellationToken::new()
-        ),
-        Err(ProcessError::Timeout)
-    ));
+        )
+        .as_ref()
+        .err(),
+        Some(ProcessError::Timeout)
+    );
     assert!(started.elapsed() < Duration::from_secs(1));
 
     let output = run(
@@ -199,7 +203,7 @@ fn cancellation_is_distinct_from_timeout_and_an_unset_token_succeeds() -> TestRe
     let started = Instant::now();
     let result = run(&request(&cwd, "exec /bin/sleep 2"), limits(), &token);
     canceller.join().map_err(|_| "canceller panicked")?;
-    assert!(matches!(result, Err(ProcessError::Cancelled)));
+    assert_matches!(result.as_ref().err(), Some(ProcessError::Cancelled));
     assert!(started.elapsed() < Duration::from_secs(1));
 
     let output = run(
@@ -304,10 +308,10 @@ fn process_tree_is_terminated_and_reaped_on_every_completion_path() -> TestResul
                     case.name
                 );
             }
-            assert!(matches!(
+            assert_matches!(
                 waitpid(Some(leader), WaitOptions::NOHANG),
                 Err(Errno::CHILD)
-            ));
+            );
             (case.assert_outcome)(outcome);
             fs::remove_file(root.join("leader"))?;
             fs::remove_file(root.join("descendant"))?;
@@ -341,7 +345,9 @@ fn cases() -> [TreeCase; 4] {
             cancel_after: None,
             stdout_limit: 1024,
             expect_kill: false,
-            assert_outcome: |outcome| assert!(matches!(outcome, Err(ProcessError::Timeout))),
+            assert_outcome: |outcome| {
+                assert_matches!(outcome.as_ref().err(), Some(ProcessError::Timeout))
+            },
         },
         TreeCase {
             name: "successful leader left a detached-output descendant",
@@ -361,7 +367,9 @@ fn cases() -> [TreeCase; 4] {
             cancel_after: Some(Duration::from_millis(30)),
             stdout_limit: 1024,
             expect_kill: true,
-            assert_outcome: |outcome| assert!(matches!(outcome, Err(ProcessError::Cancelled))),
+            assert_outcome: |outcome| {
+                assert_matches!(outcome.as_ref().err(), Some(ProcessError::Cancelled))
+            },
         },
         TreeCase {
             name: "output limit terminated a live tree",
@@ -371,13 +379,13 @@ fn cases() -> [TreeCase; 4] {
             stdout_limit: 1024,
             expect_kill: true,
             assert_outcome: |outcome| {
-                assert!(matches!(
-                    outcome,
-                    Err(ProcessError::OutputLimit {
+                assert_matches!(
+                    outcome.as_ref().err(),
+                    Some(ProcessError::OutputLimit {
                         stream: Stream::Stdout,
                         limit: 1024
                     })
-                ));
+                );
             },
         },
     ]

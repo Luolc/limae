@@ -377,10 +377,10 @@ fn empty_cli_flag_skips_a_malformed_file_but_absent_flags_do_not() -> TestResult
         },
     )?;
     assert!(config.is_enabled(RuleId::ZH_TYPOGRAPHY_1));
-    assert!(matches!(
-        resolve(temp.path(), CliOverrides::default()),
-        Err(ConfigError::Parse { .. })
-    ));
+    assert_matches!(
+        resolve(temp.path(), CliOverrides::default()).as_ref().err(),
+        Some(ConfigError::Parse { .. })
+    );
     Ok(())
 }
 
@@ -412,17 +412,18 @@ fn selection_validation_rejects_unknown_conflicting_and_experimental_ids() -> Te
         fs::create_dir(&directory)?;
         write_config(&directory, contents)?;
         let error = resolve(&directory, CliOverrides::default());
+        let actual = error.as_ref().err();
         assert!(
             matches!(
-                (&error, category),
-                (Err(ConfigError::UnknownRule { .. }), "unknown")
-                    | (Err(ConfigError::ConflictingRule { .. }), "conflict")
+                (actual, category),
+                (Some(ConfigError::UnknownRule { .. }), "unknown")
+                    | (Some(ConfigError::ConflictingRule { .. }), "conflict")
                     | (
-                        Err(ConfigError::ExperimentalRuleEnabled { .. }),
+                        Some(ConfigError::ExperimentalRuleEnabled { .. }),
                         "experimental"
                     )
             ),
-            "wrong error category for {directory_name}"
+            "wrong error category for {directory_name}: {actual:?}"
         );
         let Err(error) = error else {
             return Err("expected a selection error".into());
@@ -508,15 +509,16 @@ fn known_key_types_severity_and_unit_range_are_validated() -> TestResult {
         fs::create_dir(&directory)?;
         write_config(&directory, contents)?;
         let error = resolve(&directory, CliOverrides::default());
+        let actual = error.as_ref().err();
         assert!(
             matches!(
-                (&error, category),
-                (Err(ConfigError::InvalidType { .. }), "type")
-                    | (Err(ConfigError::InvalidSeverity { .. }), "severity")
-                    | (Err(ConfigError::InvalidSkipZhUnits { .. }), "units")
-                    | (Err(ConfigError::UnknownRule { .. }), "unknown")
+                (actual, category),
+                (Some(ConfigError::InvalidType { .. }), "type")
+                    | (Some(ConfigError::InvalidSeverity { .. }), "severity")
+                    | (Some(ConfigError::InvalidSkipZhUnits { .. }), "units")
+                    | (Some(ConfigError::UnknownRule { .. }), "unknown")
             ),
-            "wrong error category for {directory_name}"
+            "wrong error category for {directory_name}: {actual:?}"
         );
         let Err(error) = error else {
             return Err("expected a configuration value error".into());
@@ -550,13 +552,13 @@ fn pyproject_tool_table_must_be_a_table() -> TestResult {
         "[tool]\nlimae = \"not-a-table\"\n",
     )?;
 
-    assert!(matches!(
-        resolve(temp.path(), CliOverrides::default()),
-        Err(ConfigError::InvalidType {
+    assert_matches!(
+        resolve(temp.path(), CliOverrides::default()).as_ref().err(),
+        Some(ConfigError::InvalidType {
             key: "tool.limae",
             ..
         })
-    ));
+    );
     Ok(())
 }
 
@@ -607,7 +609,7 @@ fn unreadable_text_is_a_read_error_instead_of_default_configuration() -> TestRes
     let Err(error) = resolve(temp.path(), CliOverrides::default()) else {
         return Err("expected a configuration read error".into());
     };
-    assert!(matches!(&error, ConfigError::Read { .. }));
+    assert_matches!(&error, ConfigError::Read { .. });
     assert!(Error::source(&error).is_some());
     Ok(())
 }

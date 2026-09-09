@@ -173,14 +173,11 @@ fn git_failure_is_distinct_from_an_empty_index() -> TestResult {
         return Ok(());
     }
     let root = TempDir::new()?;
-    assert!(matches!(
-        tracked_markdown(root.path()),
-        Err(GitError::Failed { .. })
-    ));
+    assert_matches!(tracked_markdown(root.path()), Err(GitError::Failed { .. }));
     git(root.path(), &["init", "-q"])?;
     assert_eq!(tracked_markdown(root.path())?, Vec::<PathBuf>::new());
     let missing = root.path().join("missing");
-    assert!(matches!(tracked_markdown(&missing), Err(GitError::Io { cwd, .. }) if cwd == missing));
+    assert_matches!(tracked_markdown(&missing), Err(GitError::Io { cwd, .. }) if cwd == &missing);
     Ok(())
 }
 
@@ -358,19 +355,15 @@ fn ignore_errors_retain_the_source_and_path() -> TestResult {
     let error = not_ignored(&paths(&["x.md"]), root.path())
         .err()
         .ok_or("missing error")?;
-    assert!(
-        matches!(&error, IgnoreError::Io { path, source } if path == &ignore && source.kind() == std::io::ErrorKind::InvalidData)
-    );
+    assert_matches!(&error, IgnoreError::Io { path, source } if path == &ignore && source.kind() == std::io::ErrorKind::InvalidData);
     assert!(error.source().is_some());
     fs::write(&ignore, "*.md\r\n[z-a].md\r\n")?;
-    assert!(
-        matches!(not_ignored(&paths(&["x.md"]), root.path()), Err(IgnoreError::Pattern { path, line: 2, .. }) if path == ignore)
-    );
+    assert_matches!(not_ignored(&paths(&["x.md"]), root.path()), Err(IgnoreError::Pattern { path, line: 2, .. }) if path == &ignore);
     fs::write(&ignore, "*.md\n!\n")?;
-    assert!(matches!(
+    assert_matches!(
         not_ignored(&paths(&["x.md"]), root.path()),
         Err(IgnoreError::Pattern { line: 2, .. })
-    ));
+    );
     Ok(())
 }
 
@@ -384,9 +377,7 @@ fn ignore_read_permission_failure_is_reported() -> TestResult {
     fs::set_permissions(&ignore, fs::Permissions::from_mode(0o000))?;
     let result = not_ignored(&paths(&["x.md"]), root.path());
     fs::set_permissions(&ignore, fs::Permissions::from_mode(0o600))?;
-    assert!(
-        matches!(result, Err(IgnoreError::Io { path, source }) if path == ignore && source.kind() == std::io::ErrorKind::PermissionDenied)
-    );
+    assert_matches!(result, Err(IgnoreError::Io { path, source }) if path == &ignore && source.kind() == std::io::ErrorKind::PermissionDenied);
     Ok(())
 }
 
