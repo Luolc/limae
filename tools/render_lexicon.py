@@ -124,8 +124,10 @@ h1 {
 }
 .plain { font-size: 1.35rem; margin: 0 0 .6rem; }
 .plain .label { color: var(--cinnabar); margin-right: .8rem; font-size: 1rem; }
-.gloss { margin: 0 0 1.4rem; color: var(--faded); }
-.gloss .label { color: var(--cinnabar); margin-right: .8rem; }
+.gloss, .fault { color: var(--faded); }
+.gloss { margin: 0 0 .6rem; }
+.fault { margin: 0 0 1.4rem; }
+.gloss .label, .fault .label { color: var(--cinnabar); margin-right: .8rem; }
 .eg { border-left: 2px solid var(--rule); padding: .1rem 0 .1rem 1.1rem;
      margin: 0 0 1rem; }
 .eg .before { color: var(--faded); }
@@ -233,7 +235,9 @@ def render(data: dict[str, Any]) -> str:
         f'<p class="plain"><span class="label">白</span>'
         f'{_inline(e["plain"])}</p>'
         f'<p class="gloss"><span class="label">解</span>'
-        f'{_inline(e["gloss"])}</p>{egs}</section>'
+        f'{_inline(e["gloss"])}</p>'
+        f'<p class="fault"><span class="label">病</span>'
+        f'{_inline(e["fault"])}</p>{egs}</section>'
     )
   intro = "".join(
       f"<p>{_inline(p)}</p>" for p in cast(list[str], data["preface"])

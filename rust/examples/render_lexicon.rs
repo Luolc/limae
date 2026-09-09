@@ -144,8 +144,10 @@ h1 {
 }
 .plain { font-size: 1.35rem; margin: 0 0 .6rem; }
 .plain .label { color: var(--cinnabar); margin-right: .8rem; font-size: 1rem; }
-.gloss { margin: 0 0 1.4rem; color: var(--faded); }
-.gloss .label { color: var(--cinnabar); margin-right: .8rem; }
+.gloss, .fault { color: var(--faded); }
+.gloss { margin: 0 0 .6rem; }
+.fault { margin: 0 0 1.4rem; }
+.gloss .label, .fault .label { color: var(--cinnabar); margin-right: .8rem; }
 .eg { border-left: 2px solid var(--rule); padding: .1rem 0 .1rem 1.1rem;
      margin: 0 0 1rem; }
 .eg .before { color: var(--faded); }
@@ -185,6 +187,7 @@ struct Entry {
     pinyin: Vec<String>,
     plain: String,
     gloss: String,
+    fault: String,
     examples: Vec<Example>,
 }
 
@@ -346,10 +349,12 @@ fn render(lexicon: &Lexicon, ordered: &[&Entry]) -> String {
             page,
             "<section class=\"entry\" id=\"w{index}\">{}\
              <p class=\"plain\"><span class=\"label\">白</span>{}</p>\
-             <p class=\"gloss\"><span class=\"label\">解</span>{}</p>",
+             <p class=\"gloss\"><span class=\"label\">解</span>{}</p>\
+             <p class=\"fault\"><span class=\"label\">病</span>{}</p>",
             cells(&entry.term, &entry.pinyin),
             inline(&entry.plain),
             inline(&entry.gloss),
+            inline(&entry.fault),
         );
         for example in &entry.examples {
             let _ = write!(
@@ -445,6 +450,10 @@ fn parse(text: &str) -> Result<Lexicon, RenderError> {
             })?,
             gloss: string(raw, "gloss").map_err(|_| RenderError::Shape {
                 key: at("gloss"),
+                expected: "a string",
+            })?,
+            fault: string(raw, "fault").map_err(|_| RenderError::Shape {
+                key: at("fault"),
                 expected: "a string",
             })?,
             examples,

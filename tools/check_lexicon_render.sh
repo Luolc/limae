@@ -91,6 +91,7 @@ term = "对照臂"
 pinyin = ["ǎn", "zhào", "bì"]
 plain = "control arm & <b> 'quoted' \"both ways\""
 gloss = "只在 `tools/check_lexicon_render.sh` 的对照臂里出现，不进 spec。"
+fault = "对照臂的 `fault`：<b> & \"quotes\" 也要走同一条转义。"
 examples = [
   { before = "a < b && c > d", after = "`code` 与 'quotes' 与 \"quotes\"" },
 ]
