@@ -107,6 +107,8 @@ backlog 的正本，由实现方在改动所属的 PR 里记账，`limae-orchest
 
   状态：等用户裁决。触发点：用户给出三选一的选择。
 
+- **项目级 skill `limae-pr-review` 已落地** (2026-09-09，本 PR)：本仓第一个项目级 skill，正本 `.agents/skills/limae-pr-review/SKILL.md`，`.claude/skills/limae-pr-review` 是指向它的逐 skill 目录级相对软链 (`git ls-files -s` 记为 mode 120000，不是展开的副本)。内容只写词典相关的增量与加严，条目带 `L1`–`L16` 的 id 供评论引用，不复制用户级 `pr-review` 正文、不 supersede 它的任何条目。措辞出自用户 2026-09-09 逐条口述词典时的偏好，经 `limae-lexcontent-impl` 转达。三处与转达草稿不同，理由记在这里免得下次再改回去：① 「配色字体的正本在 `tools/render_lexicon.py`」不成立 —— CSS 在 Python 与 Rust 两个生成器里各有一份，验收判据是同源产物逐字节一致，所以写成「只改一边是 P0」；② 「改了词典忘了重新生成页面」不单独报 —— `tools/check_lexicon_render.sh` 已经覆盖，重复报违反用户级「质量门已覆盖的进 Out of scope」；③ 「词典与 `spec/polish/zh.md` 必须同形」放宽成「看两处矛不矛盾」 —— `spec/polish/zh.md` 自己明写「判断的是这个搭配在这句话里成不成立，不是拿例子做词表匹配」。**「病」栏那条绝对判断的规则没有按草稿写成禁用字**：草稿要求凡「没有 / 从来 / 只 / 都」落在中文语言事实上就报，而用户定案后的改写「「按住」通常只表示物理上压住，一般不作此引申」自己就带「只」，按字面禁会把正确答案报成缺陷；判据因此落在「断言的范围大过取证的范围」与「断言写得不留余地」两件事上，见 `L6`。审查方在本 PR 抓到一条 P1：`L14` 原把「手改 `site/index.html`」定为 P1，而手改必然让 `tools/check_lexicon_render.sh` 走 `site/index.html is out of date` 那条失败分支，按用户级 `B2`「质量门红就是 P0」应为 P0 —— 同一份改动里 `L13` 已经写对，`L14` 没跟上。已改，并把它与「忘了重新生成」合并成同一个后果的两种说法。**`L3` (收最小的词) 与 `L6` 是从两条逐词裁决 (「按住不动」收窄成「按住」、「稍微严谨保守一点」) 写成的通则，用户 2026-09-09 当面确认按通则写。**
+
 ## 愿景 (正本 `docs/adr/0005-agent-native-positioning.md`，这里只记条目)
 
 - **LLM 语义润色**：agent 调用的语义层润色特性，与确定性 lint 互补。
