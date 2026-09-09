@@ -68,4 +68,7 @@ LGTM 后从评论取 approved SHA，确认本地 tip 与之相同 (`git rev-pars
 - 如果你的运行环境里已经配置了通用的 PR review / Python review 一类审查规范，审查本仓改动时可以直接参照使用；本仓目前没有额外的仓库专属加严规则。
 - Rust 设计、实现 brief、自审与正式审查均加载用户级 `rust-review` 与 `pr-review`，再叠加本仓适用规则；不复制 skill 正文或引用其它仓库路径。
 - 如果用 herdr 一类工具在多个 agent 间协调：终端 tab 的标签保持简洁 (`orchestra`、`shell`，或一个裸任务名)，而实际跑 agent 的 pane 标签则加上仓库简称前缀 (如 `limae-orchestra`、`limae-shell`)，这样多个仓库的 agent 混跑时才分得清哪个进程属于哪个仓。
-- `~/scratch/limae/` 下的产物落盘时首行写明归属 (任务 slug、PR 编号或明写「无 PR」、消费者)，不覆盖 agent 自己的会话 scratchpad。责任人是常驻 orchestra，触发点是任务终态与每次收工报账：对每个文件逐项二选一 —— 已入库则删，仍要留则写明还等谁消费、留下一个触发点；「回报已发」不单独作删除事件。隔离目录 (如 `undated-archive-<日期>/`) 是临时态，下次报账同样逐项二选一，空目录即删。本仓没有 brief 模板文件，这条写在这里是因为 `AGENTS.md` 是唯一不依赖派活方记得写的入口。
+- `~/scratch/limae/` 下的产物落盘时首行写明归属 (任务 slug、PR 编号或明写「无 PR」、消费者)；范围只限这个目录，不覆盖 agent 自己的会话 scratchpad。写在这里是因为本仓没有 brief 模板文件，`AGENTS.md` 是唯一不依赖派活方记得写的入口。
+- 责任人是常驻 orchestra，触发点是任务终态与每次收工报账。
+- 到触发点对每个文件逐项二选一：已入库则删，仍要留则写明还等谁消费、留下一个触发点；「回报已发」不单独作删除事件。
+- 隔离目录 (如 `undated-archive-<日期>/`) 是临时态，下次报账同样逐项二选一，空目录即删。
