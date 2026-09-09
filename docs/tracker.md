@@ -10,6 +10,7 @@ backlog 的正本，由实现方在改动所属的 PR 里记账，`limae-orchest
 - **`quote_style` 实现**：检测与转换，语义已在 `spec/rules.md`「规划中的键」定案，新规则 id 届时分配。
 - **`quote_style` majority 档**：仿 pyink majority-quotes，按文档内多数引号风格统一，作 corner / curly 之外的第三档。
 - **仓内自用的词撞上词典自己的收词**：词典把「正本」收作要避免的 AI 中文 (`spec/lexicon/zh.toml`)，而本仓自己的 Markdown 里有 38 处在用它 (2026-09-03 数，散在 35 行上；`README.md`、`spec/README.md`、`spec/rules.md`、`docs/tracker.md`、多份 ADR 与调研)，包括 tracker 开头那句「backlog 的正本」。计数只算 Markdown —— 词典条目自身、`site/index.html` 这份生成产物、`spec/wordlists/` 的注释与 fixture 不在内。这是 dogfooding 上的自相矛盾：本仓用自己的 linter 检查自己的 Markdown，词典却没有对应的可执行规则来暴露它。两条路 —— 把词典条目做成 `zh-word` 家族的规则让它真能报，或者认定这个词在技术语境下可用、从词典里撤掉。**先定哪一条，再动那 38 处**，不要反过来。
+  同一形状的第二批 (2026-09-08)：词典新收「撑着」(含「靠……活着」) 与「长出来」，而本仓 Markdown 里仍有 5 处「长出来」在用 (`docs/adr/0005`、`docs/adr/0006`、`docs/adr/0007`、`docs/adr/0010`、`docs/research/zh-typography-guidelines-survey.md` 各一处，其中 ADR-0006 与 ADR-0010 那两处已被直接取作词条的 `before` 样例)；`spec/polish/zh.md` 的「自造的搭配」一条早已把「今天长出来的四条」列为反例，与词典门槛里旧的「别收」清单相反，本次把词典这一侧改成与它一致。处置与上面同一条路，等同一个裁决。词典门槛那份「别收」清单里剩下的「收下」「兜住整体成本」，用户未点名，本次原样保留，收不收待用户裁决。
 
 ## 实现与分发
 
