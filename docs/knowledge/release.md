@@ -112,7 +112,17 @@ crate 一旦存在，就可以把 token 从 CI 里彻底去掉，改由 GitHub �
 
    `rust-lang/crates-io-auth-action` 的 README 只写了 `token` 这一个输出，以及「The action's `post` step automatically revokes the token when the job completes」；permissions 与 `CARGO_REGISTRY_TOKEN` 的接线它没写，要看上面 crates.io 文档那一段。
 
-   仓内那份与官方示例的差异只有三处，各有理由：`actions/checkout` 用本仓其余 workflow 的同一个大版本而不是示例里的版本；不写 `environment:` (仓库里没有建 GitHub Actions environment，字段 4 旁边那个 Environment 也因此留空)；**加了 `contents: read`**，理由就是上一段那条 —— job 级 `permissions:` 会把没列出的 scope 全部置为 none，而 `actions/checkout` 要读仓库。
+   仓内那份与官方示例的差异有四处，各有理由：`actions/checkout` 用本仓其余 workflow 的同一个大版本而不是示例里的版本；不写 `environment:` (仓库里没有建 GitHub Actions environment，字段 4 旁边那个 Environment 也因此留空)；**加了 `contents: read`**，理由就是上一段那条 —— job 级 `permissions:` 会把没列出的 scope 全部置为 none，而 `actions/checkout` 要读仓库；以及下面这条 tag 与 manifest 的守卫。
+
+### tag 与 manifest 版本必须逐字相等
+
+`cargo publish` 上传的是**当前 `Cargo.toml` 的 `[package].version`**，tag 根本不是它的输入。所以推 `v0.13.1` 到一个 manifest 写着 `0.14.0` 的 commit，发出去的是 `0.14.0` —— 而 crates.io 的版本**不能覆盖、不能删除**，`yank` 也只是标记、不删代码；同一次运行建出的 GitHub Release 却仍叫 `v0.13.1`，两条线就此分叉。
+
+`publish` job 因此在**认证之前**断言 `$GITHUB_REF_NAME` 等于 `v` 加上 manifest 里的版本。判据写成正向链而不是排除已知的坏情况：版本必须**读得出来** (`cargo metadata` 与 `jq -er` 任一失败即退出)，且必须**等于** tag；其余一切情况都停在这一步。
+
+这个守卫只属于 `publish`。**`auth-check` 不带它** —— 那个 job 验的是 OIDC 链路通不通，与发哪个版本无关，`workflow_dispatch` 触发时也根本没有 tag 可比。
+
+三臂读数 (2026-09-08 本机跑 job 里那段 shell，不是在 runner 上)：`v0.13.0` 对 manifest `0.13.0` 退出 0；`v0.13.1` 对同一 manifest 退出 1；在没有 manifest 的目录里退出 4。第三臂守的是「读不出来时不许放行」这半条 —— 只测前两臂的话，一个把版本读成空串的实现在 tag 也为空时同样能绿。**这三臂只证明那段 shell 的判断对，不证明它在 GitHub runner 上跑得起来** (`GITHUB_REF_NAME` 由 Actions 注入、`jq` 由 runner 镜像提供，两者本机都是手工给的)。
 
 ### 三种验证方式与各自的分辨力
 
@@ -122,7 +132,7 @@ crate 一旦存在，就可以把 token 从 CI 里彻底去掉，改由 GitHub �
 
   另有一条形状上的约束：**workflow 文件名是配置的一部分**，所以这个认证测试必须跑在 `release.yml` 里面。把它挪进一个新建的 `tp-test.yml`，即使配置完全正确也会失败 —— 那是假阴性。同理，`workflow_dispatch` 的入口只在默认分支上暴露，所以要先合进 main 才点得到。
 
-- **B. 等下一次真发布。** 什么都不做，下次推 tag 时由 `publish` job 给出答复。**确定**，且失败的代价比看起来小：`cargo publish` 的服务端是原子的，不会发出去一半；认证失败只是这一个 job 红，改完重跑即可，版本号没被消耗，GitHub Release 与二进制产物那条线由别的 job 承担、不受影响。
+- **B. 等下一次真发布。** 什么都不做，下次推 tag 时由 `publish` job 给出答复。**确定**，且失败的代价比看起来小：`cargo publish` 的服务端是原子的，不会发出去一半；认证失败只是这一个 job 红，改完重跑即可，版本号没被消耗，GitHub Release 与二进制产物那条线由别的 job 承担、不受影响。这条路上「发错版本号」那个风险由上面那道 tag 与 manifest 的守卫挡着，它在认证之前就跑。
 
 - **C. 故意烧一个补丁版号。** 现在就 bump 一个 patch 版本、推 tag，让真发布立刻给出答复。**立刻确定**，代价是 crates.io 上多一个版本号 —— crates.io 的版本不可删除 (只能 yank)。
 

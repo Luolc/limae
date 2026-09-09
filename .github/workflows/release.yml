@@ -86,6 +86,21 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
+      # `cargo publish` uploads whatever `[package].version` says; the tag is
+      # not an input to it. Pushing v0.13.1 at a commit whose manifest reads
+      # 0.14.0 would publish 0.14.0 — a version crates.io cannot delete or
+      # overwrite — while the GitHub Release still calls itself v0.13.1. So
+      # assert equality first, in the positive form: the version has to be
+      # read and has to equal the tag, and anything else stops the job before
+      # it authenticates. This guard belongs to `publish` alone; `auth-check`
+      # verifies OIDC and must stay free of the version policy.
+      - name: Assert the tag matches the manifest version
+        run: |
+          set -euo pipefail
+          version="$(cargo metadata --no-deps --format-version 1 --locked |
+            jq -er '.packages[] | select(.name == "limae") | .version')"
+          echo "tag=$GITHUB_REF_NAME manifest=v$version"
+          [ "$GITHUB_REF_NAME" = "v$version" ]
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth
       - run: cargo publish
