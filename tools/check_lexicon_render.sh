@@ -73,12 +73,15 @@ if ! cmp -s "$(page committed)" "$repo_root/site/index.html"; then
 fi
 printf '%s\n' 'committed source: site/index.html matches'
 
-# The control arm. One entry is appended, chosen to move the parts of the page
-# that are easiest to get wrong: a tone-marked pinyin that has to sort ahead
-# of every existing entry, characters HTML has to escape, and a back-quoted
-# span that becomes a `<code>` element.
+# The control arm. The title and subtitle are replaced, and one entry is
+# appended, chosen to move the parts of the page that are easiest to get
+# wrong: a tone-marked pinyin that has to sort ahead of every existing entry,
+# characters HTML has to escape, and a back-quoted span that becomes a
+# `<code>` element.
 perturbed="$work_dir/perturbed.toml"
-cp "$repo_root/spec/lexicon/zh.toml" "$perturbed"
+sed -e 's/^title = .*/title = "对照臂标题"/' \
+  -e 's/^subtitle = .*/subtitle = "对照臂副标题"/' \
+  "$repo_root/spec/lexicon/zh.toml" >"$perturbed"
 cat >>"$perturbed" <<'TOML'
 
 [[entry]]
@@ -102,4 +105,11 @@ fi
 expected_fault='<p class="fault"><span class="label">病</span>对照臂的 <code>fault</code>：&#60;b&#62; &#38; &#34;quotes&#34; 也要走同一条转义。</p>'
 grep -qF -- "$expected_fault" "$(page perturbed)" ||
   fail 'the perturbed source did not render its `fault` as the expected escaped HTML'
-printf '%s\n' 'control arm: the page changed with the source, and `fault` rendered as expected'
+# The title and subtitle come from the source too; a generator that carried
+# them as literals would still pass everything above.
+for expected in '<title>对照臂标题</title>' '<h1>对照臂标题</h1>' \
+  '<p class="subtitle">对照臂副标题</p>'; do
+  grep -qF -- "$expected" "$(page perturbed)" ||
+    fail "the perturbed source did not render its title or subtitle: $expected"
+done
+printf '%s\n' 'control arm: the page changed with the source, and `fault`, `title` and `subtitle` rendered as expected'

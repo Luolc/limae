@@ -42,7 +42,7 @@ description: limae 仓 PR 审查增量：AI 中文词典 (spec/lexicon/zh.toml) 
 - `L11` **例句的粒度要跟词条对上**：至少有一条 `before` 把词以词条的字面形态呈现出来。对不上时只提出来 (换例句还是改词条由用户定)，不代拟 `before`。
 - `L12` **`after` 要像人说的话** —— 口语、语序贴着原句，不是把词机械替换掉。审到一条读着仍像机器写的 `after`，**直接给两三个候选**；只写「不自然」不算一条可处置的 finding，按 `O4` 降为 P2「需讨论」。
 
-## 四、页面与两个生成器
+## 四、页面与生成器
 
 - `L13` **页面生成器只有一个，守卫挡不住它漂移**：`rust/examples/render_lexicon.rs` (Cargo example `render-lexicon`) 加模板 `rust/templates/lexicon.html`。`tools/check_lexicon_render.sh` 只保证提交的 `site/index.html` 等于生成器对当前 toml 的输出 (改了源或模板没重新生成是 P0，它会红，按 `B2` 处置)，外加一条对照臂；它以前靠 Python / Rust 两个实现逐字节对照抓移植走样，那一侧已删，**模板改动是否正确没有任何门替审查方看**，改到模板的 PR 要人读渲染结果。
 - `L14` **`site/index.html` 是生成产物**，手改的痕迹一律不许进 PR。手改与「改了词典忘了重新生成页面」是同一个可观测后果 —— `tools/check_lexicon_render.sh` 红 (前者走 `site/index.html is out of date` 那条分支)，按用户级 `B2` **这就是 P0**，不另开一条 finding、也不降级成 P1。本文件的增量只在于**怎么说**：手改要指出它该回到哪个生成器里 (`L13`)，页面过期要指出重新生成那一步没跑。反过来，这道门绿着就说明提交的页面与生成结果逐字节相同，此时「看着像手改过」是看错了，不报。
