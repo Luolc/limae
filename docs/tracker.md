@@ -147,7 +147,7 @@ backlog 的正本，由实现方在改动所属的 PR 里记账，`limae-orchest
 
 ## 分发调研产出 (`docs/research/distribution-python-ecosystem.md`、`docs/research/distribution-cross-ecosystem.md`)
 
-- **两份调研已入库，其中的建议一件都还没实施。** 第一份 (2026-09-10) 聚焦 Python 生态，头号参照 ruff；第二份 (2026-09-10) 把范围扩到 Node / TypeScript，头号参照 AutoCorrect，并在其第 8 节明写了对第一份部分推荐的修订，第一份开头已加按语指回第二份。
+- **两份调研已入库，其中的建议一件都还没实施。** 第一份 (2026-09-09) 聚焦 Python 生态，头号参照 ruff；第二份 (2026-09-09) 把范围扩到 Node / TypeScript，头号参照 AutoCorrect，并在其第 8 节明写了对第一份部分推荐的修订，第一份开头已加按语指回第二份。
 - **第二轮 (以此为准) 的核心结论**：GitHub Release 的预编译二进制是唯一真相，外面只套两层薄启动器 —— PyPI 侧用 maturin `bindings = "bin"` 打平台 wheel (`py3-none-<platform>`)，npm 侧用 biome / dprint 式的 `optionalDependencies` 平台包；两者都从同一份 Release 产物打包，不重新编译。**不做**：任何语言的 FFI 绑定 (napi-rs / pyo3 扩展模块 / rb-sys / JNI)、官方 GitHub Action、LSP。判断依据是 AutoCorrect 这个对照臂：五家 FFI 绑定里三家已落后 Release 两个小版本以上，多语言绑定换来的是版本分叉、不是覆盖面 (第二份 §1、§4)。
 - **配置文件 canonical 维持 `limae.toml`**：`[tool.limae]` 只作 Python 项目的适配器，不当主入口；第二轮因前端仓没有 `pyproject.toml` 而把这条判断加硬 (第二份 §8)。
 - pre-commit 侧沿用第一轮的 tiny mirror 仓 (`limae-pre-commit`, `language: python` 依赖 PyPI wheel) 方案，未改。

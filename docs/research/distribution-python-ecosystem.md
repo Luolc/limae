@@ -2,7 +2,7 @@
 
 > **本文是第一轮调研，部分推荐已被第二轮修订，以第二轮为准**：见 [`distribution-cross-ecosystem.md`](distribution-cross-ecosystem.md) 第 8 节「回头看上一轮，改什么、不改什么」。本文保留作演进记录，不回填第二轮的结论。
 
-调研日期：2026-09-10。只读，未改本仓。
+调研日期：2026-09-09。只读，未改本仓。
 
 ## 一句话结论
 
@@ -14,9 +14,9 @@
 
 | 渠道 | 状态 | 出处 |
 | --- | --- | --- |
-| crates.io | 已发 `0.13.0` | crates.io API，2026-09-10，`max_version=0.13.0` |
-| GitHub Release | `v0.13.0` 四个 target：`x86_64/aarch64` × `linux-musl` / `apple-darwin`，各一份 `.tar.gz` + `.sha256` | `gh release view v0.13.0 --repo Luolc/limae`，2026-09-10；手册 `docs/knowledge/release.md` |
-| PyPI | **没有** (`GET https://pypi.org/pypi/limae/json` → 404，2026-09-10) | 实测 |
+| crates.io | 已发 `0.13.0` | crates.io API，2026-09-09，`max_version=0.13.0` |
+| GitHub Release | `v0.13.0` 四个 target：`x86_64/aarch64` × `linux-musl` / `apple-darwin`，各一份 `.tar.gz` + `.sha256` | `gh release view v0.13.0 --repo Luolc/limae`，2026-09-09；手册 `docs/knowledge/release.md` |
+| PyPI | **没有** (`GET https://pypi.org/pypi/limae/json` → 404，2026-09-09) | 实测 |
 | 消费方 pre-commit | `.pre-commit-hooks.yaml` 的 `id: limae` 是 `language: rust`，`entry: limae` | 仓内文件 |
 | 本仓自己的 hook | `.pre-commit-config.yaml` 用 `language: system` + `cargo run`，只在本仓成立 | 仓内文件；README 也写了 |
 | 配置 | 已实现两种同构载体：`limae.toml` 赢过 `[tool.limae]` | `spec/rules.md`「配置文件的两种载体」；`rust/config.rs` `find_config` |
@@ -31,7 +31,7 @@ Python 参考实现即将删除，根 `pyproject.toml` 现在还是 hatchling + 
 
 **读到原文：**
 
-- ruff 仓根 `pyproject.toml` (GitHub `astral-sh/ruff` main，2026-09-10 核，当时版本字段 `0.16.6`)：
+- ruff 仓根 `pyproject.toml` (GitHub `astral-sh/ruff` main，2026-09-09 核，当时版本字段 `0.16.6`)：
 
 ```toml
 [build-system]
@@ -46,14 +46,14 @@ python-source = "python"
 strip = true
 ```
 
-- maturin 文档 [Bindings](https://www.maturin.rs/bindings.html) (2026-09-10)：`bin` 把 Rust 可执行文件打进 wheel 的 scripts 目录，装完出现在 venv 的 `PATH` 上。自动检测条件是「只有 binary target、没有 pyo3 / cdylib」。
-- PyPI `ruff 0.16.6` 的文件名 (2026-09-10 读 `https://pypi.org/pypi/ruff/json`) 全是 `ruff-0.16.6-py3-none-<platform>.whl`，共 17 个平台 wheel + 1 个 sdist。例如：
+- maturin 文档 [Bindings](https://www.maturin.rs/bindings.html) (2026-09-09)：`bin` 把 Rust 可执行文件打进 wheel 的 scripts 目录，装完出现在 venv 的 `PATH` 上。自动检测条件是「只有 binary target、没有 pyo3 / cdylib」。
+- PyPI `ruff 0.16.6` 的文件名 (2026-09-09 读 `https://pypi.org/pypi/ruff/json`) 全是 `ruff-0.16.6-py3-none-<platform>.whl`，共 17 个平台 wheel + 1 个 sdist。例如：
   - `py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64`
   - `py3-none-musllinux_1_2_x86_64`
   - `py3-none-macosx_11_0_arm64`
   - `py3-none-win_amd64`
 - `py3` = 任意 Python 3；`none` = 不依赖 CPython ABI。装进 3.8 的 venv 和 3.13 的 venv 是同一份二进制。
-- ruff 的发布 workflow (`.github/workflows/release.yml`，2026-09-10 原文) 由 cargo-dist 生成；PyPI 上传 job 是 `uv publish wheels/*`，wheel 由自定义 `build-binaries` 产出。**整份 workflow 没有 cibuildwheel。**
+- ruff 的发布 workflow (`.github/workflows/release.yml`，2026-09-09 原文) 由 cargo-dist 生成；PyPI 上传 job 是 `uv publish wheels/*`，wheel 由自定义 `build-binaries` 产出。**整份 workflow 没有 cibuildwheel。**
 
 **关键词纠偏 (重要)：**
 
@@ -72,12 +72,12 @@ strip = true
 
 **读到原文：**
 
-- 文档 [Configuring Ruff](https://docs.astral.sh/ruff/configuration/) (2026-09-10)：认 `pyproject.toml` / `ruff.toml` / `.ruff.toml`，独立文件省略 `[tool.ruff]` 前缀。同目录优先级 `.ruff.toml` > `ruff.toml` > `pyproject.toml`。没有 `[tool.ruff]` 的 `pyproject.toml` 被跳过。最近的一份整份生效，不与父级逐键合并 (可用 `extend` 显式继承)。
-- 源码 `crates/ruff_workspace/src/pyproject.rs` 的 `settings_toml` / `ruff_enabled` (GitHub 2026-09-10)：逐级祖先目录，先看独立文件，再看 `pyproject.toml` 里有没有 `tool.ruff`。
+- 文档 [Configuring Ruff](https://docs.astral.sh/ruff/configuration/) (2026-09-09)：认 `pyproject.toml` / `ruff.toml` / `.ruff.toml`，独立文件省略 `[tool.ruff]` 前缀。同目录优先级 `.ruff.toml` > `ruff.toml` > `pyproject.toml`。没有 `[tool.ruff]` 的 `pyproject.toml` 被跳过。最近的一份整份生效，不与父级逐键合并 (可用 `extend` 显式继承)。
+- 源码 `crates/ruff_workspace/src/pyproject.rs` 的 `settings_toml` / `ruff_enabled` (GitHub 2026-09-09)：逐级祖先目录，先看独立文件，再看 `pyproject.toml` 里有没有 `tool.ruff`。
 
 limae 已经是同一形状：`rust/config.rs` `find_config` 从 cwd 向上，`limae.toml` 赢过含 `[tool.limae]` 的 `pyproject.toml`，没有该表的 `pyproject.toml` 继续向上，碰到 `.git` 停。规范正本 `spec/rules.md`「发现顺序」。**配置发现不是分发问题，已经做完。**
 
-### ruff 的其它安装渠道 (文档 [Installing Ruff](https://docs.astral.sh/ruff/installation/)，2026-09-10)
+### ruff 的其它安装渠道 (文档 [Installing Ruff](https://docs.astral.sh/ruff/installation/)，2026-09-09)
 
 | 渠道 | 场景 |
 | --- | --- |
@@ -94,7 +94,7 @@ limae 已经是同一形状：`rust/config.rs` `find_config` 从 cwd 向上，`l
 
 本仓自己的 `language: system` + `cargo run` 只在本仓成立，理由也对 (dogfood 必须编当前源码)。**给别人的官方 hook 不能是这个。**
 
-现在 `.pre-commit-hooks.yaml` 的 `id: limae` 是 `language: rust`。pre-commit 文档 [#rust](https://pre-commit.com/#rust) (2026-09-10)：`cargo install --bins` 装进缓存；没有 rustc 时 **pre-commit 会自己 bootstrap rust**；首次要联网编一次。
+现在 `.pre-commit-hooks.yaml` 的 `id: limae` 是 `language: rust`。pre-commit 文档 [#rust](https://pre-commit.com/#rust) (2026-09-09)：`cargo install --bins` 装进缓存；没有 rustc 时 **pre-commit 会自己 bootstrap rust**；首次要联网编一次。
 
 ### 三条路对照
 
@@ -106,9 +106,9 @@ limae 已经是同一形状：`rust/config.rs` `find_config` 从 cwd 向上，`l
 
 **读到原文，各家选了哪条：**
 
-- **ruff**：单独仓 [`astral-sh/ruff-pre-commit`](https://github.com/astral-sh/ruff-pre-commit) (README 原文，2026-09-10：*"Distributed as a standalone repository to enable installing Ruff via prebuilt wheels from PyPI."*)。`.pre-commit-hooks.yaml` 是 `language: python`，`entry: ruff check --force-exclude`。`pyproject.toml` 只有 `dependencies = ["ruff==0.16.6"]`。pre-commit `pip install .` 装的是这个空包，真正的二进制来自 PyPI wheel，**不编译主仓**。
-- **typos** ([`crate-ci/typos`](https://github.com/crate-ci/typos)，2026-09-10)：三个 id 写在同一仓。默认 `typos` = `language: python`，`setup.py` 里 `install_requires=['typos==1.50.1']` (占位包名 `pre_commit_placeholder_package`)；`typos-docker` = `language: docker`；`typos-src` = `language: rust`。文档写「从 GitHub releases 装预编译」，实现上默认 id 装的是 **PyPI 上的 `typos` wheel** (1.50.1 也是 `py3-none-*`，2026-09-10 读 pypi json)。文档那句和 setup.py 不完全一致 —— 以 setup.py 为准。
-- **taplo**：官方仓太大，社区镜像 [`ComPWA/taplo-pre-commit`](https://github.com/ComPWA/taplo-pre-commit) (2026-09-10)：`language: python`，`dependencies = ["taplo==0.9.3"]`，跟 ruff 同一形状。
+- **ruff**：单独仓 [`astral-sh/ruff-pre-commit`](https://github.com/astral-sh/ruff-pre-commit) (README 原文，2026-09-09：*"Distributed as a standalone repository to enable installing Ruff via prebuilt wheels from PyPI."*)。`.pre-commit-hooks.yaml` 是 `language: python`，`entry: ruff check --force-exclude`。`pyproject.toml` 只有 `dependencies = ["ruff==0.16.6"]`。pre-commit `pip install .` 装的是这个空包，真正的二进制来自 PyPI wheel，**不编译主仓**。
+- **typos** ([`crate-ci/typos`](https://github.com/crate-ci/typos)，2026-09-09)：三个 id 写在同一仓。默认 `typos` = `language: python`，`setup.py` 里 `install_requires=['typos==1.50.1']` (占位包名 `pre_commit_placeholder_package`)；`typos-docker` = `language: docker`；`typos-src` = `language: rust`。文档写「从 GitHub releases 装预编译」，实现上默认 id 装的是 **PyPI 上的 `typos` wheel** (1.50.1 也是 `py3-none-*`，2026-09-09 读 pypi json)。文档那句和 setup.py 不完全一致 —— 以 setup.py 为准。
+- **taplo**：官方仓太大，社区镜像 [`ComPWA/taplo-pre-commit`](https://github.com/ComPWA/taplo-pre-commit) (2026-09-09)：`language: python`，`dependencies = ["taplo==0.9.3"]`，跟 ruff 同一形状。
 - **dprint**：没有官方 first-party hook；社区 [`trim21/dprint-pre-commit`](https://github.com/trim21/dprint-pre-commit) 是 Python 镜像。dprint 自己走 `dprint.json` + 安装器，不靠 pre-commit 当主入口。
 
 **为什么默认不选 `language: rust`：** 第一次 commit 要等编译，CI (尤其 pre-commit.ci) 更痛；消费方仓库往往没有、也不该有 Rust 工具链。ruff 把 mirror 拆出去，就是为了让 `pip install` 命中 wheel 而不是对着 200 MB 的 monorepo 现场 `maturin build`。
@@ -151,7 +151,7 @@ dependencies = ["limae==0.14.0"]
 
 ### 推荐：不提供官方 action
 
-ruff 有 [`astral-sh/ruff-action`](https://github.com/astral-sh/ruff-action)，文档 [Integrations](https://docs.astral.sh/ruff/integrations/) (2026-09-10) 同时给了「`pip install ruff` 三行」和 action 两条。action 的本质仍是装二进制再跑 `ruff check`。limae 没有 ruff 那个安装面，为三行 YAML 养一个 action 仓不划算。
+ruff 有 [`astral-sh/ruff-action`](https://github.com/astral-sh/ruff-action)，文档 [Integrations](https://docs.astral.sh/ruff/integrations/) (2026-09-09) 同时给了「`pip install ruff` 三行」和 action 两条。action 的本质仍是装二进制再跑 `ruff check`。limae 没有 ruff 那个安装面，为三行 YAML 养一个 action 仓不划算。
 
 **Python 项目 (用户自己的仓，也是最常见的消费方)：**
 
@@ -173,7 +173,7 @@ ruff 有 [`astral-sh/ruff-action`](https://github.com/astral-sh/ruff-action)，�
 - run: limae --all
 ```
 
-[`taiki-e/install-action`](https://github.com/taiki-e/install-action) README (2026-09-10)：清单里没有的工具走 `cargo-binstall`，从 GitHub Release 下预编译。limae 已经有 Release tarball，**不改产物命名的话这条现在就能试** (未实测 `install-action` 对 limae 的解析；cargo-binstall 认不认当前 `limae-<target>.tar.gz` 这一步我没跑，标「查不到 / 未测」)。
+[`taiki-e/install-action`](https://github.com/taiki-e/install-action) README (2026-09-09)：清单里没有的工具走 `cargo-binstall`，从 GitHub Release 下预编译。limae 已经有 Release tarball，**不改产物命名的话这条现在就能试** (未实测 `install-action` 对 limae 的解析；cargo-binstall 认不认当前 `limae-<target>.tar.gz` 这一步我没跑，标「查不到 / 未测」)。
 
 更笨、但零依赖的写法：按 runner 的 arch 下对应 `limae-*-unknown-linux-musl.tar.gz`，校验 `.sha256`，跑二进制。本仓 Release 的 Linux 两个是全静态 musl (`docs/knowledge/release.md`)，GitHub-hosted `ubuntu-latest` 直接能跑。
 

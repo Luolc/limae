@@ -1,7 +1,7 @@
 
 # 第二轮：跨生态分发 (Node / TypeScript 与 AutoCorrect)
 
-调研日期：2026-09-10。只读，未改本仓，也未改上一份报告。本地对照仓 `~/3p/huacnlee/autocorrect` 仍停在 `e1a75da` (2026-06-23)，与 `origin/main` 相同；**源码结构没变，各注册表上的版本已经分叉**，所以包名 / 版本 / 日期全部重新核，不沿用 2026-08-31 那份 internals 调研的清单。
+调研日期：2026-09-09。只读，未改本仓，也未改上一份报告。本地对照仓 `~/3p/huacnlee/autocorrect` 仍停在 `e1a75da` (2026-06-23)，与 `origin/main` 相同；**源码结构没变，各注册表上的版本已经分叉**，所以包名 / 版本 / 日期全部重新核，不沿用 2026-08-31 那份 internals 调研的清单。
 
 ## 一句话结论
 
@@ -17,7 +17,7 @@ limae 短期只有 CLI (format / polish / lint)、明确不做 LSP。跨 Python 
 
 ---
 
-## 1. AutoCorrect 现在实际发了什么 (2026-09-10 逐个核实)
+## 1. AutoCorrect 现在实际发了什么 (2026-09-09 逐个核实)
 
 源码仓仍是「一个 workspace 里塞了 node / py / rb / java / wasm / lsp / cli」(`Cargo.toml` members，读到原文)。**注册表上的版本对不上 git tag `v2.16.3`。**
 
@@ -121,7 +121,7 @@ yarn autocorrect --lint .
 - 平台矩阵分叉 (Node 没 linux-arm64，Release 有)。
 - 版本号分叉 (用户 `yarn add autocorrect-node` 拿到 2.14.0，`brew install` 可能是 2.16.3)。
 - napi / pyo3 / Node / Python 版本升级各是独立的 breaking。
-- 冒烟测试不共享黄金集 —— 2026-08-31 调研已写，2026-09-10 源码未改。绑定「绿」证明不了 Markdown 行为。
+- 冒烟测试不共享黄金集 —— 2026-08-31 调研已写，2026-09-09 源码未改。绑定「绿」证明不了 Markdown 行为。
 
 **下载量对照 (npm last-week，2026-08-31–09-06，api.npmjs.org)：** `@biomejs/biome` 1318 万，`oxlint` 1904 万，`dprint` 20 万，`autocorrect-node` 3948，`@huacnlee/autocorrect` 76。AutoCorrect 的 Node FFI 没换来生态级用量，却付了全套矩阵的税。
 
@@ -133,7 +133,7 @@ yarn autocorrect --lint .
 
 主流不是 FFI，是 **「npm 包里塞预编译 CLI」**。装完 `npx <tool>` 或 `package.json` 的 `scripts` 就能跑，**安装不编译**。
 
-### 样本 (2026-09-10 读 npm registry)
+### 样本 (2026-09-09 读 npm registry)
 
 **biome (`@biomejs/biome` 2.5.12，2026-09-03)：** 主包只有一个 `bin/biome` 的 JS 启动器，`optionalDependencies` 8 个 `@biomejs/cli-<platform>`，里面是真正的二进制。文档第一句是 `npm i -D -E @biomejs/biome`，然后 `npx @biomejs/biome check`。JS API 另包 `@biomejs/js-api`，跟 CLI 拆开。
 
@@ -228,6 +228,6 @@ FFI 的唯一好处是少一次进程启动。对「扫一批 `.md`」这个负�
 
 ## 证据等级
 
-- **读到原文 / 实测：** 本地仓 `e1a75da` 的 README、Makefile、Cargo workspace、各 `release-*.yml`、`autocorrect-node/{package.json,index.js,src/lib.rs,cli.js,__test__,npm/*/package.json}`、`autocorrect-py/Cargo.toml`；2026-09-10 对 npm / PyPI / crates.io / RubyGems / Maven / GitHub Release / npm downloads API / `gh api` 的现场查询。
+- **读到原文 / 实测：** 本地仓 `e1a75da` 的 README、Makefile、Cargo workspace、各 `release-*.yml`、`autocorrect-node/{package.json,index.js,src/lib.rs,cli.js,__test__,npm/*/package.json}`、`autocorrect-py/Cargo.toml`；2026-09-09 对 npm / PyPI / crates.io / RubyGems / Maven / GitHub Release / npm downloads API / `gh api` 的现场查询。
 - **推断：** 「Release 产物直接打进 npm 平台包、不必重编」在 biome / dprint 上成立，limae 没做所以没测；AutoCorrect crate workflow 的 tag-guard 导致停更，是读 YAML 的机制推论，没有翻他们的 Actions 日志。
 - **查不到：** `autocorrect-py` 的 pypistats 本次请求无有效 JSON；Go 仓与 Rust 核心是否共享代码未下进去核对 (版本线已经独立，足够判定「不是同一套绑定」)。
