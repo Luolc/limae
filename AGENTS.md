@@ -29,7 +29,7 @@
 
 ## 质量标准 (quality bar)
 
-CI (`.github/workflows/ci.yml`，required check 名为 `check`) 在 PR 与 main 上覆盖以下十四道质量门；本地 push 前按 CI 的门顺序裸跑：
+CI (`.github/workflows/ci.yml`，required check 名为 `check`) 在 PR 与 main 上覆盖以下十三道质量门；本地 push 前按 CI 的门顺序裸跑：
 
 ```sh
 cargo fmt --check
@@ -37,7 +37,6 @@ cargo clippy --all-targets --locked -- -D warnings
 RUSTDOCFLAGS=-Dwarnings cargo test --locked
 RUSTDOCFLAGS=-Dwarnings cargo doc --no-deps --locked
 uv run pytest -q
-uv run python tools/render_diff_cases.py --check
 tools/check_lexicon_render.sh
 cargo build --locked --bin limae --example diff-probe
 uv run pytest -q --rust-bin target/debug/limae

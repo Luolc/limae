@@ -3,10 +3,11 @@ use super::{
     folded, opcodes, prose_length, shown, trailing_newlines,
 };
 
-// The reference implementation's answers over a fixed synthetic corpus, as
-// `Case` values in `CASES`. Included rather than declared as a module because
-// it is generated: `tools/render_diff_cases.py` writes it and `--check` says
-// whether it is current.
+// The Python reference implementation's answers over a fixed synthetic corpus,
+// as `Case` values in `CASES`. Included rather than declared as a module
+// because it was generated, by a tool that no longer exists: the corpus is a
+// frozen archive taken before the reference implementation was deleted. See its
+// header for why it must not be regenerated from this port.
 include!("render_cases.rs");
 
 fn characters(text: &str) -> Vec<char> {
