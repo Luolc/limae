@@ -8,6 +8,13 @@
 //! is `tools/check_lexicon_render.sh`, which runs both over the same source and
 //! compares the bytes.
 //!
+//! The HTML and CSS live in `rust/templates/lexicon.html`, an [Askama]
+//! template compiled into this example (`askama.toml` at the root names the
+//! directory). This file reads the source, sorts the entries, escapes and
+//! marks up the fields, and hands the template the shape it prints.
+//!
+//! [Askama]: https://docs.rs/askama/latest/askama/
+//!
 //! This is an example rather than a `[[bin]]` because it is a development tool
 //! and the shipped binary set is `limae` alone; `diff-probe` sits here for
 //! the same reason. Examples are packaged (`Cargo.toml` carries
@@ -23,163 +30,17 @@
 //! cargo run --example render-lexicon
 //! ```
 
-use std::fmt::Write as _;
 use std::io::{self, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
+use askama::Template;
 use thiserror::Error;
 use toml::Value;
 
 const SOURCE: &str = "spec/lexicon/zh.toml";
 const TARGET: &str = "site/index.html";
 const TARGET_DIR: &str = "site";
-
-const STYLE: &str = r##"
-:root {
-  --paper: #f1e8d5;
-  --ink: #24211c;
-  --faded: #7a736a;
-  --rule: #cfc5b4;
-  --cinnabar: #a8433a;
-}
-* { box-sizing: border-box; }
-body {
-  margin: 0;
-  padding: 4rem 1.5rem 6rem;
-  background: var(--paper);
-  color: var(--ink);
-  font-family: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC",
-      "SimSun", "STSong", serif;
-  line-height: 1.9;
-}
-.page {
-  max-width: 62rem; margin: 0 auto; display: grid; gap: 3rem;
-  grid-template-columns: 11rem minmax(0, 1fr);
-  align-items: start;
-}
-.sheet { max-width: 44rem; }
-nav {
-  position: sticky; top: 3rem; border-right: 1px solid var(--rule);
-  padding-right: 1.2rem; font-size: .9rem;
-}
-nav .toc-label {
-  color: var(--cinnabar); letter-spacing: .3rem; font-size: .75rem;
-  margin-bottom: .9rem;
-}
-nav a {
-  display: block; color: var(--ink); text-decoration: none;
-  padding: .3rem 0; border-bottom: 1px solid transparent;
-}
-nav a:hover, nav a:focus-visible {
-  color: var(--cinnabar); border-bottom-color: var(--rule);
-}
-@media (max-width: 52rem) {
-  .page { grid-template-columns: 1fr; gap: 2rem; }
-  nav {
-    position: static; border-right: none;
-    border-bottom: 1px solid var(--rule); padding: 0 0 1.2rem;
-    columns: 2; column-gap: 1.5rem;
-  }
-}
-:focus-visible { outline: 2px solid var(--cinnabar); outline-offset: 3px; }
-h1 {
-  font-size: 2.4rem; font-weight: normal; letter-spacing: .5rem;
-  margin: 0 0 .4rem; text-align: center;
-}
-.subtitle {
-  text-align: center; color: var(--faded); letter-spacing: .2rem;
-  margin: 0 0 3rem; font-size: .95rem;
-}
-.intro { margin: 0 0 2.6rem; }
-.intro p { margin: 0 0 1rem; }
-.preface {
-  border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
-  padding: 1.6rem 0; margin: 0 0 4rem; color: var(--faded); font-size: .95rem;
-}
-.preface p { margin: .4rem 0; }
-.preface b { color: var(--ink); font-weight: normal; }
-.entry { margin: 0 0 4.5rem; }
-.cells { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1.4rem; }
-.cell { width: 4.6rem; text-align: center; }
-.pinyin {
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: .78rem; color: var(--faded); letter-spacing: .02rem;
-  height: 1.5rem; display: flex; align-items: center;
-  justify-content: center; position: relative; margin-bottom: .25rem;
-}
-/* 四线三格：拼音在字帖里写在这里，不是浮在字上面 */
-.pinyin::before {
-  content: ""; position: absolute; inset: 0;
-  border-top: 1px solid var(--cinnabar);
-  border-bottom: 1px solid var(--cinnabar);
-  opacity: .3;
-  background:
-      linear-gradient(var(--cinnabar), var(--cinnabar)) 0 33.3% / 100% 1px
-          no-repeat,
-      linear-gradient(var(--cinnabar), var(--cinnabar)) 0 66.6% / 100% 1px
-          no-repeat;
-}
-.pinyin span { position: relative; }
-.grid {
-  width: 4.6rem; height: 4.6rem; border: 1px solid var(--cinnabar);
-  position: relative; display: flex; align-items: center;
-  justify-content: center; background: rgba(255,255,255,.45);
-}
-.grid::before, .grid::after {
-  content: ""; position: absolute; border-color: var(--cinnabar);
-  opacity: .38;
-}
-.grid::before { left: 50%; top: 0; bottom: 0; border-left: 1px dashed; }
-.grid::after { top: 50%; left: 0; right: 0; border-top: 1px dashed; }
-/* 楷体是字帖里的那一种，宋体不是 */
-.glyph {
-  font-family: "Kaiti SC", "KaiTi", "STKaiti", "AR PL UKai CN",
-      "Noto Serif CJK SC", serif;
-  font-size: 2.9rem; line-height: 1; position: relative;
-}
-.plain { font-size: 1.35rem; margin: 0 0 .6rem; }
-.plain .label, .gloss .label, .fault .label, .eg .mark {
-  color: var(--cinnabar); font-family: "PingFang SC", "Noto Sans CJK SC",
-      "Source Han Sans SC", "Heiti SC", "Microsoft YaHei", sans-serif;
-  font-weight: 800; background: rgba(168,67,58,.10); border-radius: .2rem;
-  padding: .05rem .3rem; font-size: .9rem;
-}
-.plain .label, .gloss .label, .fault .label { margin-right: .8rem; }
-.gloss, .fault { color: var(--faded); }
-.gloss { margin: 0 0 .6rem; }
-.fault { margin: 0 0 1.4rem; }
-.eg { border-left: 2px solid var(--rule); padding: .1rem 0 .1rem 1.1rem;
-     margin: 0 0 1rem; }
-.eg .eg-no {
-  color: var(--faded); font-family: "PingFang SC", "Noto Sans CJK SC",
-     "Source Han Sans SC", "Heiti SC", "Microsoft YaHei", sans-serif;
-     font-weight: 800; font-size: .8rem; letter-spacing: .1em;
-     margin-bottom: .2rem; }
-.eg .before { color: var(--faded); }
-.eg .after { color: var(--ink); }
-.eg .mark { margin-right: .6rem; }
-code {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: .88em; background: rgba(0,0,0,.045); padding: .05em .3em;
-}
-footer {
-  margin-top: 5rem; padding-top: 1.4rem; border-top: 1px solid var(--rule);
-  color: var(--faded); font-size: .85rem; text-align: center;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --paper: #191714; --ink: #e6e0d4; --faded: #9a9184;
-    --rule: #3b362e; --cinnabar: #c2695d;
-  }
-  :root:not([data-theme="light"]) .grid { background: rgba(255,255,255,.03); }
-  :root:not([data-theme="light"]) code { background: rgba(255,255,255,.07); }
-}
-:root[data-theme="dark"] {
-  --paper: #191714; --ink: #e6e0d4; --faded: #9a9184;
-  --rule: #3b362e; --cinnabar: #c2695d;
-}
-"##;
 
 /// One before/after pair of an entry.
 struct Example {
@@ -217,6 +78,8 @@ enum RenderError {
     Shape { key: String, expected: &'static str },
     #[error("{SOURCE}: `{key}` holds {ch:?}, which has no known tone-free form")]
     Pinyin { key: String, ch: char },
+    #[error("cannot render {TARGET}: {0}")]
+    Render(#[source] askama::Error),
     #[error("cannot write {TARGET}: {0}")]
     Write(#[source] io::Error),
 }
@@ -302,81 +165,85 @@ fn sound(entry: &Entry, index: usize) -> Result<String, RenderError> {
     Ok(out)
 }
 
-/// Lay one term out as one grid square per character.
-fn cells(term: &str, pinyin: &[String]) -> String {
-    let mut out = String::new();
-    out.push_str("<div class=\"cells\">");
-    for (index, ch) in term.chars().enumerate() {
-        let empty = String::new();
-        let sound = pinyin.get(index).unwrap_or(&empty);
-        let _ = write!(
-            out,
-            "<div class=\"cell\"><div class=\"pinyin\">\
-             <span>{}</span></div>\
-             <div class=\"grid\"><span class=\"glyph\">{}</span>\
-             </div></div>",
-            escape(sound),
-            escape(&ch.to_string()),
-        );
-    }
-    out.push_str("</div>");
-    out
-}
-
 const NUMERALS: &str = "一二三四五六七八九十";
 
+/// One character of a term with the pinyin written over it.
+struct Cell {
+    pinyin: String,
+    glyph: char,
+}
+
+/// One before/after pair, marked up for the page.
+struct ExampleView {
+    numeral: char,
+    before: String,
+    after: String,
+}
+
+/// One entry, marked up for the page.
+struct EntryView {
+    term: String,
+    cells: Vec<Cell>,
+    plain: String,
+    gloss: String,
+    fault: String,
+    examples: Vec<ExampleView>,
+}
+
+/// The whole page: `rust/templates/lexicon.html` over the marked-up lexicon.
+///
+/// The template escapes what it prints. The fields that `inline` has already
+/// escaped and given `<code>` spans are printed through `|safe` there; the
+/// division is written down at the top of the template.
+#[derive(Template)]
+#[template(path = "lexicon.html")]
+struct Page {
+    preface: Vec<String>,
+    standard: String,
+    threshold: String,
+    entries: Vec<EntryView>,
+}
+
+/// Mark one entry up for the page.
+fn view(entry: &Entry) -> EntryView {
+    let cells = entry
+        .term
+        .chars()
+        .enumerate()
+        .map(|(index, glyph)| Cell {
+            pinyin: entry.pinyin.get(index).cloned().unwrap_or_default(),
+            glyph,
+        })
+        .collect();
+    let examples = entry
+        .examples
+        .iter()
+        .enumerate()
+        .map(|(order, example)| ExampleView {
+            numeral: NUMERALS.chars().nth(order).unwrap_or('?'),
+            before: inline(&example.before),
+            after: inline(&example.after),
+        })
+        .collect();
+    EntryView {
+        term: entry.term.clone(),
+        cells,
+        plain: inline(&entry.plain),
+        gloss: inline(&entry.gloss),
+        fault: inline(&entry.fault),
+        examples,
+    }
+}
+
 /// Build the whole page.
-fn render(lexicon: &Lexicon, ordered: &[&Entry]) -> String {
-    let mut page = String::new();
-    let _ = write!(page, "<title>机器文言</title><style>{STYLE}</style>");
-    page.push_str("<div class=\"page\"><nav><div class=\"toc-label\">目录</div>");
-    for (index, entry) in ordered.iter().enumerate() {
-        let _ = write!(page, "<a href=\"#w{index}\">{}</a>", escape(&entry.term),);
-    }
-    page.push_str("</nav><div class=\"sheet\"><h1>机器文言</h1>");
-    page.push_str("<p class=\"subtitle\">机器写的中文里，读得懂却没人这么说的词</p>");
-    page.push_str("<div class=\"intro\">");
-    for paragraph in &lexicon.preface {
-        let _ = write!(page, "<p>{}</p>", inline(paragraph));
-    }
-    page.push_str("</div>");
-    let _ = write!(
-        page,
-        "<div class=\"preface\"><p><b>判据</b>　{}</p>\
-         <p><b>门槛</b>　{}</p></div>",
-        inline(&lexicon.standard),
-        inline(lexicon.threshold.trim()),
-    );
-    for (index, entry) in ordered.iter().enumerate() {
-        let _ = write!(
-            page,
-            "<section class=\"entry\" id=\"w{index}\">{}\
-             <p class=\"plain\"><span class=\"label\">白</span>{}</p>\
-             <p class=\"gloss\"><span class=\"label\">解</span>{}</p>\
-             <p class=\"fault\"><span class=\"label\">病</span>{}</p>",
-            cells(&entry.term, &entry.pinyin),
-            inline(&entry.plain),
-            inline(&entry.gloss),
-            inline(&entry.fault),
-        );
-        for (order, example) in entry.examples.iter().enumerate() {
-            let numeral = NUMERALS.chars().nth(order).unwrap_or('?');
-            let _ = write!(
-                page,
-                "<div class=\"eg\"><div class=\"eg-no\">例{numeral}</div>\
-                 <div class=\"before\"><span class=\"mark\">原</span>{}</div>\
-                 <div class=\"after\"><span class=\"mark\">改</span>{}</div></div>",
-                inline(&example.before),
-                inline(&example.after),
-            );
-        }
-        page.push_str("</section>");
-    }
-    page.push_str(
-        "<footer>正文在 <code>spec/lexicon/zh.toml</code>，\
-         本页由 <code>tools/render_lexicon.py</code> 生成</footer></div></div>",
-    );
-    page
+fn render(lexicon: &Lexicon, ordered: &[&Entry]) -> Result<String, RenderError> {
+    let page = Page {
+        preface: lexicon.preface.iter().map(|p| inline(p)).collect(),
+        standard: inline(&lexicon.standard),
+        threshold: inline(lexicon.threshold.trim()),
+        entries: ordered.iter().map(|entry| view(entry)).collect(),
+    };
+    page.render().map_err(RenderError::Render)
 }
 
 /// Read one required string out of a table.
@@ -486,7 +353,7 @@ fn run(cwd: &Path, stdout: &mut dyn Write) -> Result<(), RenderError> {
     }
     ordered.sort_by(|left, right| left.0.cmp(&right.0));
     let ordered: Vec<&Entry> = ordered.into_iter().map(|(_, entry)| entry).collect();
-    let page = render(&lexicon, &ordered);
+    let page = render(&lexicon, &ordered)?;
     std::fs::create_dir_all(cwd.join(TARGET_DIR)).map_err(RenderError::Write)?;
     std::fs::write(cwd.join(TARGET), page).map_err(RenderError::Write)?;
     writeln!(stdout, "{TARGET}: {} entries", lexicon.entries.len()).map_err(RenderError::Write)

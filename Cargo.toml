@@ -14,7 +14,9 @@ include = [
   "/LICENSE",
   "/README.md",
   "/rust-toolchain.toml",
+  "/askama.toml",
   "/rust/**/*.rs",
+  "/rust/templates/**",
   "/spec/README.md",
   "/spec/fixtures/**",
   "/spec/lexicon/zh.toml",
@@ -65,6 +67,7 @@ thiserror = "2"
 toml = { version = "1", default-features = false, features = ["std", "serde", "parse"] }
 
 [dev-dependencies]
+askama = { version = "0.16.1", default-features = false, features = ["config", "derive", "std"] }
 serde = { version = "1", features = ["derive"] }
 
 [target."cfg(unix)".dependencies]

@@ -1,0 +1,8 @@
+# Templates live with the Rust sources rather than in a top-level
+# `templates/` directory (AGENTS.md 「目录约定」: code goes into its language's
+# subdirectory). `suppress` strips the whitespace around every tag, so the
+# template can be laid out for reading while the page it renders stays the
+# one long line the committed product is.
+[general]
+dirs = ["rust/templates"]
+whitespace = "suppress"
