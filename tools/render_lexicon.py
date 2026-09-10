@@ -12,12 +12,14 @@ import tomllib
 from typing import Any, cast
 import unicodedata
 
+NUMERALS = "一二三四五六七八九十"
+
 SOURCE = pathlib.Path("spec/lexicon/zh.toml")
 TARGET = pathlib.Path("site/index.html")
 
 STYLE = """
 :root {
-  --paper: #f6f2e9;
+  --paper: #f1e8d5;
   --ink: #24211c;
   --faded: #7a736a;
   --rule: #cfc5b4;
@@ -53,10 +55,6 @@ nav a {
 }
 nav a:hover, nav a:focus-visible {
   color: var(--cinnabar); border-bottom-color: var(--rule);
-}
-nav .sound {
-  font-family: Georgia, "Times New Roman", serif; font-size: .72rem;
-  color: var(--faded); margin-left: .4rem;
 }
 @media (max-width: 52rem) {
   .page { grid-template-columns: 1fr; gap: 2rem; }
@@ -123,16 +121,26 @@ h1 {
   font-size: 2.9rem; line-height: 1; position: relative;
 }
 .plain { font-size: 1.35rem; margin: 0 0 .6rem; }
-.plain .label { color: var(--cinnabar); margin-right: .8rem; font-size: 1rem; }
+.plain .label, .gloss .label, .fault .label, .eg .mark {
+  color: var(--cinnabar); font-family: "PingFang SC", "Noto Sans CJK SC",
+      "Source Han Sans SC", "Heiti SC", "Microsoft YaHei", sans-serif;
+  font-weight: 800; background: rgba(168,67,58,.10); border-radius: .2rem;
+  padding: .05rem .3rem; font-size: .9rem;
+}
+.plain .label, .gloss .label, .fault .label { margin-right: .8rem; }
 .gloss, .fault { color: var(--faded); }
 .gloss { margin: 0 0 .6rem; }
 .fault { margin: 0 0 1.4rem; }
-.gloss .label, .fault .label { color: var(--cinnabar); margin-right: .8rem; }
 .eg { border-left: 2px solid var(--rule); padding: .1rem 0 .1rem 1.1rem;
      margin: 0 0 1rem; }
+.eg .eg-no {
+  color: var(--faded); font-family: "PingFang SC", "Noto Sans CJK SC",
+     "Source Han Sans SC", "Heiti SC", "Microsoft YaHei", sans-serif;
+     font-weight: 800; font-size: .8rem; letter-spacing: .1em;
+     margin-bottom: .2rem; }
 .eg .before { color: var(--faded); }
 .eg .after { color: var(--ink); }
-.eg .mark { color: var(--cinnabar); margin-right: .6rem; }
+.eg .mark { margin-right: .6rem; }
 code {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: .88em; background: rgba(0,0,0,.045); padding: .05em .3em;
@@ -223,11 +231,12 @@ def render(data: dict[str, Any]) -> str:
   ordered = sorted(data["entry"], key=_sound)
   for i, e in enumerate(ordered):
     egs = "".join(
-        f'<div class="eg"><div class="before"><span class="mark">原</span>'
+        f'<div class="eg"><div class="eg-no">例{NUMERALS[j]}</div>'
+        f'<div class="before"><span class="mark">原</span>'
         f'{_inline(x["before"])}</div>'
         f'<div class="after"><span class="mark">改</span>'
         f'{_inline(x["after"])}</div></div>'
-        for x in e["examples"]
+        for j, x in enumerate(e["examples"])
     )
     entries.append(
         f'<section class="entry" id="w{i}">'
@@ -244,10 +253,9 @@ def render(data: dict[str, Any]) -> str:
   )
   return (
       f"<title>机器文言</title><style>{STYLE}</style>"
-      '<div class="page"><nav><div class="toc-label">目次</div>'
+      '<div class="page"><nav><div class="toc-label">目录</div>'
       + "".join(
-          f'<a href="#w{i}">{html.escape(str(e["term"]))}'
-          f'<span class="sound">{html.escape("".join(e["pinyin"]))}</span></a>'
+          f'<a href="#w{i}">{html.escape(str(e["term"]))}</a>'
           for i, e in enumerate(ordered)
       )
       + '</nav><div class="sheet"><h1>机器文言</h1>'
