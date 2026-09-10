@@ -1,0 +1,29 @@
+{
+  "name": "limae",
+  "version": "0.0.0",
+  "description": "A Markdown linter that starts from Chinese technical-writing typography rules, with opt-in experimental rules for AI tells and terminology",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Luolc/limae.git"
+  },
+  "homepage": "https://github.com/Luolc/limae",
+  "bin": {
+    "limae": "bin/limae.js"
+  },
+  "files": [
+    "bin/limae.js"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "optionalDependencies": {
+    "@limae/linux-x64": "0.0.0",
+    "@limae/linux-arm64": "0.0.0",
+    "@limae/darwin-x64": "0.0.0",
+    "@limae/darwin-arm64": "0.0.0"
+  }
+}

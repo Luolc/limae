@@ -8,25 +8,48 @@
 # Publishing cannot be configured before the crate exists. Now that it
 # does, `publish` below exchanges GitHub's OIDC identity for a short-lived
 # registry token instead. See docs/knowledge/release.md.
+#
+# The same tag also publishes two thin launchers around those binaries: a
+# wheel per target on PyPI and a `limae` package plus one `@limae/<platform>`
+# package per target on npm (`launchers`, `publish-pypi`, `publish-npm`).
+# Neither compiles anything; both repackage the Release tarballs, and
+# tools/check_launchers.sh asserts that what went into every package is the
+# Release binary, byte for byte.
 name: release
 
 on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
-  # Manual entry point for `auth-check` only — it never publishes. GitHub
-  # exposes this trigger on the default branch, so the job it runs has to
-  # live in this file (see the note on the job itself).
+  # Manual entry point; it never publishes. GitHub exposes this trigger on
+  # the default branch, so the jobs it runs have to live in this file (see
+  # the note on `auth-check`). One dispatch is the whole rehearsal:
+  # `auth-check` and `npm-auth-check` verify credentials, `launchers`
+  # repackages an existing Release as a dry run, and `pypi-auth-check` runs
+  # only when asked for, because it is not free (see the job).
   workflow_dispatch:
+    inputs:
+      tag:
+        # No default: a default tag goes stale silently, and then "forgot to
+        # fill it in" and "meant that one" look the same.
+        description: "Existing Release tag (v<major>.<minor>.<patch>) whose assets the launcher dry run repackages"
+        required: true
+        type: string
+      pypi_auth_check:
+        description: "Also mint a PyPI Trusted Publishing token (creates the PyPI project if it does not exist yet)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 jobs:
-  # Every job below except `auth-check` belongs to a tag push. `on:` has
-  # exactly two triggers, so `github.event_name == 'push'` is the tag
-  # push and nothing else; `upload-assets` needs this job and is skipped
-  # with it.
+  # `on:` has exactly two triggers, so `github.event_name == 'push'` is the
+  # tag push and nothing else. The four publishing jobs (`create-release`,
+  # `publish`, `publish-pypi`, `publish-npm`) belong to it; `launchers`
+  # runs on both; the three `*auth-check` jobs belong to the dispatch.
+  # `upload-assets` needs this job and is skipped with it.
   create-release:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -68,6 +91,158 @@ jobs:
           tar: unix
           checksum: sha256
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  # The PyPI wheels and npm packages. On a tag push this runs once the
+  # binaries are attached to the Release; on `workflow_dispatch` it takes the
+  # assets of the tag given as input and is the dry run — build, check,
+  # compare, stop. Nothing here publishes.
+  #
+  # `needs` alone would skip this job whenever `upload-assets` is skipped,
+  # which is every dispatch. `!cancelled()` (rather than `always()`) keeps a
+  # failed or cancelled build from being repackaged on a tag push while
+  # letting the dispatch run proceed past the skipped dependency.
+  launchers:
+    needs: upload-assets
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.upload-assets.result == 'success') }}
+    runs-on: ubuntu-latest
+    # Read only: this job downloads public Release assets and uploads a
+    # workflow artifact; the top-level `contents: write` is for
+    # `create-release` and `upload-assets`. Nothing here talks to git after
+    # the checkout, so the token is not kept in the checkout either.
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # `uv` carries `uvx wheel` and `uvx twine`; nothing Python is in the
+      # repository (same arrangement as ci.yml).
+      - uses: astral-sh/setup-uv@v9.0.0
+      # tools/build_launchers.sh reads the package metadata with
+      # `cargo metadata`; the binaries themselves are not built here.
+      - name: Rust toolchain
+        run: rustup show
+      - name: Download the Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "$TAG" --pattern 'limae-*' --dir assets
+      - name: Build the wheels and npm packages from the Release tarballs
+        run: tools/build_launchers.sh "$TAG" assets dist
+      # The invariant, read off the finished packages: sha256 of the binary
+      # inside each wheel and npm tarball against sha256 of the binary in the
+      # Release tarball that passed its sidecar. Both values are in the log.
+      - name: Assert every package carries the Release binary
+        run: tools/check_launchers.sh "$TAG" assets dist
+      - name: twine check
+        run: uvx --from 'twine==6.1.0' twine check --strict dist/pypi/*.whl
+      # The publish script itself, with `--dry-run` handed to `npm publish`.
+      - name: npm publish --dry-run
+        run: tools/npm_publish_set.sh dist/npm --dry-run
+      # The runner is x86_64 Linux, so those two launchers can also be run.
+      # The npm install names both tarballs and omits optional dependencies:
+      # the platform package is not on the registry yet, and even after it
+      # is, the one under test has to be this tarball and not that one.
+      - name: Smoke-run the x86_64 Linux launchers
+        run: |
+          set -euo pipefail
+          wheel=(dist/pypi/limae-*-manylinux*_x86_64*.whl)
+          [ "${#wheel[@]}" -eq 1 ]
+          uvx --from "${wheel[0]}" limae --help >/dev/null
+          mkdir smoke && cd smoke && npm init -y >/dev/null
+          npm install --omit=optional ../dist/npm/limae-linux-x64-*.tgz ../dist/npm/limae-[0-9]*.tgz
+          npx limae --help >/dev/null
+          echo "smoke: both launchers ran"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: launchers
+          path: dist
+          if-no-files-found: error
+
+  # The three registries publish in the order of how little can be undone
+  # afterwards, strictest guard first: crates.io (`publish`, which asserts
+  # tag == manifest before it authenticates), then PyPI (a version can never
+  # be reused), then npm (72 hours to unpublish). A failure stops the chain,
+  # so a version that reaches any registry has passed the crates.io guard.
+  #
+  # Both registry jobs below can be re-run after a failure part-way through
+  # an upload (`gh run rerun --failed`): each one first asks the registry
+  # what it already holds for this version and compares it with the file
+  # about to be uploaded — the same bytes is skipped, a missing file is
+  # uploaded, different bytes under the same name stops the job. Neither
+  # registry lets a name be uploaded twice, so a plain re-run would trip over
+  # the files that did land, and a blanket "skip existing" would not tell
+  # "already uploaded this" from "something else has that name".
+  publish-pypi:
+    if: github.event_name == 'push'
+    needs: [launchers, publish]
+    runs-on: ubuntu-latest
+    # No `environment:`, like `publish`: the trusted publisher on PyPI is
+    # configured with the environment left as "(Any)" (2026-09-10, from the
+    # PyPI page), so naming one here would add a condition nobody asked for.
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: launchers
+          path: dist
+      # The comparison with what PyPI already holds (see the note above the
+      # job); the wheels left in dist/pypi afterwards are the ones to upload.
+      - name: Drop the wheels PyPI already holds, byte for byte
+        id: remaining
+        run: |
+          set -euo pipefail
+          tools/pypi_upload_set.sh limae "${GITHUB_REF_NAME#v}" dist/pypi
+          # nullglob: with every wheel dropped, the pattern must count 0,
+          # not 1 for its own unexpanded self.
+          shopt -s nullglob
+          remaining=(dist/pypi/*.whl)
+          echo "count=${#remaining[@]}" >>"$GITHUB_OUTPUT"
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        if: steps.remaining.outputs.count != '0'
+        with:
+          packages-dir: dist/pypi
+
+  # A long-lived token for now: npm's Trusted Publishing can only be set up
+  # once the package exists. Switching to OIDC and deleting `NPM_TOKEN` is
+  # the follow-up after the first release. The platform packages go first,
+  # so the launcher's `optionalDependencies` resolve the moment it lands.
+  # `@limae/<platform>` is scoped, and a scoped package publishes as
+  # restricted unless told otherwise; `publishConfig.access` in each
+  # package.json says public, so it holds however this command is written.
+  publish-npm:
+    if: github.event_name == 'push'
+    needs: [launchers, publish-pypi]
+    runs-on: ubuntu-latest
+    # `contents: read` for the checkout that brings tools/; `npm publish`
+    # needs nothing from GitHub's token.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: launchers
+          path: dist
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      # The script publishes the platform packages first and the launcher
+      # last, and compares each tarball with what npm already holds before
+      # publishing it (see the note above `publish-pypi`).
+      - name: Publish the platform packages, then the launcher
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: tools/npm_publish_set.sh dist/npm
 
   # Trusted Publishing: no long-lived token in CI. The auth action swaps
   # the job's OIDC identity for a short-lived crates.io token and revokes
@@ -139,5 +314,73 @@ jobs:
             echo "auth: token issued"
           else
             echo "auth: no token issued" >&2
+            exit 1
+          fi
+
+  # The npm half of the credential rehearsal: `NPM_TOKEN` is a token with an
+  # expiry, and `npm whoami` is the cheapest call that fails when it has
+  # expired or was pasted wrong. It prints the account name, which is not a
+  # secret; the token itself never reaches the log.
+  npm-auth-check:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Assert the npm token authenticates
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm whoami
+
+  # SCAFFOLDING — delete this job once v0.13.1 has been published to PyPI.
+  #
+  # The PyPI counterpart of `auth-check`, with one difference that makes it
+  # opt-in rather than part of every dispatch: it is not free. PyPI's
+  # mint-token endpoint, when the trusted publisher it matches is a *pending*
+  # one (the project does not exist yet), creates the project and converts
+  # the pending publisher into a regular one at mint time, before any upload
+  # (warehouse, `warehouse/oidc/views.py`, `mint_token`, read 2026-09-10).
+  # So one run of this job leaves an empty `limae` project on PyPI. No
+  # version is spent, but it is visible, and it is a one-way step.
+  #
+  # After the first release has gone through `publish-pypi`, the project
+  # exists and the publisher is regular, and this job can no longer verify
+  # anything that the release did not already verify: it becomes a switch
+  # that is always green. That is why it is scaffolding.
+  #
+  # Same rule as `auth-check`: the workflow filename is part of the trusted
+  # publisher configuration, so this job has to live here (and, as in
+  # `publish-pypi`, no `environment:`). The GitHub OIDC token and the minted
+  # PyPI token are both credentials; they go through files on the ephemeral
+  # runner and never through the log — the check is `success`.
+  pypi-auth-check:
+    if: github.event_name == 'workflow_dispatch' && inputs.pypi_auth_check
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - name: Mint a Trusted Publishing token and stop
+        run: |
+          set -euo pipefail
+          umask 077
+          audience="$(curl -fsS https://pypi.org/_/oidc/audience | jq -er '.audience')"
+          # The request token is a bearer credential; it reaches curl through
+          # a header file (`-H @file`), never through argv, where any process
+          # listing on the runner would show it.
+          printf 'Authorization: bearer %s\n' "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" >headers.txt
+          curl -fsS -H @headers.txt \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" -o github-token.json
+          jq -c '{token: .value}' github-token.json >mint-request.json
+          curl -sS -X POST https://pypi.org/_/oidc/mint-token \
+            -H 'Content-Type: application/json' --data @mint-request.json \
+            -o mint-response.json
+          if [ "$(jq -r '.success' mint-response.json)" = "true" ]; then
+            echo "auth: token issued"
+          else
+            echo "auth: no token issued" >&2
+            jq '{message, errors}' mint-response.json >&2
             exit 1
           fi
