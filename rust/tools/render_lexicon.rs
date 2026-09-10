@@ -1,8 +1,17 @@
 //! Render the lexicon into one static page.
 //!
-//! Reads `spec/lexicon/zh.toml` and writes `site/index.html`. The page is
-//! committed, and `tools/check_lexicon_render.sh` holds the committed page to
-//! what this example renders.
+//! Reads `spec/lexicon/zh.toml` and writes `site/index.html`. The page is not
+//! committed — `site/` is ignored, and `.github/workflows/ci.yml` renders it
+//! on every run and publishes it to GitHub Pages from main. Running this
+//! locally is for looking at the result; the file it writes stays local.
+//!
+//! `tools/check_lexicon_render.sh` guards three things about this example,
+//! all of them on freshly rendered output: that it runs to completion over
+//! the real lexicon, that the page follows its input rather than carrying a
+//! fixed body, and that `fault`, `title` and `subtitle` reach the page in the
+//! escaped form the template owes them. It does not guard whether the page is
+//! *right*: there is one generator, so a template change that renders a worse
+//! page renders it consistently, and a person still has to read the result.
 //!
 //! The HTML and CSS live in `rust/templates/lexicon.html`, an [Askama]
 //! template compiled into this example (`askama.toml` at the root names the

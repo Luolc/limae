@@ -80,10 +80,12 @@ page() {
 
 # The baseline the control arm is measured against: the real lexicon,
 # rendered here and now. Nothing is compared to it yet; `render` fails if the
-# generator does not finish.
-render committed "$repo_root/spec/lexicon/zh.toml"
-[[ -s $(page committed) ]] || fail 'the committed lexicon rendered an empty page'
-printf '%s\n' 'committed source: the generator rendered a page'
+# generator does not finish. The label is `baseline`, not `committed` — the
+# lexicon is committed but the page is not, and a diagnostic that says
+# "committed page" would name something this repository no longer has.
+render baseline "$repo_root/spec/lexicon/zh.toml"
+[[ -s $(page baseline) ]] || fail 'the real lexicon rendered an empty page'
+printf '%s\n' 'baseline: the generator rendered a page from the real lexicon'
 
 # The control arm. The title and subtitle are replaced, and one entry is
 # appended, chosen to move the parts of the page that are easiest to get
@@ -107,8 +109,8 @@ examples = [
 ]
 TOML
 render perturbed "$perturbed"
-if cmp -s "$(page perturbed)" "$(page committed)"; then
-  fail 'the perturbed source rendered the same page as the committed one; the comparison is vacuous'
+if cmp -s "$(page perturbed)" "$(page baseline)"; then
+  fail 'the perturbed source rendered the same page as the baseline; the comparison is vacuous'
 fi
 # A changed page is still what a generator that dropped `fault` would show:
 # the other fields of the appended entry move the page on their own. So the
