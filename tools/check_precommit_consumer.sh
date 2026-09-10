@@ -13,7 +13,7 @@ cleanup() {
 
   trap - EXIT
   if ! find "$work_dir" -depth -delete; then
-    printf 'pre-commit check failed: cannot clean temporary directory %s\n' "$work_dir" >&2
+    printf 'pre-commit consumer check failed: cannot clean temporary directory %s\n' "$work_dir" >&2
     exit 1
   fi
   exit "$original_status"
@@ -21,7 +21,7 @@ cleanup() {
 trap cleanup EXIT
 
 fail() {
-  printf 'pre-commit check failed: %s\n' "$1" >&2
+  printf 'pre-commit consumer check failed: %s\n' "$1" >&2
   exit 1
 }
 
@@ -71,7 +71,7 @@ write_consumer_config() {
     >"$consumer/.pre-commit-config.yaml"
 }
 
-[[ -x $pre_commit ]] || fail 'run uv sync before the pre-commit distribution check'
+[[ -x $pre_commit ]] || fail 'run uv sync first'
 revision=$(git -C "$repo_root" rev-parse --verify 'HEAD^{commit}')
 source_repo="$work_dir/source.git"
 consumer="$work_dir/consumer"

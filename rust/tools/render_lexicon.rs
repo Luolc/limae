@@ -11,14 +11,19 @@
 //!
 //! [Askama]: https://docs.rs/askama/latest/askama/
 //!
-//! This is an example rather than a `[[bin]]` because it is a development tool
-//! and the shipped binary set is `limae` alone; `diff-probe` sits here for
-//! the same reason. Examples are packaged (`Cargo.toml` carries
-//! `rust/**/*.rs`) and compiled by `cargo test`, while nothing about a release
-//! build has to change. Compiling is not enough on its own: the source above
-//! is read at run time, so `Cargo.toml` also has to `include` it, and the
-//! packaging gate runs this example out of the unpacked package to prove it
-//! shipped.
+//! Two separate things decide where this file lives and how it is built. The
+//! Cargo target is `[[example]]` because that is the mechanism that keeps it
+//! out of `cargo install`: the shipped binary set is `limae` alone, and
+//! `diff-probe` sits under the same declaration for the same reason. The
+//! directory is `rust/tools/` because that is what the file is — a
+//! development-time tool, the same meaning the repository root's `tools/`
+//! carries. The two do not have to agree, because `Cargo.toml` spells the
+//! `path` out and never consults Cargo's `examples/` auto-discovery. Either
+//! way the file is packaged (`Cargo.toml` carries `rust/**/*.rs`) and compiled
+//! by `cargo test`, while nothing about a release build has to change.
+//! Compiling is not enough on its own: the source above is read at run time,
+//! so `Cargo.toml` also has to `include` it, and the packaging gate runs this
+//! example out of the unpacked package to prove it shipped.
 //!
 //! Run it from the repository root:
 //!

@@ -53,6 +53,37 @@ repos:
     hooks:
       - id: uv-lock
         files: pyproject\.toml$
+  # Rust formatting, the one Rust check fast enough for a commit hook
+  # (0.34s warm, against AGENTS.md's ≤5s budget). `cargo clippy` is
+  # deliberately absent: it compiles every target and belongs to the
+  # pre-push run and CI. The rule is "fast enough", not "Rust too".
+  #
+  # `pass_filenames: false` because this is `cargo fmt --check`, gate 1
+  # verbatim — it resolves targets through `Cargo.toml` and so picks up the
+  # package's edition. Handing rustfmt a bare file list instead would check
+  # a different thing than the gate does. The cost is that any unformatted
+  # Rust file blocks a commit that stages any other Rust file; that is the
+  # same reach gate 1 has.
+  #
+  # `files` therefore has to list every file that can change what this
+  # command prints, not just the ones it prints about. `Cargo.toml` fixes
+  # the targets and the edition, a rustfmt.toml would carry the style
+  # itself, and `rust-toolchain.toml` picks which rustfmt runs. A commit
+  # touching only one of those reformats the tree without staging a single
+  # `.rs`, and a hook keyed on `\.rs$` alone sleeps through it — the break
+  # then surfaces at gate 1 in CI, which is exactly the trip this hook
+  # exists to save. `tests/test_environment.py` pins this pattern from
+  # both sides — it has to wake for those files and stay out of
+  # everything else — by asserting the expression the way pre-commit
+  # applies it. Gate 10 runs the hook itself.
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: rust format (cargo fmt)
+        language: system
+        entry: cargo fmt --check
+        files: (\.rs$|^Cargo\.toml$|^\.?rustfmt\.toml$|^rust-toolchain\.toml$)
+        pass_filenames: false
   # Dogfooding: this repo's own Markdown is checked by this repo's linter —
   # the Rust one, which is now the product (ADR-0015 stage E).
   #
