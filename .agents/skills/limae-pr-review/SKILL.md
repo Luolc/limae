@@ -7,7 +7,7 @@ description: limae 仓 PR 审查增量：AI 中文词典 (spec/lexicon/zh.toml) 
 
 用户级 `pr-review` 定轨道、优先级与 Verdict 格式，本文件只加严，不 supersede 它的任何条目。
 
-**适用范围**：PR 改到 `spec/lexicon/zh.toml`、`spec/polish/zh.md`、`spec/wordlists/`、`site/index.html`、`rust/tools/render_lexicon.rs` 或 `rust/templates/lexicon.html` 时，除通用文档轨外，逐条走下面的检查。碰不到这些路径的 PR，本文件不适用。
+**适用范围**：PR 改到 `spec/lexicon/zh.toml`、`spec/polish/zh.md`、`spec/wordlists/`、`rust/tools/render_lexicon.rs`、`rust/templates/lexicon.html`，或 `.github/workflows/ci.yml` 里发布页面的 `build` / `deploy` job 时，除通用文档轨外，逐条走下面的检查。碰不到这些路径的 PR，本文件不适用。(`site/index.html` 2026-09-10 起不再入库，它不会出现在任何 PR 的 diff 里；真出现了见 `L14`。)
 
 条目带 id (`L1`…)，供评论按 id 引用。id 只追加、不重排、不复用，与它在文中的位置无关。
 
@@ -44,9 +44,9 @@ description: limae 仓 PR 审查增量：AI 中文词典 (spec/lexicon/zh.toml) 
 
 ## 四、页面与生成器
 
-- `L13` **页面生成器只有一个，守卫挡不住它漂移**：`rust/tools/render_lexicon.rs` (Cargo example `render-lexicon`) 加模板 `rust/templates/lexicon.html`。`tools/check_lexicon_render.sh` 只保证提交的 `site/index.html` 等于生成器对当前 toml 的输出 (改了源或模板没重新生成是 P0，它会红，按 `B2` 处置)，外加一条对照臂；它以前靠 Python / Rust 两个实现逐字节对照抓移植走样，那一侧已删，**模板改动是否正确没有任何门替审查方看**，改到模板的 PR 要人读渲染结果。
-- `L14` **`site/index.html` 是生成产物**，手改的痕迹一律不许进 PR。手改与「改了词典忘了重新生成页面」是同一个可观测后果 —— `tools/check_lexicon_render.sh` 红 (前者走 `site/index.html is out of date` 那条分支)，按用户级 `B2` **这就是 P0**，不另开一条 finding、也不降级成 P1。本文件的增量只在于**怎么说**：手改要指出它该回到哪个生成器里 (`L13`)，页面过期要指出重新生成那一步没跑。反过来，这道门绿着就说明提交的页面与生成结果逐字节相同，此时「看着像手改过」是看错了，不报。
-- `L15` 词典条目自身、`site/index.html`、`spec/wordlists/` 的注释与 fixture 里出现词典收过的词，不算 dogfooding 违规，不报。
+- `L13` **页面生成器只有一个，守卫挡不住它漂移**：`rust/tools/render_lexicon.rs` (Cargo example `render-lexicon`) 加模板 `rust/templates/lexicon.html`。`tools/check_lexicon_render.sh` 守的是三件事，全在现渲染的产物上：生成器跑得完、页面跟着源变 (扰动对照臂)、`fault` / `title` / `subtitle` 转义成预期的 HTML；**它不守页面渲染得对不对**。它以前还有两块分辨力，都已随守护对象消失：Python / Rust 两个实现逐字节对照抓移植走样 (Python 侧 2026-09 已删)，以及生成物与已提交页面一致 (页面 2026-09-10 起不入库，「改了源忘了重新生成」这个故障不再存在)。所以**模板改动是否正确没有任何门替审查方看**，改到模板的 PR 要人读渲染结果。这条与脚本头部注释是同一件事的两处说法，改一处就改两处。
+- `L14` **`site/` 的内容只由 CI 生成，diff 里出现它就报 P1**。2026-09-10 起 `site/` 在 `.gitignore` 里，页面由 `.github/workflows/ci.yml` 的 `build` job 每次现渲染、`deploy` job 从 main 发布；「手改已提交的页面」与「改了词典忘了重新生成」这两个故障因此都不存在了，`tools/check_lexicon_render.sh` 里对应的那条断言也已退休。**换来的是新的一个**：`git add -f site/…` 或把 `site/` 从 `.gitignore` 里拿掉，都能让产物重新入库，而**没有任何门会红** —— 这一条就是补这个洞的人工判据，所以它落在审查方眼睛上而不是脚本里。看 diff 的文件清单，`site/` 下任何路径出现即报 P1，并指出该走哪条路 (改页面去改 `spec/lexicon/zh.toml` 或模板，见 `L13`；想在本地看效果跑 `cargo run --example render-lexicon`，产物留在本地)。**除非 PR 的目的本身就是改发布方式**，那时它是这条规则的正当例外，按改动本身审。
+- `L15` 词典条目自身、`spec/wordlists/` 的注释与 fixture 里出现词典收过的词，不算 dogfooding 违规，不报。
 
 ## 五、措辞归谁管
 

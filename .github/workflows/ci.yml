@@ -1,6 +1,8 @@
-# Fast PR gate: the same quality bar that runs locally (see AGENTS.md).
-# Keeps main always-green; `check` is the required check for branch
-# protection.
+# Two things live here. `check` is the quality bar that also runs locally
+# (see AGENTS.md); it keeps main always-green and is the required check for
+# branch protection. `build` and `deploy` publish the lexicon page to GitHub
+# Pages, which is release, not a gate — `deploy` is deliberately outside
+# `check`, so a failed publish never blocks a merge.
 name: CI
 
 on:
@@ -75,11 +77,15 @@ jobs:
           RUSTDOCFLAGS: -Dwarnings
         run: cargo doc --no-deps --locked
 
-      # `site/index.html` is a committed product of the render-lexicon Cargo
-      # example. The same blind spot: no other gate reads the page, so editing
-      # spec/lexicon/zh.toml without regenerating it leaves every other gate
-      # green. Needs the Rust toolchain.
-      - name: Lexicon page is current
+      # The generator behind the published page. `site/index.html` is not
+      # committed, so this is not about the page being current; it is about
+      # the generator still running and the page still following its source.
+      # The `build` job below renders the page the site actually gets, and a
+      # render that crashes fails there too — what it cannot notice is a
+      # generator that renders a page while ignoring its input. Needs the
+      # Rust toolchain. What the gate does and does not cover is written at
+      # the top of the script.
+      - name: Lexicon page renders from its source
         run: tools/check_lexicon_render.sh
 
       # The lexicon's own Chinese prose, checked with this repo's own rules.
@@ -127,3 +133,40 @@ jobs:
 
       - name: Linux musl binary
         run: tools/check_rust_package.sh target x86_64-unknown-linux-musl
+
+  # The page that GitHub Pages serves, rendered from spec/lexicon/zh.toml on
+  # every run. Nothing in the repository carries the rendered page any more,
+  # so this job is where "the lexicon does not render" becomes visible — on
+  # the pull request, before it can reach main and break the site.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Rust toolchain
+        run: rustup show
+
+      - name: Render the lexicon page
+        run: cargo run --locked --example render-lexicon
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  # Publishing, not a quality gate: `check` is the required check, and a
+  # failed deploy must not block a merge. Only main publishes — a pull
+  # request evaluates this `if` to false and the job is reported as skipped,
+  # which is a different reading from a job that was never defined.
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
