@@ -8,10 +8,19 @@ use limae::pipeline::{Finding, Pipeline};
 type TestResult = Result<(), Box<dyn Error>>;
 
 fn configured(name: &str, contents: &str) -> Result<ResolvedConfig, Box<dyn Error>> {
+    configured_with(name, contents, CliOverrides::default())
+}
+
+/// The same, for a run whose command line overrides the file it found.
+fn configured_with(
+    name: &str,
+    contents: &str,
+    overrides: CliOverrides<'_>,
+) -> Result<ResolvedConfig, Box<dyn Error>> {
     let root = std::env::temp_dir().join(format!("limae-pipeline-{name}-{}", std::process::id()));
     fs::create_dir(&root)?;
     fs::write(root.join("limae.toml"), contents)?;
-    let config = resolve(&root, CliOverrides::default());
+    let config = resolve(&root, overrides);
     fs::remove_dir_all(root)?;
     Ok(config?)
 }
@@ -630,6 +639,139 @@ fn terms_use_whole_fix_lines_and_protected_anchors_through_typography() -> TestR
             RuleId::ZH_TYPOGRAPHY_10,
             RuleId::ZH_TYPOGRAPHY_10
         ],
+    );
+    Ok(())
+}
+
+/// The five inputs that were hand-picked because a rule interaction went wrong
+/// on them once, pinned to what this implementation answers today.
+///
+/// Each one is an interaction rather than a rule: a line separator that is not
+/// `\n`, a grapheme cluster the byte ranges have to step around, an
+/// experimental rule reached through a dotted capital, three protected spans
+/// competing on one line, and a directive under a configured severity. The
+/// golden fixtures cover the rules; nothing covered these five together.
+#[test]
+fn hand_picked_rule_interactions_keep_their_findings_and_fixes() -> TestResult {
+    let pipeline = Pipeline::new()?;
+    let default = ResolvedConfig::default();
+
+    // U+2028 is a line break to the checker and an ordinary character to the
+    // fixer, so one input has two line numbers and one unbroken fixed string.
+    let original = "中A\u{2028}文B";
+    let expected = [(1, "中A"), (2, "文B")].map(|(line, snippet)| Finding {
+        line,
+        rule: RuleId::ZH_TYPOGRAPHY_4,
+        name: "zh-typography-4 no space between CJK and Latin".into(),
+        range: 3..3,
+        snippet,
+    });
+    assert_eq!(pipeline.check(original, &default)?, expected);
+    assert_eq!(pipeline.fix(original, &default)?, "中 A\u{2028}文 B");
+
+    // An emoji and a combining mark before the match: the two insertion points
+    // are byte offsets into a line no scalar index would land on.
+    let original = "前🙂e\u{301}中A后";
+    let expected = [13, 14].map(|start| Finding {
+        line: 1,
+        rule: RuleId::ZH_TYPOGRAPHY_4,
+        name: "zh-typography-4 no space between CJK and Latin".into(),
+        range: start..start,
+        snippet: original,
+    });
+    assert_eq!(pipeline.check(original, &default)?, expected);
+    assert_eq!(pipeline.fix(original, &default)?, "前🙂e\u{301}中 A 后");
+
+    // `İ` lowercases to two scalars, so a word rule that folded case naively
+    // would either miss this or report a range that is not a boundary.
+    let experimental = configured("seed-experimental", "enable_experimental = true\n")?;
+    let original = "pİvotal\n";
+    assert_eq!(
+        pipeline.check(original, &experimental)?,
+        [Finding {
+            line: 1,
+            rule: RuleId::EN_TELL_1,
+            name: "en-tell-1 English AI vocabulary".into(),
+            range: 0..8,
+            snippet: "pİvotal",
+        }]
+    );
+    assert_eq!(pipeline.fix(original, &experimental)?, original);
+
+    // Inline code, a bare URL and a link on one line, with the link rule turned
+    // on from the command line: three protected spans and three rules that all
+    // want to insert a space near their edges.
+    let enable = ["zh-typography-9".to_owned()];
+    let linked = configured_with(
+        "seed-linked",
+        "",
+        CliOverrides {
+            disable: None,
+            enable: Some(&enable),
+        },
+    )?;
+    let original = "中`A,B`文 https://example.com/中A 中文[链接](x)\n";
+    let expected = [
+        (
+            RuleId::ZH_TYPOGRAPHY_4,
+            "zh-typography-4 no space between CJK and Latin",
+            35..35,
+            "xample.com/中A 中文[链接](x)",
+        ),
+        (
+            RuleId::ZH_TYPOGRAPHY_7,
+            "zh-typography-7 no space before inline code",
+            3..4,
+            "中`A,B`文 https:",
+        ),
+        (
+            RuleId::ZH_TYPOGRAPHY_7,
+            "zh-typography-7 no space after inline code",
+            7..8,
+            "中`A,B`文 https://ex",
+        ),
+        (
+            RuleId::ZH_TYPOGRAPHY_9,
+            "zh-typography-9 no space between CJK and link",
+            43..52,
+            "le.com/中A 中文[链接](x)",
+        ),
+    ]
+    .map(|(rule, name, range, snippet)| Finding {
+        line: 1,
+        rule,
+        name: name.into(),
+        range,
+        snippet,
+    });
+    assert_eq!(pipeline.check(original, &linked)?, expected);
+    let fixed = "中 `A,B` 文 https://example.com/中 A 中文 [链接](x)\n";
+    assert_eq!(pipeline.fix(original, &linked)?, fixed);
+    assert_eq!(pipeline.fix(fixed, &linked)?, fixed);
+
+    // A directive silences the rule the line would otherwise trip, while an
+    // unrelated rule stays configured as a warning: the two settings are read
+    // from different places and neither may swallow the other.
+    let downgraded = configured(
+        "seed-directive",
+        "severity = { zh-typography-4 = \"warning\" }\n",
+    )?;
+    let original = "<!-- limae-disable-next-line zh-typography-1 -->\n你好,世界\n";
+    assert_eq!(pipeline.check(original, &downgraded)?, []);
+    assert_eq!(pipeline.fix(original, &downgraded)?, original);
+    assert_eq!(
+        downgraded.severity(RuleId::ZH_TYPOGRAPHY_4),
+        Severity::Warning
+    );
+    // Control arm: without the directive the same line is a finding, so the
+    // empty result above is the directive and not an inert configuration.
+    assert_eq!(
+        pipeline
+            .check("你好,世界\n", &downgraded)?
+            .iter()
+            .map(|finding| finding.rule)
+            .collect::<Vec<_>>(),
+        [RuleId::ZH_TYPOGRAPHY_1]
     );
     Ok(())
 }

@@ -364,6 +364,14 @@ fn ignore_errors_retain_the_source_and_path() -> TestResult {
         not_ignored(&paths(&["x.md"]), root.path()),
         Err(IgnoreError::Pattern { line: 2, .. })
     );
+    // A bare `!` is one shape of unusable pattern, not the shape. A line that
+    // ends in an escape has nothing to escape, and naming only the one we
+    // happened to think of leaves every other one silently matching nothing.
+    fs::write(&ignore, "*.md\ntrailing\\\n")?;
+    assert_matches!(
+        not_ignored(&paths(&["x.md"]), root.path()),
+        Err(IgnoreError::Pattern { line: 2, .. })
+    );
     Ok(())
 }
 

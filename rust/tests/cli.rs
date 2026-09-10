@@ -531,3 +531,69 @@ fn the_hook_subcommand_answers_one_message_display_event_on_standard_input() -> 
     assert!(shown.contains("── 润色 ──"), "{shown:?}");
     Ok(())
 }
+
+/// One finding's whole report, byte for byte.
+///
+/// Every other arm here reads the report with `contains`, which says nothing
+/// about the frame around the finding: the `…` on either side of the excerpt is
+/// what tells the reader they are looking at a window and not at the line, and
+/// a run that lost it, or that cut the window somewhere else, would satisfy
+/// every one of those assertions.
+#[test]
+fn a_single_finding_is_reported_and_summarised_byte_for_byte() -> TestResult {
+    let root = TempDir::new()?;
+    fs::write(root.path().join("t.md"), "你好,世界")?;
+
+    let (code, stdout, stderr) = output_text(run(root.path(), &["t.md"])?)?;
+    assert_eq!((code, stderr.as_str()), (1, ""));
+    assert_eq!(
+        stdout,
+        "t.md:1: error: [zh-typography-1 halfwidth punct next to CJK] …你好,世界…\n\
+         \n1 error(s), 0 warning(s). --fix auto-fixes most.\n"
+    );
+    Ok(())
+}
+
+/// A configuration this run cannot act on is the user's own mistake, and the
+/// `check` path says so in the two ways that are machine-readable: exit 2 —
+/// which is what `polish` already answers, and what tells a caller "you asked
+/// for something impossible" apart from "your document has problems" — and a
+/// `config error: ` prefix on the diagnostic. Nothing goes to standard output,
+/// because a report was never produced.
+///
+/// The control arm is the same file with the same rule under a configuration
+/// that parses: exit 1 and the finding on standard output. Without it, a run
+/// that answered 2 to everything would pass the arms above.
+#[test]
+fn a_configuration_error_is_a_usage_error_on_the_check_path() -> TestResult {
+    let root = TempDir::new()?;
+    fs::write(root.path().join("t.md"), "你好,世界")?;
+
+    // Unparseable file, invalid value, and an override the command line
+    // contradicts: three origins, one contract.
+    for (name, contents, flags) in [
+        ("pyproject.toml", "[project\n", &[] as &[&str]),
+        ("limae.toml", "disable = \"zh-typography-1\"\n", &[]),
+        ("limae.toml", "", &["--disable", "R99"]),
+    ] {
+        fs::write(root.path().join(name), contents)?;
+        let mut args: Vec<&str> = flags.to_vec();
+        args.push("t.md");
+        let (code, stdout, stderr) = output_text(run(root.path(), &args)?)?;
+        assert_eq!((code, stdout.as_str()), (2, ""), "for {name} {flags:?}");
+        assert!(
+            stderr.starts_with("config error: "),
+            "for {name} {flags:?}: {stderr}"
+        );
+        fs::remove_file(root.path().join(name))?;
+    }
+
+    // Control arm: the same rule on the same file, configured legally.
+    let (code, stdout, stderr) = output_text(run(root.path(), &["t.md"])?)?;
+    assert_eq!((code, stderr.as_str()), (1, ""));
+    assert!(
+        stdout.contains("t.md:1: error: [zh-typography-1"),
+        "{stdout}"
+    );
+    Ok(())
+}

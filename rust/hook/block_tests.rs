@@ -896,6 +896,71 @@ fn a_message_that_is_long_only_in_code_is_left_alone() -> TestResult {
     Ok(())
 }
 
+/// A turn that was not polished writes no run record.
+///
+/// The record is of what polish did. A message too short to be worth polishing
+/// and an engine that would not answer both did nothing, so both have nothing
+/// to write down — a directory of records has to mean what it says, or the
+/// evidence it holds is diluted by entries for turns no model ever saw. Today
+/// only the third way of doing nothing, a fix that would not run, has an arm.
+#[test]
+fn a_turn_that_was_not_polished_writes_no_run_record() -> TestResult {
+    let short = Fixture::new("record-short")?;
+    short.install("mygateway", &answering(&long()))?;
+    short.configure("[polish]\nengine = \"custom\"\ncommand = [\"mygateway\"]\n")?;
+    assert_eq!(
+        block(
+            "好的。",
+            short.state.path(),
+            MESSAGE,
+            &short.with(&[(RATE_VARIABLE, "0")]),
+            short.cwd.path(),
+            now(),
+        ),
+        ""
+    );
+    assert_eq!(short.records(), Vec::<PathBuf>::new());
+
+    let failing = Fixture::new("record-failing")?;
+    failing.install("mygateway", "cat > /dev/null\nexit 1")?;
+    failing.configure("[polish]\nengine = \"custom\"\ncommand = [\"mygateway\"]\n")?;
+    assert_eq!(
+        block(
+            &long(),
+            failing.state.path(),
+            MESSAGE,
+            &failing.with(&[(RATE_VARIABLE, "0")]),
+            failing.cwd.path(),
+            now(),
+        ),
+        ""
+    );
+    assert_eq!(failing.records(), Vec::<PathBuf>::new());
+
+    // Control arm: the same message through an engine that answers does write
+    // one, so "no record" above is the turn and not a directory nothing ever
+    // reaches.
+    let polished = Fixture::new("record-polished")?;
+    polished.install(
+        "mygateway",
+        &answering("ACME 的报告写得不错，读起来像人话。"),
+    )?;
+    polished.configure("[polish]\nengine = \"custom\"\ncommand = [\"mygateway\"]\n")?;
+    assert_ne!(
+        block(
+            &long(),
+            polished.state.path(),
+            MESSAGE,
+            &polished.with(&[(RATE_VARIABLE, "0")]),
+            polished.cwd.path(),
+            now(),
+        ),
+        ""
+    );
+    assert_eq!(polished.records().len(), 1);
+    Ok(())
+}
+
 /// The rate decides which of the two blocks a message gets, and the two ends of
 /// it are the deterministic arms: one engine and an ordinary block, or two
 /// engines and a blind comparison.
