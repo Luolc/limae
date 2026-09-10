@@ -199,6 +199,9 @@ jobs:
         run: |
           set -euo pipefail
           tools/pypi_upload_set.sh limae "${GITHUB_REF_NAME#v}" dist/pypi
+          # nullglob: with every wheel dropped, the pattern must count 0,
+          # not 1 for its own unexpanded self.
+          shopt -s nullglob
           remaining=(dist/pypi/*.whl)
           echo "count=${#remaining[@]}" >>"$GITHUB_OUTPUT"
       - uses: pypa/gh-action-pypi-publish@release/v1
