@@ -75,7 +75,7 @@ repos:
   # exists to save. `tests/test_environment.py` pins this pattern from
   # both sides — it has to wake for those files and stay out of
   # everything else — by asserting the expression the way pre-commit
-  # applies it. Gate 10 runs the hook itself.
+  # applies it. Gate 11 runs the hook itself.
   - repo: local
     hooks:
       - id: cargo-fmt
@@ -103,4 +103,28 @@ repos:
         language: system
         entry: cargo run --quiet --locked --bin limae --
         files: \.md$
+        require_serial: true
+  # The same linter over the lexicon's own Chinese prose. `spec/lexicon/*.toml`
+  # carries the title, preface, standard, threshold and every entry's
+  # explanation and examples — well over a hundred fields written to be read,
+  # and none of them selected by the `\.md$` hook above. A lexicon about how
+  # Chinese should be written had no gate on its own typography.
+  #
+  # `files` keys on the path, not on the extension. `.toml` in the hook above
+  # would drag in `Cargo.toml`, `rust-toolchain.toml` and `askama.toml`, none
+  # of which is prose; this expression takes the lexicon directory and nothing
+  # else, so `en.toml` arrives without a configuration change.
+  #
+  # A separate Cargo example rather than a shell extractor: pulling strings
+  # out of TOML with `sed` fails by not matching — a multi-line string or an
+  # escape it mishandles is a field that is simply never checked, and the hook
+  # stays green while doing nothing. `lint-lexicon` parses with the same crate
+  # `render-lexicon` does and reports real TOML line numbers.
+  - repo: local
+    hooks:
+      - id: limae-lexicon
+        name: chinese lexicon format (limae)
+        language: system
+        entry: cargo run --quiet --locked --example lint-lexicon --
+        files: ^spec/lexicon/.*\.toml$
         require_serial: true

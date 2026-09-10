@@ -40,6 +40,10 @@ path = "rust/tools/diff_probe.rs"
 name = "render-lexicon"
 path = "rust/tools/render_lexicon.rs"
 
+[[example]]
+name = "lint-lexicon"
+path = "rust/tools/lint_lexicon.rs"
+
 [[test]]
 name = "integration"
 path = "rust/tests/integration.rs"
