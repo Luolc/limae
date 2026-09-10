@@ -34,11 +34,11 @@ path = "rust/main.rs"
 
 [[example]]
 name = "diff-probe"
-path = "rust/examples/diff_probe.rs"
+path = "rust/tools/diff_probe.rs"
 
 [[example]]
 name = "render-lexicon"
-path = "rust/examples/render_lexicon.rs"
+path = "rust/tools/render_lexicon.rs"
 
 [[test]]
 name = "integration"
