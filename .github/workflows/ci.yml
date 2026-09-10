@@ -93,6 +93,16 @@ jobs:
       - name: Lexicon prose is clean
         run: cargo run --quiet --locked --example lint-lexicon -- spec/lexicon/zh.toml
 
+      # The step above guards the lexicon's prose; this one guards the linter.
+      # `spec/lexicon/zh.toml` is clean, so running the tool over it prints
+      # `OK` whether the line mapping is right, wrong, or deleted. This drives
+      # the tool over fixtures whose line numbers are fixed and asserts them.
+      # It re-runs the committed lexicon as its own control arm, not as a
+      # second content gate: every other arm asserts something is reported,
+      # and a linter that reported everything would pass them all.
+      - name: Lexicon linter reports real lines
+        run: tools/check_lexicon_lint.sh
+
       - name: Rust differential artifacts
         run: cargo build --locked --bin limae --example diff-probe
 

@@ -25,6 +25,14 @@
 //! `limae.toml` discovery — a repository that turned the experimental
 //! families on for its Markdown must not thereby turn them on here.
 //!
+//! That reason covers `examples[].before` alone. `gloss`, `fault`,
+//! `preface`, `threshold`, `title` and `subtitle` are the lexicon speaking
+//! in its own voice, and they are exactly the prose the lexical families
+//! were written for; switching those families off over them is a
+//! conservative choice, not a principle. What it costs is visible in
+//! `tools/check_lexicon_lint.sh`: the sentence its lexical arm proves is
+//! going unreported is a `gloss`, not a collected specimen.
+//!
 //! # Why not the `render-lexicon` types
 //!
 //! Reporting a real TOML line needs each field's byte span, so the fields are
@@ -211,13 +219,20 @@ const fn severity_name(severity: Severity) -> &'static str {
     }
 }
 
+/// How many findings one lexicon produced, and how many of them are errors.
+#[derive(Default)]
+struct Report {
+    errors: usize,
+    total: usize,
+}
+
 /// Check one lexicon, printing one message per finding.
 fn check_file(
     path: &Path,
     pipeline: &Pipeline,
     config: &ResolvedConfig,
     stdout: &mut dyn Write,
-) -> Result<usize, LintError> {
+) -> Result<Report, LintError> {
     let text = std::fs::read_to_string(path).map_err(|source| LintError::Read {
         path: path.to_owned(),
         source,
@@ -254,10 +269,13 @@ fn check_file(
             severity_name(*severity),
         )?;
     }
-    Ok(messages
-        .iter()
-        .filter(|(_, severity, ..)| *severity == Severity::Error)
-        .count())
+    Ok(Report {
+        errors: messages
+            .iter()
+            .filter(|(_, severity, ..)| *severity == Severity::Error)
+            .count(),
+        total: messages.len(),
+    })
 }
 
 /// Check every named lexicon; the flag is whether the run is clean.
@@ -278,16 +296,26 @@ fn run(cwd: &Path, paths: &[PathBuf], stdout: &mut dyn Write) -> Result<bool, Li
         },
     )?;
     let pipeline = Pipeline::new()?;
-    let mut errors = 0;
+    let mut report = Report::default();
     for path in paths {
-        errors += check_file(path, &pipeline, &config, stdout)?;
+        let one = check_file(path, &pipeline, &config, stdout)?;
+        report.errors += one.errors;
+        report.total += one.total;
     }
-    if errors == 0 {
+    if report.total == 0 {
         writeln!(stdout, "OK: {} lexicon file(s) clean", paths.len())?;
         return Ok(true);
     }
-    writeln!(stdout, "\n{errors} error(s) in the lexicon prose.")?;
-    Ok(false)
+    // Only an error fails the run, as in `limae` itself. A warning still has
+    // to reach the summary: printing one and then calling the file clean is
+    // a line that contradicts the line above it.
+    writeln!(
+        stdout,
+        "\n{} error(s), {} warning(s) in the lexicon prose.",
+        report.errors,
+        report.total - report.errors,
+    )?;
+    Ok(report.errors == 0)
 }
 
 fn main() -> ExitCode {
