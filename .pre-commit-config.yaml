@@ -64,13 +64,22 @@ repos:
   # a different thing than the gate does. The cost is that any unformatted
   # Rust file blocks a commit that stages any other Rust file; that is the
   # same reach gate 1 has.
+  #
+  # `files` therefore has to list every file that can change what this
+  # command prints, not just the ones it prints about. `Cargo.toml` fixes
+  # the targets and the edition, a rustfmt.toml would carry the style
+  # itself, and `rust-toolchain.toml` picks which rustfmt runs. A commit
+  # touching only one of those reformats the tree without staging a single
+  # `.rs`, and a hook keyed on `\.rs$` alone sleeps through it — the break
+  # then surfaces at gate 1 in CI, which is exactly the trip this hook
+  # exists to save. `tests/test_environment.py` holds the two arms.
   - repo: local
     hooks:
       - id: cargo-fmt
         name: rust format (cargo fmt)
         language: system
         entry: cargo fmt --check
-        files: \.rs$
+        files: (\.rs$|^Cargo\.toml$|^\.?rustfmt\.toml$|^rust-toolchain\.toml$)
         pass_filenames: false
   # Dogfooding: this repo's own Markdown is checked by this repo's linter —
   # the Rust one, which is now the product (ADR-0015 stage E).
