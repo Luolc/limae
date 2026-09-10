@@ -9,11 +9,13 @@
 //! [`every_variant!`] invocation is the only place its enum's variants are
 //! named: the same tokens become the array `main` prints and the arms of a
 //! `match` with no wildcard. A variant added to the enum and not to the
-//! invocation is a missing arm, and that is a compile error; the only edit
-//! that fixes it also puts the variant in the array, and the array is what
-//! the gate compares with the handbook. There is no second place to update
-//! and forget. Compiling is enough to trip the lock, and
-//! `cargo clippy --all-targets` and `cargo test` both do.
+//! invocation is a missing arm, and that is a compile error; the only edits
+//! that fix it also put the variant's values in the array, and the array is
+//! what the gate compares with the handbook. A variant that carries data is
+//! named together with the constant array of its payloads, and every element
+//! of that array is written into the output — there is no way to name a
+//! variant for the `match` without also producing it. Compiling is enough
+//! to trip the lock, and `cargo clippy --all-targets` and `cargo test` both do.
 //!
 //! The Cargo target is `[[example]]` for the same reason `render-lexicon` is:
 //! it must not ship with `cargo install`. It reads nothing at run time, so it
@@ -30,23 +32,43 @@ use std::process::ExitCode;
 use limae::hook::state::Kind;
 use limae::polish::diagnosis::FailureReason;
 
-/// Name every unit variant of an enum once, as an array and as a `match`.
+/// Name every variant of an enum once, as an array and as a `match`.
 ///
-/// `covered elsewhere` takes the patterns for variants that carry data and are
-/// listed through another enum; a listed variant repeated is an unreachable
-/// arm, which the build rejects as well.
+/// Unit variants are listed by name. A variant that carries data is written
+/// `Variant(SOURCE)`, where `SOURCE` is a constant array of the payloads; the
+/// array gets one element per payload, in order, ahead of the unit variants.
+/// A variant named twice is an unreachable arm, which the build rejects too.
 macro_rules! every_variant {
     (
-        $list:ident: $type:ident = [$($variant:ident),+ $(,)?]
-        $(, covered elsewhere: [$($elsewhere:pat),+ $(,)?])?
+        $list:ident: $type:ident = [$($unit:ident),+ $(,)?]
+        $(, carrying: [$($carrier:ident($source:ident)),+ $(,)?])?
     ) => {
-        const $list: [$type; [$($type::$variant),+].len()] = [$($type::$variant),+];
+        const $list: [$type; [$($type::$unit),+].len() $($(+ $source.len())+)?] = {
+            let units = [$($type::$unit),+];
+            let mut out = [units[0]; [$($type::$unit),+].len() $($(+ $source.len())+)?];
+            let mut next = 0;
+            $($(
+                let mut index = 0;
+                while index < $source.len() {
+                    out[next] = $type::$carrier($source[index]);
+                    next += 1;
+                    index += 1;
+                }
+            )+)?
+            let mut index = 0;
+            while index < units.len() {
+                out[next] = units[index];
+                next += 1;
+                index += 1;
+            }
+            out
+        };
         const _: () = {
             let mut index = 0;
             while index < $list.len() {
                 match $list[index] {
-                    $($type::$variant => {})+
-                    $($($elsewhere => {})+)?
+                    $($type::$unit => {})+
+                    $($($type::$carrier(_) => {})+)?
                 }
                 index += 1;
             }
@@ -67,18 +89,13 @@ every_variant!(REASONS: FailureReason = [
 ]);
 
 every_variant!(
-    OTHERS: Kind = [Incomplete, Repaired, Misconfigured, Crashed],
-    covered elsewhere: [Kind::Engine(_)]
+    KINDS: Kind = [Incomplete, Repaired, Misconfigured, Crashed],
+    carrying: [Engine(REASONS)]
 );
 
 fn main() -> ExitCode {
     let mut stdout = io::stdout().lock();
-    let kinds = REASONS
-        .iter()
-        .map(|reason| Kind::Engine(*reason))
-        .chain(OTHERS)
-        .map(Kind::as_str);
-    for kind in kinds {
+    for kind in KINDS.map(Kind::as_str) {
         if writeln!(stdout, "{kind}").is_err() {
             return ExitCode::FAILURE;
         }
