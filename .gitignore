@@ -2,3 +2,7 @@ target/
 # Claude Code's per-checkout settings, where the polish hook is turned on
 # for this repository's own sessions (ADR-0009 section 七).
 .claude/settings.local.json
+# The lexicon page is no longer committed: GitHub Actions renders it from
+# spec/lexicon/zh.toml on every push to main and publishes it to Pages.
+# `cargo run --example render-lexicon` still writes it here for a local look.
+site/

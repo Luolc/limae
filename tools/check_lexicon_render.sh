@@ -1,25 +1,38 @@
 #!/usr/bin/env bash
-# The lexicon page that is committed must be the one the generator produces.
+# The generator still turns spec/lexicon/zh.toml into a page, and the page
+# still follows its source.
 #
-# `site/index.html` is a committed product of the `render-lexicon` Cargo
-# example over `spec/lexicon/zh.toml`. Nothing else in the quality bar reads
-# the page, so editing the source without regenerating it, or changing the
-# generator and leaving the page behind, keeps every other gate green.
+# `site/index.html` is not committed. Since 2026-09 the workflow in
+# .github/workflows/ci.yml renders it from `spec/lexicon/zh.toml` with the
+# `render-lexicon` Cargo example on every run and publishes it to GitHub
+# Pages from main. There is therefore no committed page to fall behind its
+# source, and the arm that compared the two went with it: the failure it
+# named ("the page was not regenerated") no longer exists.
 #
-# What this gate does not do: it has one generator, so it cannot notice the
-# generator drifting. Until 2026-09 there was a second, independent Python
-# generator and the two were compared byte for byte; that comparison caught
-# a port going wrong, and it went with the Python generator. The check
-# against the committed page pins the current output, which is a different
-# and weaker thing: an intended change to the template is committed together
-# with the page it renders, and this gate has nothing to say about it. The
-# template itself is compiled in by askama, so a field the template names
-# that the data does not carry fails the build, not this gate.
+# What this gate does guard, all of it on freshly rendered output:
+#   - the generator runs to completion over the real lexicon;
+#   - the page follows its input rather than carrying a fixed body, asserted
+#     by rendering a perturbed copy of the source and requiring a different
+#     page;
+#   - `fault`, `title` and `subtitle` reach the page in the escaped form the
+#     template owes them, asserted on the literal HTML.
 #
-# The comparison is run twice: once over the committed source, and once over a
-# perturbed copy of it. The second run is the control arm. Agreement over one
-# fixed input is also what a generator that ignored its input would show;
-# a page that changed with its input is not.
+# What it does not guard, and nothing else does either:
+#   - whether the page is *right*. There is one generator, so a change to
+#     `rust/templates/lexicon.html` that renders a worse page renders it
+#     consistently, and this gate has nothing to say about it. Until 2026-09
+#     there was a second, independent Python generator and the two were
+#     compared byte for byte; that comparison caught a port going wrong, and
+#     it went with the Python generator. A template change still has to be
+#     read by a person.
+#   - whether the published site matches this repository. That is the deploy
+#     job's business, and a green deploy is not evidence about the domain.
+#   - a field the template names that the data does not carry: askama
+#     compiles the template in, so that fails the build, not this gate.
+#
+# The perturbation is the control arm. Rendering without crashing is also
+# what a generator that ignored its input would do; a page that changed with
+# its input is not.
 
 set -euo pipefail
 
@@ -65,13 +78,14 @@ page() {
   printf '%s\n' "$work_dir/$1/site/index.html"
 }
 
-# The committed source must render to the committed page.
-render committed "$repo_root/spec/lexicon/zh.toml"
-if ! cmp -s "$(page committed)" "$repo_root/site/index.html"; then
-  cmp "$(page committed)" "$repo_root/site/index.html" >&2 || true
-  fail 'site/index.html is out of date; rerun `cargo run --example render-lexicon`'
-fi
-printf '%s\n' 'committed source: site/index.html matches'
+# The baseline the control arm is measured against: the real lexicon,
+# rendered here and now. Nothing is compared to it yet; `render` fails if the
+# generator does not finish. The label is `baseline`, not `committed` — the
+# lexicon is committed but the page is not, and a diagnostic that says
+# "committed page" would name something this repository no longer has.
+render baseline "$repo_root/spec/lexicon/zh.toml"
+[[ -s $(page baseline) ]] || fail 'the real lexicon rendered an empty page'
+printf '%s\n' 'baseline: the generator rendered a page from the real lexicon'
 
 # The control arm. The title and subtitle are replaced, and one entry is
 # appended, chosen to move the parts of the page that are easiest to get
@@ -95,8 +109,8 @@ examples = [
 ]
 TOML
 render perturbed "$perturbed"
-if cmp -s "$(page perturbed)" "$repo_root/site/index.html"; then
-  fail 'the perturbed source rendered to the committed page; the comparison is vacuous'
+if cmp -s "$(page perturbed)" "$(page baseline)"; then
+  fail 'the perturbed source rendered the same page as the baseline; the comparison is vacuous'
 fi
 # A changed page is still what a generator that dropped `fault` would show:
 # the other fields of the appended entry move the page on their own. So the
