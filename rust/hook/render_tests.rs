@@ -30,7 +30,9 @@ fn spelled(op: &Opcode) -> String {
 /// rewrite, not a reasonable diff of it. A different-but-sensible alignment
 /// would give the reader a different number of changes for the same rewrite, so
 /// the reference implementation's answers are replayed here character for
-/// character. `--count` on the generator raises the corpus for a wider sweep.
+/// character. The corpus cannot be widened any more: the generator that could
+/// has been removed, and a wider one was run once before it went (see
+/// `render_cases.rs`).
 #[test]
 fn the_alignment_and_the_pairs_match_the_reference_implementation() {
     assert!(

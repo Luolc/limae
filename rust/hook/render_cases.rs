@@ -1,11 +1,13 @@
 // A frozen archive; do not edit by hand and do not regenerate.
 //
 // What the Python reference implementation `src/limae/hook.py` answered over a
-// fixed synthetic corpus, recorded once by `tools/render_diff_cases.py` before
-// that implementation and its generator were deleted. `render_tests.rs`
-// replays it against this module's port.
+// fixed synthetic corpus, recorded once by `tools/render_diff_cases.py`. The
+// generator was deleted with this file's last update; the reference
+// implementation is deprecated and scheduled for removal, and this archive is
+// deliberately not tracking any further change to it. `render_tests.rs`
+// replays the archive against this module's port.
 //
-// Corroborated before the reference was removed by a one-shot sweep at
+// Corroborated while the reference was still runnable, by a one-shot sweep at
 // `--count 20000`: generating the wider corpus took 24s (25.5 MB) and the port
 // reproduced all 20000 cases byte for byte (`cargo test`, exit 0, 62s). That
 // reading on its own would not show the sweep could fail, so it has a control
