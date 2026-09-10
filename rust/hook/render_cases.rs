@@ -1,11 +1,10 @@
 // A frozen archive; do not edit by hand and do not regenerate.
 //
-// What the Python reference implementation `src/limae/hook.py` answered over a
-// fixed synthetic corpus, recorded once by `tools/render_diff_cases.py`. The
-// generator was deleted with this file's last update; the reference
-// implementation is deprecated and scheduled for removal, and this archive is
-// deliberately not tracking any further change to it. `render_tests.rs`
-// replays the archive against this module's port.
+// What the Python reference implementation answered over a fixed synthetic
+// corpus, recorded once by a generator that was deleted with this file's last
+// update. The reference implementation itself has since been deleted from the
+// repository, so this archive is the last word: there is nothing left for it
+// to track. `render_tests.rs` replays the archive against this module's port.
 //
 // Corroborated while the reference was still runnable, by a one-shot sweep at
 // `--count 20000`: generating the wider corpus took 24s (25.5 MB) and the port

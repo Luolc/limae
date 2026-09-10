@@ -61,7 +61,7 @@ hook 配置写进 `.claude/settings.local.json`。这个文件不入库 (见 `.g
 
 - **`timeout` 必须给，而且要大于模型一次调用的时间**。`MessageDisplay` 事件在宿主里的默认超时是 10 秒 (2026-09-01 在 Claude Code `2.1.257` 的二进制里核到：每个 hook 取 `timeout * 1000`，没写才用事件的默认值，`MessageDisplay` 那个默认值是 `1e4`)。不给 `timeout`，模型永远赶不上，每条回复都白跑一次。
 - **两个事件用同一条命令**：进程按 stdin 里的 `hook_event_name` 自己分流，不需要参数。
-- **走 `target/debug/limae` 这个已建好的 binary，不要写 `cargo run`**：这条命令每批新行都要起一次进程 (一条回复约十次)，而且 `MessageDisplay` 的各批是并发派发的 —— `cargo run` 会让它们排在 Cargo 的 build 目录锁上，一个一个来。没有 `target/debug/limae` 就先 `cargo build`；**改完 Rust 源码要重建**，否则挂着的是上一次建出来的那个。本机 2026-09-07 实测 (各 10 次)：Rust binary 约 2 ms 一次，改名前的 Python 入口 (`.venv/bin/limae-python`) 约 164 ms。
+- **走 `target/debug/limae` 这个已建好的 binary，不要写 `cargo run`**：这条命令每批新行都要起一次进程 (一条回复约十次)，而且 `MessageDisplay` 的各批是并发派发的 —— `cargo run` 会让它们排在 Cargo 的 build 目录锁上，一个一个来。没有 `target/debug/limae` 就先 `cargo build`；**改完 Rust 源码要重建**，否则挂着的是上一次建出来的那个。本机 2026-09-07 实测 (10 次)：Rust binary 约 2 ms 一次。
 
 改完**重开一个 Claude Code 会话**才生效。
 
@@ -166,7 +166,7 @@ tail "${TMPDIR:-/tmp}"/limae-hook/*/diagnostics.jsonl
 | `step` | 哪一步：`assemble` 拼分片、`single` 单跑润色、`ab` A/B 对照、`fix` 确定性修复、`record` 落台账、`display` hook 自己崩了 |
 | `kind` | 哪一类，见下表 |
 
-`kind` 是**完整的一张表** —— 按它反查就能定位，漏一类就等于那类失败查不到：
+`kind` 是**完整的一张表** —— 按它反查就能定位，漏一类就等于那类失败查不到；`tools/check_repo_contracts.sh` 拿代码里的全集对着它核，漏一行门就红：
 
 | `kind` | 什么意思 | 下一步 |
 | --- | --- | --- |
