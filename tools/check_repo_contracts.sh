@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Repository maintenance contracts that no crate test can carry.
 #
-# Three promises in this repository are made to its own maintainers rather
+# Four promises in this repository are made to its own maintainers rather
 # than to users of the crate, and each lives in a file that is not part of
 # the package:
 #
@@ -16,6 +16,10 @@
 #      this gate only compares.
 #   3. The `cargo-fmt` hook in `.pre-commit-config.yaml` wakes for every file
 #      that changes what `cargo fmt --check` prints, and for nothing else.
+#   4. The `limae-lexicon` hook in the same file wakes for every lexicon and
+#      for no other TOML. It keys on the path rather than the extension so
+#      that the build configuration is never fed to the Chinese typography
+#      rules, and so that an `en.toml` arrives checked with no edit here.
 #
 # They are here and not in `rust/tests/` because a test that reads these
 # files either ships them in the crate (they are not crate resources) or
@@ -115,12 +119,40 @@ missing=$(grep -vxF -f "$work_dir/rows" "$work_dir/kinds" || true)
 }
 printf 'handbook: all %s kinds have a row\n' "$(wc -l <"$work_dir/kinds")"
 
-# 3. The cargo-fmt hook's `files` pattern, applied the way pre-commit applies
-# it: a search of the pattern against the repository-relative path.
+# 3 and 4. Two hooks' `files` patterns, applied the way pre-commit applies
+# them: a search of the pattern against the repository-relative path.
 precommit_config="$repo_root/.pre-commit-config.yaml"
 [[ -f $precommit_config ]] || fail "$precommit_config is missing"
-pattern=$(sed -n '/^      - id: cargo-fmt$/,/^  - repo:/p' "$precommit_config" |
-  sed -n 's/^ *files: //p')
+
+# Read one hook's `files` pattern out of the configuration.
+#
+# The block runs from the hook's `id` to whatever declaration comes next, and
+# that end is spelled as "the next hook or repo" rather than as "the next
+# `- repo:`. Every local hook here currently sits under a `- repo: local` of
+# its own, which is the arrangement that makes the narrower end work; put two
+# hooks under one `- repo:`, as anyone tidying this file might, and a range
+# ending at `- repo:` runs past the first hook and comes back with both
+# patterns. Measured 2026-09-10 with `cargo-fmt` and `limae` sharing a block:
+# the range yields two lines, `grep -E` reads them as alternatives, and
+# `README.md` is then reported as waking the format hook. So it fails rather
+# than passing quietly — but it fails naming the wrong thing, which sends the
+# next person to edit a `files` pattern that was never wrong. This is a
+# sturdier reading of the same file, not a repair of a hole.
+#
+# An empty result is a failure and not an empty pattern: this is also the arm
+# that speaks up if a hook is renamed or deleted, rather than going green
+# because there is nothing left to assert about.
+hook_files_pattern() {
+  local hook=$1
+
+  awk -v id="      - id: $hook" '
+    $0 == id { found = 1; next }
+    found && /^ *- (id|repo):/ { exit }
+    found
+  ' "$precommit_config" | sed -n 's/^ *files: //p'
+}
+
+pattern=$(hook_files_pattern cargo-fmt)
 [[ -n $pattern ]] || fail 'the cargo-fmt hook has no files pattern'
 # `cargo fmt --check` reads more than the files it prints about: Cargo.toml
 # fixes the targets and the edition, a rustfmt.toml would carry the style,
@@ -137,3 +169,23 @@ for path in README.md docs/tracker.md .pre-commit-config.yaml spec/rules.md; do
   fi
 done
 printf '%s\n' 'cargo-fmt hook: wakes for the Rust inputs and for nothing else'
+
+# 4. The lexicon hook takes the lexicon directory and nothing else.
+pattern=$(hook_files_pattern limae-lexicon)
+[[ -n $pattern ]] || fail 'the limae-lexicon hook has no files pattern'
+# `en.toml` is the point of keying on the directory rather than on `zh.toml`:
+# an English lexicon is coming, and it has to arrive checked.
+for path in spec/lexicon/zh.toml spec/lexicon/en.toml; do
+  printf '%s\n' "$path" | grep -qE -- "$pattern" ||
+    fail "$path would not wake the limae-lexicon hook"
+done
+# The other half, and the reason the pattern is a path and not `\.toml$`:
+# none of these is prose, and running this repository's Chinese typography
+# rules over its own build configuration is not a thing anyone asked for.
+for path in Cargo.toml rust-toolchain.toml askama.toml .pre-commit-config.yaml \
+  spec/wordlists/zh-word-1.toml docs/tracker.md; do
+  if printf '%s\n' "$path" | grep -qE -- "$pattern"; then
+    fail "$path would wake the limae-lexicon hook"
+  fi
+done
+printf '%s\n' 'limae-lexicon hook: wakes for every lexicon and for no other TOML'
