@@ -88,7 +88,7 @@ jobs:
       # The lexicon's own Chinese prose, checked with this repo's own rules.
       # Same blind spot as the page above: the `limae` hook selects `\.md$`,
       # so the hundred-odd fields of spec/lexicon/*.toml were read by nobody.
-      # Gate 10 runs this through pre-commit; this step is the one that runs
+      # Gate 11 runs this through pre-commit; this step is the one that runs
       # on a branch where `pre-commit install` never happened.
       - name: Lexicon prose is clean
         run: cargo run --quiet --locked --example lint-lexicon -- spec/lexicon/zh.toml
