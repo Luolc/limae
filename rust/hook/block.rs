@@ -4,8 +4,9 @@
 //! work: [`crate::hook::render`] measures and lays out, [`crate::hook::parts`]
 //! runs the deterministic fixes and reads the knobs, [`crate::hook::ab`] draws
 //! and records the trials, and this module decides which of them a given
-//! message gets. `src/limae/hook.py` is the reference implementation and
-//! `docs/adr/0009-polish-hook-contract.md` is the normative description.
+//! message gets. `docs/adr/0009-polish-hook-contract.md` is the normative
+//! description; the Python reference implementation this was ported from has
+//! since been deleted.
 //!
 //! Three decisions live here and nowhere else:
 //!

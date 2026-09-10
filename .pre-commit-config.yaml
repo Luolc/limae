@@ -18,41 +18,6 @@ repos:
     hooks:
       - id: gitleaks
         args: ["--redact", "--no-banner", "."]
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.7
-    hooks:
-      - id: ruff
-        args: ["--fix"]
-  - repo: https://github.com/google/pyink
-    rev: 25.12.0
-    hooks:
-      - id: pyink
-  - repo: https://github.com/PyCQA/isort
-    rev: 8.0.1
-    hooks:
-      - id: isort
-  - repo: https://github.com/DetachHead/basedpyright-pre-commit-mirror
-    rev: 1.39.0
-    hooks:
-      - id: basedpyright
-  # Docstring Args:/Returns:/Raises: must match the actual signature. Types are
-  # deliberately NOT checked in docstrings (basedpyright owns types; docstrings
-  # never repeat them).
-  - repo: https://github.com/jsh9/pydoclint
-    rev: 0.9.1
-    hooks:
-      - id: pydoclint
-        args:
-          - --style=google
-          - --arg-type-hints-in-docstring=False
-          - --check-return-types=False
-          - --check-yield-types=False
-          - --show-filenames-in-every-violation-message=True
-  - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.11.7
-    hooks:
-      - id: uv-lock
-        files: pyproject\.toml$
   # Rust formatting, the one Rust check fast enough for a commit hook
   # (0.34s warm, against AGENTS.md's ≤5s budget). `cargo clippy` is
   # deliberately absent: it compiles every target and belongs to the
@@ -72,10 +37,10 @@ repos:
   # touching only one of those reformats the tree without staging a single
   # `.rs`, and a hook keyed on `\.rs$` alone sleeps through it — the break
   # then surfaces at gate 1 in CI, which is exactly the trip this hook
-  # exists to save. `tests/test_environment.py` pins this pattern from
+  # exists to save. `tools/check_repo_contracts.sh` pins this pattern from
   # both sides — it has to wake for those files and stay out of
   # everything else — by asserting the expression the way pre-commit
-  # applies it. Gate 11 runs the hook itself.
+  # applies it. Gate 9 runs the hook itself.
   - repo: local
     hooks:
       - id: cargo-fmt
@@ -91,8 +56,8 @@ repos:
   # prebuilt binary passes just as green when that binary was built from a
   # commit weeks old, so the gate would be checking this repo's Markdown
   # against a ruleset that is not this repo's. `cargo run` cannot be stale.
-  # Warm, it costs about the same as the Python entry point did; a commit
-  # that touched Rust sources pays for the rebuild it already owed.
+  # Warm, `cargo run` is a cheap lookup; a commit that touched Rust sources
+  # pays for the rebuild it already owed.
   #
   # `require_serial` because concurrent invocations would queue on Cargo's
   # build-directory lock instead of on the files.

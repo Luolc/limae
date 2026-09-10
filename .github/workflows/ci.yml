@@ -1,6 +1,6 @@
-# Fast PR gate: format/lint/type-check + tests — the same quality bar that
-# runs locally (see AGENTS.md). Keeps main always-green; `check` is the
-# required check for branch protection.
+# Fast PR gate: the same quality bar that runs locally (see AGENTS.md).
+# Keeps main always-green; `check` is the required check for branch
+# protection.
 name: CI
 
 on:
@@ -48,13 +48,13 @@ jobs:
           tar -xzf "$archive" -C "$RUNNER_TEMP" gitleaks
           "$RUNNER_TEMP/gitleaks" git --redact --no-banner --verbose .
 
+      # Not a Python asset: `uv` is the carrier for `uvx pre-commit@…` below,
+      # which runs pre-commit without a project, a lockfile or a virtualenv
+      # in this repository.
       - name: Install uv (with cache)
         uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
-
-      - name: Sync deps (creates .venv, installs dev group)
-        run: uv sync
 
       - name: Rust toolchain
         run: rustup show
@@ -75,9 +75,6 @@ jobs:
           RUSTDOCFLAGS: -Dwarnings
         run: cargo doc --no-deps --locked
 
-      - name: Tests (Python reference)
-        run: uv run pytest -q
-
       # `site/index.html` is a committed product of the render-lexicon Cargo
       # example. The same blind spot: no other gate reads the page, so editing
       # spec/lexicon/zh.toml without regenerating it leaves every other gate
@@ -88,7 +85,7 @@ jobs:
       # The lexicon's own Chinese prose, checked with this repo's own rules.
       # Same blind spot as the page above: the `limae` hook selects `\.md$`,
       # so the hundred-odd fields of spec/lexicon/*.toml were read by nobody.
-      # Gate 11 runs this through pre-commit; this step is the one that runs
+      # Gate 9 runs this through pre-commit; this step is the one that runs
       # on a branch where `pre-commit install` never happened.
       - name: Lexicon prose is clean
         run: cargo run --quiet --locked --example lint-lexicon -- spec/lexicon/zh.toml
@@ -103,18 +100,19 @@ jobs:
       - name: Lexicon linter reports real lines
         run: tools/check_lexicon_lint.sh
 
-      - name: Rust differential artifacts
-        run: cargo build --locked --bin limae --example diff-probe
+      # The promises this repository makes to its own maintainers, which no
+      # crate test can carry: the Codex Stop hook, the handbook's kind
+      # table, and the file patterns of the cargo-fmt and limae-lexicon
+      # hooks. Needs the Rust toolchain.
+      - name: Repository contracts
+        run: tools/check_repo_contracts.sh
 
-      - name: Tests (Python / Rust parity)
-        run: uv run pytest -q --rust-bin target/debug/limae
+      # gitleaks + cargo-fmt + limae, this repository's own hooks over its
+      # own files.
+      - name: pre-commit hooks
+        run: uvx pre-commit@4.2.0 run --all-files --show-diff-on-failure
 
-      # ruff + pyink + isort + basedpyright + pydoclint + uv-lock + limae.
-      # basedpyright type-checks against .venv, so this runs after `uv sync`.
-      - name: Format / lint / type-check
-        run: uv run pre-commit run --all-files --show-diff-on-failure
-
-      - name: pre-commit consumer install (Rust and Python)
+      - name: pre-commit consumer install
         run: tools/check_precommit_consumer.sh
 
       - name: Install Rust distribution targets

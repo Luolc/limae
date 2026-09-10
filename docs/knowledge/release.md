@@ -18,9 +18,7 @@ token 若曾以任何形式出现在会话记录、命令输出或仓内文本�
 
 ## 版本策略
 
-单一版本序列：`Cargo.toml` 与 `pyproject.toml` 的 `version` 保持同一个值，由 Rust 实现往前推。
-
-Python 参考实现自 0.13.0 起**冻结、不再发布** (用户 2026-09-08 裁决)：它的入口 `limae-python` 与测试继续保留、继续跑，是差分臂的对照一侧，但不再打 wheel、不再上传任何包索引。`pyproject.toml` 里的 `version` 因此只是跟随，不表示有对应的 Python 发布物。
+版本只有一个来源：`Cargo.toml` 的 `version`。Python 参考实现自 0.13.0 起冻结 (用户 2026-09-08 裁决)、2026-09-10 整体删除 (ADR-0015 补记)，从未有过发布物。
 
 ## `cargo publish --dry-run` 不能当验收
 

@@ -14,7 +14,7 @@
 //! Two separate things decide where this file lives and how it is built. The
 //! Cargo target is `[[example]]` because that is the mechanism that keeps it
 //! out of `cargo install`: the shipped binary set is `limae` alone, and
-//! `diff-probe` sits under the same declaration for the same reason. The
+//! `hook-kinds` sits under the same declaration for the same reason. The
 //! directory is `rust/tools/` because that is what the file is — a
 //! development-time tool, the same meaning the repository root's `tools/`
 //! carries. The two do not have to agree, because `Cargo.toml` spells the

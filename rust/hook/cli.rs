@@ -1,7 +1,8 @@
 //! The host protocol of the `hook` subcommand: one process, one event.
 //!
-//! `src/limae/hook.py` is the reference implementation and
-//! `docs/adr/0009-polish-hook-contract.md` the normative description. Every
+//! `docs/adr/0009-polish-hook-contract.md` is the normative description; the
+//! Python reference implementation this was ported from has since been
+//! deleted. Every
 //! decision about *what* to show is already made by the time this module runs
 //! — [`crate::hook::block`] makes it — so what is left here is the shape the
 //! two hosts speak in, and the entry point that always ends at exit code 0.

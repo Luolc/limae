@@ -8,8 +8,8 @@
 //! show that one word changed. [`changes`] therefore renders the change itself
 //! with a little of the sentence on either side.
 //!
-//! The reference implementation is `src/limae/hook.py`, whose alignment is
-//! `difflib.SequenceMatcher(None, before, after)` over the message's
+//! The reference implementation was Python's `hook.py`, since deleted, whose
+//! alignment was `difflib.SequenceMatcher(None, before, after)` over the message's
 //! characters. That matcher's particular block division — not "a diff", but
 //! that one — is what the pairs and the count are built on, so [`opcodes`] is a
 //! port of it rather than a substitute for it: the same longest-match rule, the

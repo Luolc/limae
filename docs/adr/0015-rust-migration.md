@@ -173,3 +173,5 @@ A8b 后，裸 `uv run pytest -q` 仍只跑 Python 臂；push 前 / CI 则先 `ca
 本方案的工程默认均已给出，后续由 orchestra 持续派活、agent 互审推进，不再等待人工切换许可。停止点是实际创建发布 tag、GitHub release 或执行 `cargo publish` 之前；届时汇报 crates.io 发布尚缺的许可证、发布权限 / 认证配置、元数据、名称及流程验收等，认证只报告状态与引用，不读写凭证值，不先发布占位包。发布流程调查由 orchestra 单独负责，本文不另建一套流程。
 
 补记 (2026-09-08)：用户 2026-09-08 裁决 **Python 参考实现从此冻结、不再发布，版本号与 Rust 走同一条序列**。原话是「Python 从此不再更新、版本与 Rust 走同一条序列」。这条落在上面「Python deprecated 且保留 reference / 测试」之上，把「deprecated」收紧成一个可判定的边界：`limae-python` 入口与全部 Python 测试继续保留、继续跑 (它是差分臂的对照一侧，撤掉就没有对照了)，但不再打 wheel、不再上传任何包索引，`pyproject.toml` 的 `version` 只是跟随 `Cargo.toml`、不表示存在对应的 Python 发布物。同日的另一条裁决解除了上一段那个停止点：0.13.0 已获授权发到 crates.io，`Cargo.toml` 的 `publish = false` 因此删除，发布步骤与判据的正本是 [发布手册](../knowledge/release.md)。本节其余各段不变。
+
+补记 (2026-09-10)：用户裁决 Python 参考实现**整体删除**，上一条补记把冻结读成「不再发布、但入口与测试继续保留」是误读。同日删除的有 `src/limae/`、`tests/`、根 `conftest.py`、`pyproject.toml`、`uv.lock`、hook id `limae-python`、差分臂 (`diff-probe` 与 `--rust-bin`) 及六个 Python 钩子；上文所有「保留 reference / 测试」「两实现差分」的表述自此只是历史。Python 侧仅剩的两条仓级契约测试 (Codex Stop 钩子 fail open、手册 `kind` 表齐全) 改由 `tools/check_repo_contracts.sh` 承接；pre-commit 本身改经 `uvx pre-commit@<钉住的版本>` 取得，仓里不再有 Python 项目。

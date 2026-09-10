@@ -80,9 +80,9 @@ pub fn tidy(text: &str, cwd: &Path) -> (String, Option<Kind>) {
 /// a message is whole is a question about which batches are in that directory,
 /// not about a number somebody sent us.
 ///
-/// This is where the two implementations part company. `_assemble` in
-/// `src/limae/hook.py` still lays out `range(batches)`; it is not followed here,
-/// because following it means keeping the hole.
+/// This is where the two implementations part company. `_assemble` in the
+/// Python reference implementation laid out `range(batches)`; it is not
+/// followed here, because following it means keeping the hole.
 ///
 /// Counting them is not enough on its own, which is why the check below is on
 /// indices rather than on how many there are: a run that died mid-message
@@ -111,7 +111,7 @@ pub fn tidy(text: &str, cwd: &Path) -> (String, Option<Kind>) {
 /// the hook's top-level catch (`display` / `crashed`); here the error is
 /// returned instead, so the mapping has to be written rather than inherited. A
 /// caller that reports it as [`Kind::Incomplete`], or that returns a partial
-/// message, has diverged from `src/limae/hook.py`.
+/// message, has diverged from the reference implementation.
 pub fn assemble(
     parts: &Path,
     batches: usize,

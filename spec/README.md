@@ -14,7 +14,7 @@
 
 `wordlists/zh-tell-1.txt`、`zh-tell-3.txt`、`zh-tell-4.txt`、`en-tell-1.txt`、`en-tell-3.txt` 一行一条 (`#` 注释、空行忽略)，`wordlists/zh-word-1.toml` 是 `wrong` / `right` / `anchors` 的 `entries` 数组。中文词表按字面子串匹配，英文词表 (`en-tell-1` / `en-tell-3`) 按整词、大小写不敏感。`wordlists/zh-tell-5-allow.txt` 与 `zh-word-2-allow.txt` 格式相同但方向相反，是**豁免表**：命中它才不报 —— 语义的正本都在 `rules.md`「词表」。
 
-**各实现从同一份 `spec/wordlists/` 获取词表，不在代码里手抄词条**。Python 参考实现运行时读取，入口在 `src/limae/wordlists.py`；`src/limae/wordlists` 是指向本目录的目录级软链，editable 安装与打好的 wheel 都能经 `importlib.resources` 找到同一份文件。Rust 已接入的词表由 `rust/resources.rs` 用 `include_str!` 在构建时嵌入，文件缺席则构建失败，运行时不发现资源路径。修改词表只改这里；Rust 需重新构建发行，规则逻辑不变，见 [ADR-0015 §三](../docs/adr/0015-rust-migration.md#三共享资源与必要依赖)。
+**各实现从同一份 `spec/wordlists/` 获取词表，不在代码里手抄词条**。Rust 由 `rust/resources.rs` 用 `include_str!` 在构建时嵌入，文件缺席则构建失败，运行时不发现资源路径。修改词表只改这里；Rust 需重新构建发行，规则逻辑不变，见 [ADR-0015 §三](../docs/adr/0015-rust-migration.md#三共享资源与必要依赖)。
 
 ## fixture 文件格式
 
@@ -54,7 +54,7 @@
 
 三条之外 runner 什么都不断言，**退出码尤其不断言** —— 退出码是 CLI 的契约 (`rules.md`「退出码」)，由各实现在自己的测试里覆盖。
 
-Python 参考实现的 runner 是 `tests/test_fixtures.py`，不到三十行 —— 三条断言之外不加别的逻辑，别的语言照抄即可。
+Rust 的 runner 是 `rust/tests/pipeline.rs` 的 `all_golden_cases_use_the_document_api` —— 三条断言之外不加别的逻辑，别的语言照抄即可。
 
 ## 加一个 case
 
