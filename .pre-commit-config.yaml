@@ -72,7 +72,10 @@ repos:
   # touching only one of those reformats the tree without staging a single
   # `.rs`, and a hook keyed on `\.rs$` alone sleeps through it — the break
   # then surfaces at gate 1 in CI, which is exactly the trip this hook
-  # exists to save. `tests/test_environment.py` holds the two arms.
+  # exists to save. `tests/test_environment.py` pins this pattern from
+  # both sides — it has to wake for those files and stay out of
+  # everything else — by asserting the expression the way pre-commit
+  # applies it. Gate 10 runs the hook itself.
   - repo: local
     hooks:
       - id: cargo-fmt
