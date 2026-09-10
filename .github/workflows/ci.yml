@@ -86,12 +86,10 @@ jobs:
       - name: Hook render corpus is current
         run: uv run python tools/render_diff_cases.py --check
 
-      # `site/index.html` is a committed product with two producers,
-      # tools/render_lexicon.py and the render-lexicon Cargo example. The same
-      # blind spot: no other gate reads the page, so editing
-      # spec/lexicon/zh.toml without regenerating it, or moving one generator
-      # away from the other, leaves every other gate green. Needs uv and the
-      # Rust toolchain, so it sits after both are in place.
+      # `site/index.html` is a committed product of the render-lexicon Cargo
+      # example. The same blind spot: no other gate reads the page, so editing
+      # spec/lexicon/zh.toml without regenerating it leaves every other gate
+      # green. Needs the Rust toolchain.
       - name: Lexicon page is current
         run: tools/check_lexicon_render.sh
 

@@ -23,7 +23,7 @@
 - **规则规范与黄金 fixture 语言无关、所有实现共用**，放仓根 `spec/`：规范在 `spec/rules.md`，黄金集在 `spec/fixtures/`，AI 中文词典在 `spec/lexicon/zh.toml`，prompt spec 在 `spec/polish/`，规则词表在 `spec/wordlists/`；不放进任何单一实现的私有目录 (`src/`、`tests/`)。各部分的职责与格式见 `spec/README.md`，位置与理由见 `docs/adr/0001-standalone-repo-spec-first-shared-fixtures.md`。
 - **Python 参考实现 (reference implementation) 在仓根**：`pyproject.toml`、`src/limae/`、`tests/`；包 `limae`，命令 `limae-python`；用 uv 管理，锁文件 `uv.lock` 全仓唯一。ADR-0015 阶段 E 之后它是 deprecated 的参考实现 —— 正式命令是 Rust binary `limae`，Python 入口改名让开这个名字，但入口与测试继续保留、继续跑，它是差分臂的对照一侧。放仓根而不是 `python/` 子目录，是因为 pre-commit `language: python` 与 `uvx --from git+…` 都把仓根当作可安装的 Python 项目。
 - **Rust 是仓根 Cargo package，也是正式实现**：根 `Cargo.toml`、`Cargo.lock` 与 `rust-toolchain.toml` 配套，源码在 `rust/`，集成测试在 `rust/tests/`；唯一发布的 binary 是 `limae`，`diff-probe` 与 `render-lexicon` 是开发期 example、不随发布分发；Rust 的 unit test、integration test 与 doctest 使用 Cargo 内建测试框架，仍对着同一套 `spec/` 与黄金 fixture 跑。toolchain pin 的唯一配置来源是 `rust-toolchain.toml`，不在此重复版本值，详见 ADR-0015 §六。根 `Cargo.toml` / `Cargo.lock` / `rust-toolchain.toml`、`rust/lib.rs` 接线、CI 与共享测试入口由当时的集成任务单独持有；加依赖与接线串行。
-- **静态站点在 `site/`**：`tools/render_lexicon.py` 从 `spec/lexicon/zh.toml` 生成 `site/index.html`；`site/` 放生成产物，生成脚本放 `tools/`。
+- **静态站点在 `site/`**：Cargo example `render-lexicon` (`rust/examples/render_lexicon.rs`，版式在 `rust/templates/lexicon.html`) 从 `spec/lexicon/zh.toml` 生成 `site/index.html`，`cargo run --example render-lexicon` 重新生成；`site/` 只放生成产物。可编辑的页面正文 (标题、副标题、引子、判据与门槛、词条) 在 toml；模板保留结构性标签 (栏目名、白 / 解 / 病 / 原 / 改这类标签、生成说明) 与版式。
 - **内容类 Markdown 在 `docs/`**：`docs/adr/` (决策记录)、`docs/knowledge/` (操作手册)、`docs/research/` (调研)。
 - 项目级 skill 只放在 `.agents/skills/<name>/`，见 `.agents/skills/README.md`。
 

@@ -1,12 +1,8 @@
-//! Render the lexicon into one static page — the Rust side of a two-generator
-//! contract.
+//! Render the lexicon into one static page.
 //!
-//! `tools/render_lexicon.py` is the reference implementation; this is its port.
-//! Both read `spec/lexicon/zh.toml` and write `site/index.html`, and the page
-//! is committed, so the two must agree byte for byte: the page is the product,
-//! and two products from one source are two products. What holds them together
-//! is `tools/check_lexicon_render.sh`, which runs both over the same source and
-//! compares the bytes.
+//! Reads `spec/lexicon/zh.toml` and writes `site/index.html`. The page is
+//! committed, and `tools/check_lexicon_render.sh` holds the committed page to
+//! what this example renders.
 //!
 //! The HTML and CSS live in `rust/templates/lexicon.html`, an [Askama]
 //! template compiled into this example (`askama.toml` at the root names the
@@ -40,6 +36,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use askama::Template;
+use askama::filters::Html;
 use thiserror::Error;
 use toml::Value;
 
@@ -65,6 +62,8 @@ struct Entry {
 
 /// The whole lexicon.
 struct Lexicon {
+    title: String,
+    subtitle: String,
     preface: Vec<String>,
     standard: String,
     threshold: String,
@@ -89,28 +88,14 @@ enum RenderError {
     Write(#[source] io::Error),
 }
 
-/// Escape one string the way Python's `html.escape` does by default.
-///
-/// The default escapes the quotes too, and the page relies on that: the
-/// reference implementation passes attribute text through the same call.
-fn escape(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for ch in text.chars() {
-        match ch {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&#x27;"),
-            _ => out.push(ch),
-        }
-    }
-    out
-}
-
 /// Escape one line and give its back-quoted spans a code face.
+///
+/// The template prints the result through `|safe`, so the escaping happens
+/// here, with the same escaper the template uses for everything else.
 fn inline(text: &str) -> String {
-    let escaped = escape(text);
+    // The escaper's error type is `Infallible`.
+    let Ok(escaped) = askama::filters::escape(text, Html);
+    let escaped = escaped.to_string();
     let mut out = String::with_capacity(escaped.len());
     for (index, part) in escaped.split('`').enumerate() {
         if index % 2 == 0 {
@@ -203,6 +188,8 @@ struct EntryView {
 #[derive(Template)]
 #[template(path = "lexicon.html")]
 struct Page {
+    title: String,
+    subtitle: String,
     preface: Vec<String>,
     standard: String,
     threshold: String,
@@ -243,6 +230,8 @@ fn view(entry: &Entry) -> EntryView {
 /// Build the whole page.
 fn render(lexicon: &Lexicon, ordered: &[&Entry]) -> Result<String, RenderError> {
     let page = Page {
+        title: lexicon.title.clone(),
+        subtitle: lexicon.subtitle.clone(),
         preface: lexicon.preface.iter().map(|p| inline(p)).collect(),
         standard: inline(&lexicon.standard),
         threshold: inline(lexicon.threshold.trim()),
@@ -337,6 +326,8 @@ fn parse(text: &str) -> Result<Lexicon, RenderError> {
         });
     }
     Ok(Lexicon {
+        title: string(&document, "title")?,
+        subtitle: string(&document, "subtitle")?,
         preface: strings(&document, "preface")?,
         standard: string(&document, "standard")?,
         threshold: string(&document, "threshold")?,
