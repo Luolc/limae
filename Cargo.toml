@@ -13,6 +13,10 @@ include = [
   "/Cargo.lock",
   "/LICENSE",
   "/README.md",
+  # Two repository files the test suite reads back, so that the packaged
+  # crate's own `cargo test` still has them (tools/check_rust_package.sh).
+  "/.codex/config.toml",
+  "/docs/knowledge/polish-hook-self-trial.md",
   "/rust-toolchain.toml",
   "/askama.toml",
   "/rust/**/*.rs",

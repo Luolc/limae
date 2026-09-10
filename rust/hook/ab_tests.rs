@@ -480,6 +480,86 @@ fn the_trial_is_announced_once_and_names_the_ledger() -> TestResult {
     Ok(())
 }
 
+/// The whole announcement, character for character.
+///
+/// The two arms above read this string with `contains`, which can only find
+/// what it was told to look for. What has to stay out of it is the thing nobody
+/// thought to name: a third string riding along — a model, an engine, a
+/// rewrite — is a leak the ledger cannot describe, because the ledger only
+/// knows what it wrote down. Pinning the whole string is the only assertion
+/// that fails on a name no one predicted.
+#[test]
+fn the_announcement_is_the_code_the_path_and_nothing_else() -> TestResult {
+    let state = TempDir::new("context-exact")?;
+    let trial = trial();
+    record(
+        state.path(),
+        &trial,
+        "原文。",
+        ("甲的改写", "乙的改写"),
+        ("甲的显示", "乙的显示"),
+        now(),
+    )?;
+    let ledger = state.path().join(LEDGER_DIRECTORY).join("灯塔.json");
+
+    assert_eq!(
+        context(state.path()),
+        format!(
+            "limae A/B：本轮有一次 A/B 对照，编号「灯塔」，两栏是盲评。\
+             型号对应在 {}；用户按编号给出偏好之前不要说出哪一栏是哪个模型。",
+            ledger.display()
+        )
+    );
+    Ok(())
+}
+
+/// The rewrites stay out of the model's context (ADR-0009 section 五).
+///
+/// This is its own arm because the pair of places differ: the two rewrites
+/// belong on the screen, where the user compares them, and must not reach the
+/// context, where the model would read its own candidate back. An assertion
+/// that concatenates screen and context cannot tell which half a string is in,
+/// so it cannot make this claim at all.
+#[test]
+fn the_two_rewrites_reach_the_screen_and_not_the_context() -> TestResult {
+    let state = TempDir::new("context-rewrites")?;
+    let trial = trial();
+    let written = ("甲的改写", "乙的改写");
+    let displayed = ("甲的显示", "乙的显示");
+    record(state.path(), &trial, "原文。", written, displayed, now())?;
+
+    let announced = context(state.path());
+    let screen = render(&trial, displayed);
+    for text in [written.0, written.1, displayed.0, displayed.1] {
+        assert!(!announced.contains(text), "{text} reached the context");
+    }
+    for text in [displayed.0, displayed.1] {
+        assert!(screen.contains(text), "{text} never reached the screen");
+    }
+    Ok(())
+}
+
+/// The pool's shape: distinct names, two Chinese characters each.
+///
+/// The count is in the type. Distinctness is not, and neither is the writing
+/// system: a code name is what a person reads back to say which column they
+/// preferred, and a duplicate in this array is two trials of one session
+/// writing over each other's ledger entry — the second trial's evidence is
+/// gone, and nothing anywhere says so.
+#[test]
+fn the_code_names_are_forty_eight_distinct_two_character_names() {
+    let distinct: std::collections::HashSet<&str> = CODE_NAMES.into_iter().collect();
+    assert_eq!(distinct.len(), CODE_NAMES.len());
+    for name in CODE_NAMES {
+        assert_eq!(name.chars().count(), 2, "{name}");
+        assert!(
+            name.chars()
+                .all(|character| ('\u{4e00}'..='\u{9fff}').contains(&character)),
+            "{name}"
+        );
+    }
+}
+
 #[test]
 fn a_pending_file_that_names_no_trial_announces_nothing() -> TestResult {
     let state = TempDir::new("context-empty")?;
