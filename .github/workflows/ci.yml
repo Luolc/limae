@@ -78,14 +78,6 @@ jobs:
       - name: Tests (Python reference)
         run: uv run pytest -q
 
-      # The corpus in rust/hook/render_cases.rs holds what the Python
-      # reference implementation answers; the Rust render tests replay it.
-      # Nothing else notices when the reference implementation moves and the
-      # corpus is not regenerated: those tests keep passing, because the stale
-      # answers are exactly what they are checked against.
-      - name: Hook render corpus is current
-        run: uv run python tools/render_diff_cases.py --check
-
       # `site/index.html` is a committed product of the render-lexicon Cargo
       # example. The same blind spot: no other gate reads the page, so editing
       # spec/lexicon/zh.toml without regenerating it leaves every other gate

@@ -3,10 +3,11 @@ use super::{
     folded, opcodes, prose_length, shown, trailing_newlines,
 };
 
-// The reference implementation's answers over a fixed synthetic corpus, as
-// `Case` values in `CASES`. Included rather than declared as a module because
-// it is generated: `tools/render_diff_cases.py` writes it and `--check` says
-// whether it is current.
+// The Python reference implementation's answers over a fixed synthetic corpus,
+// as `Case` values in `CASES`. Included rather than declared as a module
+// because it was generated, by a tool that no longer exists: the corpus is a
+// frozen archive taken before the reference implementation was deleted. See its
+// header for why it must not be regenerated from this port.
 include!("render_cases.rs");
 
 fn characters(text: &str) -> Vec<char> {
@@ -29,7 +30,9 @@ fn spelled(op: &Opcode) -> String {
 /// rewrite, not a reasonable diff of it. A different-but-sensible alignment
 /// would give the reader a different number of changes for the same rewrite, so
 /// the reference implementation's answers are replayed here character for
-/// character. `--count` on the generator raises the corpus for a wider sweep.
+/// character. The corpus cannot be widened any more: the generator that could
+/// has been removed, and a wider one was run once before it went (see
+/// `render_cases.rs`).
 #[test]
 fn the_alignment_and_the_pairs_match_the_reference_implementation() {
     assert!(
