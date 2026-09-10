@@ -104,8 +104,8 @@ jobs:
       - name: Format / lint / type-check
         run: uv run pre-commit run --all-files --show-diff-on-failure
 
-      - name: pre-commit Rust and Python distribution
-        run: tools/check_rust_precommit.sh
+      - name: pre-commit consumer install (Rust and Python)
+        run: tools/check_precommit_consumer.sh
 
       - name: Install Rust distribution targets
         run: rustup target add x86_64-unknown-linux-musl

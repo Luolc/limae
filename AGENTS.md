@@ -42,7 +42,7 @@ tools/check_lexicon_render.sh
 cargo build --locked --bin limae --example diff-probe
 uv run pytest -q --rust-bin target/debug/limae
 uv run pre-commit run --all-files --show-diff-on-failure
-tools/check_rust_precommit.sh
+tools/check_precommit_consumer.sh
 tools/check_rust_package.sh package
 tools/check_rust_package.sh target x86_64-unknown-linux-gnu
 tools/check_rust_package.sh target x86_64-unknown-linux-musl
@@ -52,6 +52,7 @@ tools/check_rust_package.sh target x86_64-unknown-linux-musl
 - **凭证扫描 (gitleaks) 是这里唯一守红线而不是守风格的钩子** (见「隐私边界」)：别的检查上跳过一次只是欠一次格式，这一环上跳过一次就是让凭证有机会进这个 public 仓。`--no-verify` 会跳过全部 hooks，包括 gitleaks；如确需使用，必须在提交前 (文件已暂存后) 手工执行 `gitleaks git --staged --redact --no-banner --verbose .`。机器限频、钩子跑得慢的时候尤其要记得这一步 —— 机制不会替你拦住，这条只能靠人执行。
 - 它扫的是**暂存区** (`--staged`)，也就是正要提交的这份内容：扫历史看不见它，而历史里的凭证已经跑掉了，只剩轮换与清史。命中时 `--redact` 只打印规则名与文件行号，不把命中的值打进终端或会话记录，这样验证凭证泄漏时也不会二次泄漏。版本钉在 `.pre-commit-config.yaml` 的 `rev`，pre-commit 用 Go 从源码装：首次约两分钟，之后每次约 2 秒。**升这个 `rev` 时必须重新核对上游 entry 仍带 `--staged`**：entry 会随 tag 变，`--staged` 一旦丢掉，钩子就退化成扫历史 —— 而扫历史看不见刚 `git add` 的 token，绿得像样却什么也没防住，正是这套配置要堵的那个洞。
 - CI 的 `Credential scan` 那一步是同一把扫描的另一半：CI 没有暂存区，它改扫已经落进历史的内容 (整份 clone，`fetch-depth: 0`)，兜住漏装钩子、或绕过钩子推上来的分支。它的版本与校验和跟 `.pre-commit-config.yaml` 的 `rev` 一起动，两处必须同版本。
+- **门列表里有两道 pre-commit，方向相反，别把它们看成一件事**：第 10 道 `uv run pre-commit run --all-files` 是**我们对自己** —— 拿本仓的钩子扫本仓的文件。第 11 道 `tools/check_precommit_consumer.sh` 是**别人对我们**：它是一次针对 pre-commit 这条分发路径的集成测试，从当前 `HEAD` 克隆出上游副本，在一个全新的空消费仓与隔离的 `PRE_COMMIT_HOME` 里装钩子，`limae` (Rust) 与 `limae-python` (回退路径) 各跑一遍 install / 违规 / 修复 / 修后 clean 四臂。它吃的是**已提交的 `HEAD`**，所以跑它之前先 commit，跑完核对退出 0 且末行 revision 等于 `HEAD`。分辨力来自 PATH 上那两个同名失败探针 (`limae` 退 97、`limae-python` 退 98)：任何一臂真绿了，跑的就一定是 pre-commit 自己缓存里装出来的那个，而不是机器上碰巧存在的某个 `limae`。详见 [Rust 分发预演](docs/knowledge/rust-binary-distribution.md)。
 - 本仓用自己的 linter 检查自己的 Markdown (dogfooding)。规则一改、文档标红时，先判断是文档错还是规则错：检查器必然存在误报与漏报，判断是检查器错了就直接修它 (commit message 里说明理由)，规则确实错了就改规则与 `spec/` 下的规范和黄金集，不改文档迁就；拿不准的案例交给维护者裁决。
 - **Rust 质量门**：默认 `uv run pytest -q` 保持 Python-only；差分臂先构建 `limae` 与 `diff-probe`，再以 `--rust-bin target/debug/limae` 显式运行 Python / Rust 双臂。`cargo test --locked` 验收 doctest，`cargo doc` 单独验收文档构建。分发门所需的 Rust 工具链与 musl target 见 [Rust 分发预演](docs/knowledge/rust-binary-distribution.md)；CI 的 target 安装是前提，不计作质量门。commit hook 仍只放秒级检查，完整构建与分发重检查不进 hook：Rust 侧进 hook 的只有 `cargo fmt --check` (2026-09-09 本机实测 0.34 s，含 pre-commit 自身开销约 1.1 s)，`cargo clippy` 要编译全部 target、远超这个预算，留在 push 前全量与 CI —— 判据是「够不够快」，不是「是不是 Rust」。
 - **Rust lint 默认**：根 `[lints.rust]` 设 `unsafe_code = "forbid"` 与 `unused_must_use = "deny"`，根 `[lints.clippy]` deny `unwrap_used`、`expect_used`、`dbg_macro`、`print_stdout` 与 `print_stderr`。测试默认返回 `Result`，不开全局 `unwrap` / `expect` 例外；确需窄范围例外时，只包住所需表达式，并写明 lint 名与理由。

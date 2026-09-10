@@ -41,7 +41,7 @@ Rust 命令名为 `limae`，是本项目正式的 CLI (ADR-0015 阶段 E)；Pyth
 1. 在 Linux 开发机的仓库根目录、提交待验收改动后执行：
 
    ```sh
-   tools/check_rust_precommit.sh
+   tools/check_precommit_consumer.sh
    ```
 
    命令会从当前 `HEAD` 建立本地 Git 源副本，在全新消费仓与隔离的 `PRE_COMMIT_HOME` 中安装 `limae` (Rust) 与 `limae-python` 两个 hook —— 后者跑的就是回退路径。两条路径分别检查合成违规、执行修复，再复查修后 clean；脚本还会在原始 `PATH` 前放置两个名字的失败探针 (`limae` 退 97、`limae-python` 退 98)，所以任何一臂真跑起来了，跑的就一定是 pre-commit 缓存内装出来的那个。违规退出 1 且不写回，修复会写回并因 pre-commit 检出文件变化而退出 1，修后 clean 退出 0。命令退出 0 即完成；临时源码副本、消费仓和缓存会自动清理。
