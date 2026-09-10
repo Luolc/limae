@@ -142,5 +142,5 @@ backlog 的正本，由实现方在改动所属的 PR 里记账，`limae-orchest
 ## 词典静态页选型调研产出 (`docs/research/lexicon-static-site-survey.md`)
 
 - **本调研已入库，其中的建议尚未实施**：结论一句话 —— 当前这一页不需要 React，也不建议引入静态站点生成器 (static site generator, SSG)；缺的不是框架，是 HTML 文档层与流程层的补齐。
-  推荐的模板分离 (把 `site/index.html` 的 HTML 从生成代码里抽成 [Askama](https://docs.rs/askama/latest/askama/) 模板) 还没有做；文档缺失的
-  `<!DOCTYPE html>`、`<html lang>`、`<meta charset>`、`<meta viewport>` 这四项也都还没有补。两者都是独立的后续任务，谁来做、何时做未定案。
+  推荐的模板分离已做第一步 (2026-09-09)：`site/index.html` 的 HTML 与 CSS 从 `rust/examples/render_lexicon.rs` 里抽成 [Askama](https://docs.rs/askama/latest/askama/) 模板 `rust/templates/lexicon.html` (`askama.toml` 指定模板目录并全局 `whitespace = "suppress"`，模板换行只落在标签旁，产物逐字节不变)，askama 只进 `[dev-dependencies]`、不进发布二进制的依赖；`tools/render_lexicon.py` 这一步仍保留，`tools/check_lexicon_render.sh` 的两实现对照臂原样继续守着。第二步 (删 Python 生成器、改写该守卫声称的保证) 另开 PR，守卫今后保证什么由用户拍板后再动。文档缺失的
+  `<!DOCTYPE html>`、`<html lang>`、`<meta charset>`、`<meta viewport>` 这四项仍未补，是独立的后续任务，谁来做、何时做未定案。

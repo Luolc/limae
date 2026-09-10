@@ -1,0 +1,180 @@
+{#- The lexicon page. Rendered by the `render-lexicon` Cargo example
+    (`rust/examples/render_lexicon.rs`), which owns the data shape below.
+
+    The committed product is one long line with newlines only inside
+    `<style>`, and it ends without a trailing newline. `askama.toml` sets
+    `whitespace = "suppress"`, which drops the whitespace next to every tag
+    and nothing else: a line break between two runs of literal HTML would be
+    copied through. So this file breaks lines only where a tag sits, and the
+    `-` markers say so at each one.
+
+    Every field that may carry a back-quoted span arrives already escaped
+    and marked up (`<code>…</code>`) by the `inline` function on the Rust
+    side, hence `|safe`. Everything else is escaped here. -#}
+<title>机器文言</title><style>
+:root {
+  --paper: #f1e8d5;
+  --ink: #24211c;
+  --faded: #7a736a;
+  --rule: #cfc5b4;
+  --cinnabar: #a8433a;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 4rem 1.5rem 6rem;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC",
+      "SimSun", "STSong", serif;
+  line-height: 1.9;
+}
+.page {
+  max-width: 62rem; margin: 0 auto; display: grid; gap: 3rem;
+  grid-template-columns: 11rem minmax(0, 1fr);
+  align-items: start;
+}
+.sheet { max-width: 44rem; }
+nav {
+  position: sticky; top: 3rem; border-right: 1px solid var(--rule);
+  padding-right: 1.2rem; font-size: .9rem;
+}
+nav .toc-label {
+  color: var(--cinnabar); letter-spacing: .3rem; font-size: .75rem;
+  margin-bottom: .9rem;
+}
+nav a {
+  display: block; color: var(--ink); text-decoration: none;
+  padding: .3rem 0; border-bottom: 1px solid transparent;
+}
+nav a:hover, nav a:focus-visible {
+  color: var(--cinnabar); border-bottom-color: var(--rule);
+}
+@media (max-width: 52rem) {
+  .page { grid-template-columns: 1fr; gap: 2rem; }
+  nav {
+    position: static; border-right: none;
+    border-bottom: 1px solid var(--rule); padding: 0 0 1.2rem;
+    columns: 2; column-gap: 1.5rem;
+  }
+}
+:focus-visible { outline: 2px solid var(--cinnabar); outline-offset: 3px; }
+h1 {
+  font-size: 2.4rem; font-weight: normal; letter-spacing: .5rem;
+  margin: 0 0 .4rem; text-align: center;
+}
+.subtitle {
+  text-align: center; color: var(--faded); letter-spacing: .2rem;
+  margin: 0 0 3rem; font-size: .95rem;
+}
+.intro { margin: 0 0 2.6rem; }
+.intro p { margin: 0 0 1rem; }
+.preface {
+  border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+  padding: 1.6rem 0; margin: 0 0 4rem; color: var(--faded); font-size: .95rem;
+}
+.preface p { margin: .4rem 0; }
+.preface b { color: var(--ink); font-weight: normal; }
+.entry { margin: 0 0 4.5rem; }
+.cells { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1.4rem; }
+.cell { width: 4.6rem; text-align: center; }
+.pinyin {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: .78rem; color: var(--faded); letter-spacing: .02rem;
+  height: 1.5rem; display: flex; align-items: center;
+  justify-content: center; position: relative; margin-bottom: .25rem;
+}
+/* 四线三格：拼音在字帖里写在这里，不是浮在字上面 */
+.pinyin::before {
+  content: ""; position: absolute; inset: 0;
+  border-top: 1px solid var(--cinnabar);
+  border-bottom: 1px solid var(--cinnabar);
+  opacity: .3;
+  background:
+      linear-gradient(var(--cinnabar), var(--cinnabar)) 0 33.3% / 100% 1px
+          no-repeat,
+      linear-gradient(var(--cinnabar), var(--cinnabar)) 0 66.6% / 100% 1px
+          no-repeat;
+}
+.pinyin span { position: relative; }
+.grid {
+  width: 4.6rem; height: 4.6rem; border: 1px solid var(--cinnabar);
+  position: relative; display: flex; align-items: center;
+  justify-content: center; background: rgba(255,255,255,.45);
+}
+.grid::before, .grid::after {
+  content: ""; position: absolute; border-color: var(--cinnabar);
+  opacity: .38;
+}
+.grid::before { left: 50%; top: 0; bottom: 0; border-left: 1px dashed; }
+.grid::after { top: 50%; left: 0; right: 0; border-top: 1px dashed; }
+/* 楷体是字帖里的那一种，宋体不是 */
+.glyph {
+  font-family: "Kaiti SC", "KaiTi", "STKaiti", "AR PL UKai CN",
+      "Noto Serif CJK SC", serif;
+  font-size: 2.9rem; line-height: 1; position: relative;
+}
+.plain { font-size: 1.35rem; margin: 0 0 .6rem; }
+.plain .label, .gloss .label, .fault .label, .eg .mark {
+  color: var(--cinnabar); font-family: "PingFang SC", "Noto Sans CJK SC",
+      "Source Han Sans SC", "Heiti SC", "Microsoft YaHei", sans-serif;
+  font-weight: 800; background: rgba(168,67,58,.10); border-radius: .2rem;
+  padding: .05rem .3rem; font-size: .9rem;
+}
+.plain .label, .gloss .label, .fault .label { margin-right: .8rem; }
+.gloss, .fault { color: var(--faded); }
+.gloss { margin: 0 0 .6rem; }
+.fault { margin: 0 0 1.4rem; }
+.eg { border-left: 2px solid var(--rule); padding: .1rem 0 .1rem 1.1rem;
+     margin: 0 0 1rem; }
+.eg .eg-no {
+  color: var(--faded); font-family: "PingFang SC", "Noto Sans CJK SC",
+     "Source Han Sans SC", "Heiti SC", "Microsoft YaHei", sans-serif;
+     font-weight: 800; font-size: .8rem; letter-spacing: .1em;
+     margin-bottom: .2rem; }
+.eg .before { color: var(--faded); }
+.eg .after { color: var(--ink); }
+.eg .mark { margin-right: .6rem; }
+code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: .88em; background: rgba(0,0,0,.045); padding: .05em .3em;
+}
+footer {
+  margin-top: 5rem; padding-top: 1.4rem; border-top: 1px solid var(--rule);
+  color: var(--faded); font-size: .85rem; text-align: center;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #191714; --ink: #e6e0d4; --faded: #9a9184;
+    --rule: #3b362e; --cinnabar: #c2695d;
+  }
+  :root:not([data-theme="light"]) .grid { background: rgba(255,255,255,.03); }
+  :root:not([data-theme="light"]) code { background: rgba(255,255,255,.07); }
+}
+:root[data-theme="dark"] {
+  --paper: #191714; --ink: #e6e0d4; --faded: #9a9184;
+  --rule: #3b362e; --cinnabar: #c2695d;
+}
+</style><div class="page"><nav><div class="toc-label">目录</div>
+{%- for entry in entries -%}
+<a href="#w{{ loop.index0 }}">{{ entry.term }}</a>
+{%- endfor -%}
+</nav><div class="sheet"><h1>机器文言</h1><p class="subtitle">机器写的中文里，读得懂却没人这么说的词</p><div class="intro">
+{%- for paragraph in preface -%}
+<p>{{ paragraph|safe }}</p>
+{%- endfor -%}
+</div><div class="preface"><p><b>判据</b>　{{ standard|safe }}</p><p><b>门槛</b>　{{ threshold|safe }}</p></div>
+{%- for entry in entries -%}
+<section class="entry" id="w{{ loop.index0 }}"><div class="cells">
+{%- for cell in entry.cells -%}
+<div class="cell"><div class="pinyin"><span>{{ cell.pinyin }}</span></div><div class="grid"><span class="glyph">{{ cell.glyph }}</span></div></div>
+{%- endfor -%}
+</div><p class="plain"><span class="label">白</span>{{ entry.plain|safe }}</p><p class="gloss"><span class="label">解</span>{{ entry.gloss|safe }}</p><p class="fault"><span class="label">病</span>{{ entry.fault|safe }}</p>
+{%- for example in entry.examples -%}
+<div class="eg"><div class="eg-no">例{{ example.numeral }}</div><div class="before"><span class="mark">原</span>{{ example.before|safe }}</div><div class="after"><span class="mark">改</span>{{ example.after|safe }}</div></div>
+{%- endfor -%}
+</section>
+{%- endfor -%}
+<footer>正文在 <code>spec/lexicon/zh.toml</code>，本页由 <code>tools/render_lexicon.py</code> 生成</footer></div></div>
+{#- The product ends on `>`: this comment swallows the newline editors put
+    after the last line. -#}
