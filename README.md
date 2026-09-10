@@ -37,6 +37,15 @@ limae --all
 limae <file>...
 ```
 
+Python 或 Node 项目也可以从各自的包管理器装同一个二进制 (与 [GitHub Release](https://github.com/Luolc/limae/releases) 上的是同一份字节，发布时逐个比对过 sha256，机制见 [发布手册](docs/knowledge/release.md))：
+
+```sh
+uv add --dev limae      # 或 pip install limae
+npm i -D limae          # 之后 npx limae
+```
+
+预构建二进制只有四个平台：Linux x86_64 / aarch64 (静态 musl，glibc 系统照跑)、macOS x86_64 / arm64。没有 Windows；Windows 上用上面的 `cargo install`。
+
 `--all` 取的是 **git 跟踪 (tracked) 的** Markdown，也就是 `git ls-files '*.md'` 那一份：已跟踪文件的改动照查，还没 `git add` 的新文件不在其中。为了让「真的干净」与「有新文件没被看见」分得开，这种情况下会向 stderr 打一行 `note: N untracked *.md not checked (git add them to include)`；它只是提示，不改退出码，被 `.gitignore` 或 `.limae-ignore` 忽略的文件不计入。
 
 ### 开关某条规则

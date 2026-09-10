@@ -173,3 +173,33 @@ crate 一旦存在，就可以把 token 从 CI 里彻底去掉，改由 GitHub �
 这条线**已经被一次真实的 tag 推送执行过**：`v0.13.0` 于 2026-09-08 触发 release workflow (run `34213744281`)，结论 success，`gh release view v0.13.0` 列出八个文件名 —— 四个 target 各一个 `.tar.gz` 与一个 `.sha256`。上面第 3、4 步的完成判据至此都拿到了读数。
 
 **这不覆盖同一个文件里后加的两个 job** (`publish` 与 `auth-check`，见「二」)：那次运行发生在它们存在之前，它们各自的第一次真实执行仍未发生。
+
+## 四、PyPI 与 npm 启动器
+
+同一个 tag 还会发两层薄启动器 (launcher)：PyPI 上每个 target 一份 wheel (`pip install limae` / `uv add --dev limae`)，npm 上一个裸名主包 `limae` 加四个平台包 `@limae/<platform>` (`npm i -D limae`，主包经 `optionalDependencies` 拉对应平台包，`bin/limae.js` 找到它、执行里面的二进制)。形状的选型见 [跨生态分发调研](../research/distribution-cross-ecosystem.md) §7，本文只写机制与判据。
+
+**它们不编译任何东西。** `tools/build_launchers.sh <tag> <assets-dir> <out-dir>` 从 Release 的 `limae-<target>.tar.gz` (先过它的 `.sha256` 边车) 里取出二进制原样放进 wheel 的 `.data/scripts/limae` 与 npm 平台包的 `limae`；wheel 由 `uvx wheel pack` 打出 (它算 RECORD)，npm 包由 `npm pack` 打出，仓里没有 Python、没有 `pyproject.toml`。包版本取 tag，不取 manifest：二进制是 tag 的，而 dispatch 预演时检出的是 main。描述、license、repository 三个 metadata 串取自 `cargo metadata`，只有一个来源。
+
+**硬不变量：用户从 PyPI 或 npm 装到的二进制与 GitHub Release 上那份是同一份字节。** 「构造上就是这么做的」不算证据 —— 那对「同一份字节」与「两次编译碰巧都能跑」给出相同输出。证据是 `tools/check_launchers.sh <assets-dir> <out-dir>`：对每个 target 比两个值，一边是**从 Release tarball 里重新解出的**二进制的 sha256 (tarball 先过边车，所以这个值链到 Release 页面公布的那份)，另一边是**从打好的 wheel / npm tarball 里重新解出的**二进制的 sha256 (用安装器同一套工具解成品包，不看构建时的中间目录)；两个值都打进日志，任一不等即红。它还断言每个 target 的包数正好是预期的 (Linux 三个、macOS 两个，共 10 次比对)，空目录不会绿。反臂 (2026-09-10 本机实测，读数记在引入这道门的 PR 描述里)：在一个 wheel 的二进制里改一个字节、重新打包 → 红并打出两个不同的值；在一个 npm 平台包里改一个字节 → 红；空的输出目录 → 红；改回 → 绿。
+
+平台映射写在 `tools/build_launchers.sh` 顶部那张表里，两处取舍：**Linux 只有 musl 产物**，静态 musl 二进制在 glibc 系统上照跑，所以同一份文件在 PyPI 上发两个 wheel (manylinux 与 musllinux 各一，pip 按它探测到的 libc 选)、在 npm 上只发一个包 (`os` / `cpu` 不带 `libc` 字段，两类系统都装)；**没有 Windows 产物**，所以映射里没有 Windows 那一行，`optionalDependencies` 与 wheel 矩阵都不写一个不存在的 target，启动器在不支持的平台上退出 1 并说明。
+
+### 预演 (dry run)：不发布任何东西
+
+PyPI 的版本号**永远不能删除或重用**，npm 只有 72 小时反悔窗口，所以验收看「机器对不对」，不看「发出去没有」。在 Actions 页面手动触发 `release.yml` (`workflow_dispatch`)，`tag` 填一个**已存在的** Release tag：`launchers` job 下载那个 tag 的 8 个资产、构建、跑 sha256 比对、`twine check --strict`、`npm publish --dry-run`、在 runner 上真装一次 x86_64 Linux 的 wheel 与 npm 包并跑 `limae --help`，然后停；`auth-check` (crates.io) 与 `npm-auth-check` (`npm whoami`，token 过期或贴错即红) 同时跑。**`tag` 不给默认值**：默认值会过期，「忘了填」与「就要这个」会给出相同行为。
+
+同一条预演在本机也能裸跑 (`gh release download <tag> --pattern 'limae-*' --dir <assets-dir>` 之后依次跑上面两个脚本)，退出码为准、不接管道。
+
+### `pypi-auth-check` 是脚手架，`v0.13.1` 发布成功后删掉
+
+它长得像 crates.io 的 `auth-check`，性质不同：**PyPI 的 mint-token 端点对 pending publisher 会在 mint 那一刻建出项目、把 pending 转正** (warehouse 仓 `warehouse/oidc/views.py` 的 `mint_token`：`project_service.create_project(...)` 与 `oidc_service.reify_pending_publisher(...)`，2026-09-10 读 main 分支)。所以跑一次它就在 PyPI 上留下一个空的 `limae` 项目 —— 不烧版本号，但对外可见、不可逆。因此它挂在 dispatch 的布尔输入 `pypi_auth_check` 后面，默认 false，预演不碰它。
+
+它买到的只是「更早知道」：TP 配错时真实发布本来就在上传前安全失败。这次值得买，是因为三家要同版本一起发，PyPI 一家掉队就是 tag / manifest 守卫要防的同一类分叉。首发成功之后项目已存在、publisher 已转正，它再也验不到发布没验过的东西，退化成一个永远绿的开关 —— 到那时删掉这个 job 与那个输入。
+
+两家 Trusted Publishing 的 `environment:` 这次一致：crates.io 那边配置里留空，PyPI 的 pending publisher 页面上 Environment name 显示 `(Any)` (用户 2026-09-10 截图，经 orchestra 转述)，所以 `publish-pypi` 与 `pypi-auth-check` 都不写 `environment:` —— 写了反而是给自己加一个没被要求的条件。若首发报环境相关的错，说明这条读数错了，如实报。
+
+### 发布顺序与 npm token
+
+tag 推上去后三家按「越不可撤销越先」发，且互相串着：`publish` (crates.io，先断言 tag == manifest) → `publish-pypi` (`pypa/gh-action-pypi-publish`，OIDC) → `publish-npm` (四个平台包先发、主包最后，`optionalDependencies` 落地即可解析)。链上任一家红，后面的不发；修好后 `gh run rerun --failed` 从失败的那个 job 续。
+
+npm 首发用的是仓库 secret `NPM_TOKEN` (npm 的 Trusted Publishing 要求包已存在才能配)，有效期 7 天 (2026-09-10 存入)。首发之后换 OIDC、删 token，是后续任务。`@limae/<platform>` 是 scoped 包，默认 restricted，`publishConfig.access = "public"` 写在每个 `package.json` 里跟着包走，不依赖发布命令怎么写。
