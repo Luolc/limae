@@ -96,7 +96,7 @@ check_package() {
 
   for required in \
     rust/main.rs \
-    rust/tools/diff_probe.rs \
+    rust/tools/hook_kinds.rs \
     rust/tests/integration.rs \
     spec/fixtures/clean.in \
     spec/lexicon/zh.toml \

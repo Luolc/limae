@@ -9,7 +9,8 @@
 //! is one piece of code that decides that.
 //!
 //! `docs/adr/0009-polish-hook-contract.md` sections 三 to 五 are the normative
-//! description and `src/limae/ab.py` is the reference implementation. On a
+//! description; the Python reference implementation this was ported from has
+//! since been deleted. On a
 //! sampled turn the hook runs two models over the same assistant message and
 //! shows both, so that ADR-0008 section 五 — the default model is not frozen,
 //! measurement decides it — has evidence to decide on.

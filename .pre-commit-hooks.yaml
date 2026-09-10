@@ -4,9 +4,3 @@
   entry: limae
   language: rust
   files: \.md$
-- id: limae-python
-  name: Lint Markdown with limae (Python reference)
-  description: Deprecated Python reference implementation, kept as the rollback path.
-  entry: limae-python
-  language: python
-  files: \.md$

@@ -166,7 +166,7 @@ tail "${TMPDIR:-/tmp}"/limae-hook/*/diagnostics.jsonl
 | `step` | 哪一步：`assemble` 拼分片、`single` 单跑润色、`ab` A/B 对照、`fix` 确定性修复、`record` 落台账、`display` hook 自己崩了 |
 | `kind` | 哪一类，见下表 |
 
-`kind` 是**完整的一张表** —— 按它反查就能定位，漏一类就等于那类失败查不到：
+`kind` 是**完整的一张表** —— 按它反查就能定位，漏一类就等于那类失败查不到；`tools/check_repo_contracts.sh` 拿代码里的全集对着它核，漏一行门就红：
 
 | `kind` | 什么意思 | 下一步 |
 | --- | --- | --- |
