@@ -105,10 +105,18 @@ jobs:
     needs: upload-assets
     if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.upload-assets.result == 'success') }}
     runs-on: ubuntu-latest
+    # Read only: this job downloads public Release assets and uploads a
+    # workflow artifact; the top-level `contents: write` is for
+    # `create-release` and `upload-assets`. Nothing here talks to git after
+    # the checkout, so the token is not kept in the checkout either.
+    permissions:
+      contents: read
     env:
       TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       # `uv` carries `uvx wheel` and `uvx twine`; nothing Python is in the
       # repository (same arrangement as ci.yml).
       - uses: astral-sh/setup-uv@v9.0.0
@@ -126,15 +134,12 @@ jobs:
       # inside each wheel and npm tarball against sha256 of the binary in the
       # Release tarball that passed its sidecar. Both values are in the log.
       - name: Assert every package carries the Release binary
-        run: tools/check_launchers.sh assets dist
+        run: tools/check_launchers.sh "$TAG" assets dist
       - name: twine check
         run: uvx --from 'twine==6.1.0' twine check --strict dist/pypi/*.whl
+      # The publish script itself, with `--dry-run` handed to `npm publish`.
       - name: npm publish --dry-run
-        run: |
-          set -euo pipefail
-          for tarball in dist/npm/*.tgz; do
-            npm publish --dry-run "$tarball"
-          done
+        run: tools/npm_publish_set.sh dist/npm --dry-run
       # The runner is x86_64 Linux, so those two launchers can also be run.
       # The npm install names both tarballs and omits optional dependencies:
       # the platform package is not on the registry yet, and even after it
@@ -159,8 +164,16 @@ jobs:
   # afterwards, strictest guard first: crates.io (`publish`, which asserts
   # tag == manifest before it authenticates), then PyPI (a version can never
   # be reused), then npm (72 hours to unpublish). A failure stops the chain,
-  # so a version that reaches any registry has passed the crates.io guard,
-  # and `gh run rerun --failed` resumes from the job that failed.
+  # so a version that reaches any registry has passed the crates.io guard.
+  #
+  # Both registry jobs below can be re-run after a failure part-way through
+  # an upload (`gh run rerun --failed`): each one first asks the registry
+  # what it already holds for this version and compares it with the file
+  # about to be uploaded — the same bytes is skipped, a missing file is
+  # uploaded, different bytes under the same name stops the job. Neither
+  # registry lets a name be uploaded twice, so a plain re-run would trip over
+  # the files that did land, and a blanket "skip existing" would not tell
+  # "already uploaded this" from "something else has that name".
   publish-pypi:
     if: github.event_name == 'push'
     needs: [launchers, publish]
@@ -170,12 +183,26 @@ jobs:
     # PyPI page), so naming one here would add a condition nobody asked for.
     permissions:
       id-token: write
+      contents: read
     steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
           name: launchers
           path: dist
+      # The comparison with what PyPI already holds (see the note above the
+      # job); the wheels left in dist/pypi afterwards are the ones to upload.
+      - name: Drop the wheels PyPI already holds, byte for byte
+        id: remaining
+        run: |
+          set -euo pipefail
+          tools/pypi_upload_set.sh limae "${GITHUB_REF_NAME#v}" dist/pypi
+          remaining=(dist/pypi/*.whl)
+          echo "count=${#remaining[@]}" >>"$GITHUB_OUTPUT"
       - uses: pypa/gh-action-pypi-publish@release/v1
+        if: steps.remaining.outputs.count != '0'
         with:
           packages-dir: dist/pypi
 
@@ -190,7 +217,14 @@ jobs:
     if: github.event_name == 'push'
     needs: [launchers, publish-pypi]
     runs-on: ubuntu-latest
+    # `contents: read` for the checkout that brings tools/; `npm publish`
+    # needs nothing from GitHub's token.
+    permissions:
+      contents: read
     steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
           name: launchers
@@ -199,15 +233,13 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
+      # The script publishes the platform packages first and the launcher
+      # last, and compares each tarball with what npm already holds before
+      # publishing it (see the note above `publish-pypi`).
       - name: Publish the platform packages, then the launcher
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          set -euo pipefail
-          for platform in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
-            npm publish dist/npm/limae-"$platform"-*.tgz
-          done
-          npm publish dist/npm/limae-[0-9]*.tgz
+        run: tools/npm_publish_set.sh dist/npm
 
   # Trusted Publishing: no long-lived token in CI. The auth action swaps
   # the job's OIDC identity for a short-lived crates.io token and revokes
@@ -289,6 +321,7 @@ jobs:
   npm-auth-check:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
       - uses: actions/setup-node@v7
         with:
@@ -329,8 +362,13 @@ jobs:
       - name: Mint a Trusted Publishing token and stop
         run: |
           set -euo pipefail
+          umask 077
           audience="$(curl -fsS https://pypi.org/_/oidc/audience | jq -er '.audience')"
-          curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+          # The request token is a bearer credential; it reaches curl through
+          # a header file (`-H @file`), never through argv, where any process
+          # listing on the runner would show it.
+          printf 'Authorization: bearer %s\n' "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" >headers.txt
+          curl -fsS -H @headers.txt \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" -o github-token.json
           jq -c '{token: .value}' github-token.json >mint-request.json
           curl -sS -X POST https://pypi.org/_/oidc/mint-token \

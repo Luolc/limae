@@ -180,7 +180,7 @@ crate 一旦存在，就可以把 token 从 CI 里彻底去掉，改由 GitHub �
 
 **它们不编译任何东西。** `tools/build_launchers.sh <tag> <assets-dir> <out-dir>` 从 Release 的 `limae-<target>.tar.gz` (先过它的 `.sha256` 边车) 里取出二进制原样放进 wheel 的 `.data/scripts/limae` 与 npm 平台包的 `limae`；wheel 由 `uvx wheel pack` 打出 (它算 RECORD)，npm 包由 `npm pack` 打出，仓里没有 Python、没有 `pyproject.toml`。包版本取 tag，不取 manifest：二进制是 tag 的，而 dispatch 预演时检出的是 main。描述、license、repository 三个 metadata 串取自 `cargo metadata`，只有一个来源。
 
-**硬不变量：用户从 PyPI 或 npm 装到的二进制与 GitHub Release 上那份是同一份字节。** 「构造上就是这么做的」不算证据 —— 那对「同一份字节」与「两次编译碰巧都能跑」给出相同输出。证据是 `tools/check_launchers.sh <assets-dir> <out-dir>`：对每个 target 比两个值，一边是**从 Release tarball 里重新解出的**二进制的 sha256 (tarball 先过边车，所以这个值链到 Release 页面公布的那份)，另一边是**从打好的 wheel / npm tarball 里重新解出的**二进制的 sha256 (用安装器同一套工具解成品包，不看构建时的中间目录)；两个值都打进日志，任一不等即红。它还断言每个 target 的包数正好是预期的 (Linux 三个、macOS 两个，共 10 次比对)，空目录不会绿。反臂 (2026-09-10 本机实测，读数记在引入这道门的 PR 描述里)：在一个 wheel 的二进制里改一个字节、重新打包 → 红并打出两个不同的值；在一个 npm 平台包里改一个字节 → 红；空的输出目录 → 红；改回 → 绿。
+**硬不变量：用户从 PyPI 或 npm 装到的二进制与 GitHub Release 上那份是同一份字节。** 「构造上就是这么做的」不算证据 —— 那对「同一份字节」与「两次编译碰巧都能跑」给出相同输出。证据是 `tools/check_launchers.sh <tag> <assets-dir> <out-dir>`：对每个 target 比两个值，一边是**从 Release tarball 里重新解出的**二进制的 sha256 (tarball 先过边车，所以这个值链到 Release 页面公布的那份)，另一边是**从打好的 wheel / npm tarball 里重新解出的**二进制的 sha256 (用安装器同一套工具解成品包，不看构建时的中间目录)；两个值都打进日志，任一不等即红。它还断言两个输出目录里**正好**是预期的那 11 个文件、每个模式命中的是不同的文件：只数命中次数的话，多一个没人认识的 wheel (会被 `publish-pypi` 整目录上传) 或一个同时带两个 tag 的 wheel 顶替两份，都能凑回同一个数 (审查方 2026-09-10 两条反臂实测假绿，同日修)。反臂 (2026-09-10 本机实测，读数记在引入这道门的 PR 描述里)：在一个 wheel 的二进制里改一个字节、重新打包 → 红并打出两个不同的值；在一个 npm 平台包里改一个字节 → 红；空的输出目录 → 红；多一个 `win_amd64` wheel → 红；双 tag wheel 顶替两份 → 红；改回 → 绿。
 
 平台映射写在 `tools/build_launchers.sh` 顶部那张表里，两处取舍：**Linux 只有 musl 产物**，静态 musl 二进制在 glibc 系统上照跑，所以同一份文件在 PyPI 上发两个 wheel (manylinux 与 musllinux 各一，pip 按它探测到的 libc 选)、在 npm 上只发一个包 (`os` / `cpu` 不带 `libc` 字段，两类系统都装)；**没有 Windows 产物**，所以映射里没有 Windows 那一行，`optionalDependencies` 与 wheel 矩阵都不写一个不存在的 target，启动器在不支持的平台上退出 1 并说明。
 
@@ -200,6 +200,8 @@ PyPI 的版本号**永远不能删除或重用**，npm 只有 72 小时反悔窗
 
 ### 发布顺序与 npm token
 
-tag 推上去后三家按「越不可撤销越先」发，且互相串着：`publish` (crates.io，先断言 tag == manifest) → `publish-pypi` (`pypa/gh-action-pypi-publish`，OIDC) → `publish-npm` (四个平台包先发、主包最后，`optionalDependencies` 落地即可解析)。链上任一家红，后面的不发；修好后 `gh run rerun --failed` 从失败的那个 job 续。
+tag 推上去后三家按「越不可撤销越先」发，且互相串着：`publish` (crates.io，先断言 tag == manifest) → `publish-pypi` (`pypa/gh-action-pypi-publish`，OIDC) → `publish-npm` (四个平台包先发、主包最后，`optionalDependencies` 落地即可解析)。链上任一家红，后面的不发。
+
+**中途失败后可以 `gh run rerun --failed` 续，靠的是两个发布 job 各自先问 registry**：PyPI 与 npm 都不允许同名文件 / 同 name@version 上传两次，所以「从头再传一遍」会撞上已经落地的那几个，而 PyPI action 的 `skip-existing` 分不开「同一份已传」与「别的东西占了这个名字」。`tools/pypi_upload_set.sh <project> <version> <dir>` 用 PyPI 的 JSON API 拿到该版本已有文件的 sha256，与本次成品逐个比：不在 → 留着上传，同 sha256 → 从目录删掉，不同 → 退出 1 什么都不传 (PyPI 答 404 即全传，其它状态码一律退出 1)；`tools/npm_publish_set.sh <dir> [--dry-run]` 对每个 tgz 用 `npm view <name@version> dist.integrity` 比本地 tarball 的 sha512，先比完全部再发第一个，任一不同即停。三臂读数 (2026-09-10 本机)：PyPI 侧对 `six 1.17.0` 的真 wheel 报 dropped、假文件名报 to be uploaded、改一字节的同名文件退出 1；npm 侧对 `npm pack` 下来的两个真包报 skipped、重新打包内容不同的那份退出 1、我们自己那 5 个未发布的包全部 to be published。
 
 npm 首发用的是仓库 secret `NPM_TOKEN` (npm 的 Trusted Publishing 要求包已存在才能配)，有效期 7 天 (2026-09-10 存入)。首发之后换 OIDC、删 token，是后续任务。`@limae/<platform>` 是 scoped 包，默认 restricted，`publishConfig.access = "public"` 写在每个 `package.json` 里跟着包走，不依赖发布命令怎么写。
