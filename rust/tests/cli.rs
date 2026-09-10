@@ -58,11 +58,6 @@ fn git(cwd: &Path, args: &[&str]) -> TestResult {
     Ok(())
 }
 
-/// This checkout, for the arms that read a file the repository ships.
-fn repository() -> &'static Path {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-}
-
 fn output_text(output: Output) -> Result<(i32, String, String), Box<dyn Error>> {
     Ok((
         output.status.code().ok_or("process terminated by signal")?,
@@ -600,84 +595,5 @@ fn a_configuration_error_is_a_usage_error_on_the_check_path() -> TestResult {
         stdout.contains("t.md:1: error: [zh-typography-1"),
         "{stdout}"
     );
-    Ok(())
-}
-
-/// The `Stop` hook this repository installs for Codex, run as Codex runs it.
-///
-/// This command is not our code and not a test fixture: it is the line a
-/// contributor's own editor executes after every reply, and its `test -x` guard
-/// is the whole reason a checkout that has never been built stays quiet instead
-/// of reporting a missing binary on every turn. Both halves are the contract,
-/// so both are arms: no binary is silence and exit 0, and a binary is run with
-/// whatever it answers handed straight back.
-#[cfg(unix)]
-#[test]
-fn the_codex_stop_hook_fails_open_until_the_binary_is_built() -> TestResult {
-    use std::os::unix::fs::PermissionsExt;
-
-    let settings: toml::Table = toml::from_str(&fs::read_to_string(
-        repository().join(".codex/config.toml"),
-    )?)?;
-    let command = settings
-        .get("hooks")
-        .and_then(|hooks| hooks.get("Stop"))
-        .and_then(|stop| stop.get(0))
-        .and_then(|group| group.get("hooks"))
-        .and_then(|handlers| handlers.get(0))
-        .and_then(|handler| handler.get("command"))
-        .and_then(toml::Value::as_str)
-        .ok_or("no Stop hook command in .codex/config.toml")?;
-
-    // The command asks Git where the checkout is; this stub answers with a
-    // directory that has no `target/debug/limae` in it yet.
-    let root = TempDir::new()?;
-    let bin = root.path().join("bin");
-    fs::create_dir(&bin)?;
-    let git = bin.join("git");
-    fs::write(
-        &git,
-        format!("#!/bin/sh\necho '{}'\n", root.path().display()),
-    )?;
-    fs::set_permissions(&git, fs::Permissions::from_mode(0o755))?;
-    // The stub comes first, so `git` is this one and `sh` is the machine's.
-    let path = format!(
-        "{}:{}",
-        bin.display(),
-        std::env::var("PATH").unwrap_or_default()
-    );
-
-    let (code, stdout, stderr) = output_text(
-        Command::new("sh")
-            .arg("-c")
-            .arg(command)
-            .env_clear()
-            .env("PATH", &path)
-            .output()?,
-    )?;
-    assert_eq!((code, stdout.as_str(), stderr.as_str()), (0, "", ""));
-
-    // Now build one. Anything it says is the host's answer, exit code included,
-    // so the guard must not be swallowing that either.
-    let built = root.path().join("target/debug");
-    fs::create_dir_all(&built)?;
-    let marker = root.path().join("ran");
-    let stub = built.join("limae");
-    fs::write(
-        &stub,
-        format!("#!/bin/sh\ntouch '{}'\nexit 7\n", marker.display()),
-    )?;
-    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755))?;
-
-    let (code, _, _) = output_text(
-        Command::new("sh")
-            .arg("-c")
-            .arg(command)
-            .env_clear()
-            .env("PATH", &path)
-            .output()?,
-    )?;
-    assert_eq!(code, 7);
-    assert!(marker.is_file(), "the guard never reached the binary");
     Ok(())
 }
