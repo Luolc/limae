@@ -1,19 +1,25 @@
 #!/usr/bin/env bash
-# The two lexicon page generators must agree byte for byte, and the page they
-# both produce must be the page that is committed.
+# The lexicon page that is committed must be the one the generator produces.
 #
-# `site/index.html` is a committed product with two producers:
-# `tools/render_lexicon.py` (the reference implementation) and the
-# `render-lexicon` Cargo example (its Rust port). Nothing else in the quality
-# bar notices when the two part ways, or when either moves and the committed
-# page is left behind — every other gate keeps passing, because none of them
-# reads the page.
+# `site/index.html` is a committed product of the `render-lexicon` Cargo
+# example over `spec/lexicon/zh.toml`. Nothing else in the quality bar reads
+# the page, so editing the source without regenerating it, or changing the
+# generator and leaving the page behind, keeps every other gate green.
+#
+# What this gate does not do: it has one generator, so it cannot notice the
+# generator drifting. Until 2026-09 there was a second, independent Python
+# generator and the two were compared byte for byte; that comparison caught
+# a port going wrong, and it went with the Python generator. The check
+# against the committed page pins the current output, which is a different
+# and weaker thing: an intended change to the template is committed together
+# with the page it renders, and this gate has nothing to say about it. The
+# template itself is compiled in by askama, so a field the template names
+# that the data does not carry fails the build, not this gate.
 #
 # The comparison is run twice: once over the committed source, and once over a
 # perturbed copy of it. The second run is the control arm. Agreement over one
-# fixed input is also what two generators that both ignored their input would
-# show; agreement over a changed input, plus a page that changed with it, is
-# not.
+# fixed input is also what a generator that ignored its input would show;
+# a page that changed with its input is not.
 
 set -euo pipefail
 
@@ -42,44 +48,33 @@ fail() {
 binary="$repo_root/target/debug/examples/render-lexicon"
 [[ -x $binary ]] || fail 'the render-lexicon example was not built'
 
-# Render one source with both generators into `$work_dir/$label/{python,rust}`.
-render_both() {
-  local label=$1 source=$2 arm
+# Render one source into `$work_dir/$label/site/index.html`.
+render() {
+  local label=$1 source=$2
 
-  for arm in python rust; do
-    mkdir -p "$work_dir/$label/$arm/spec/lexicon"
-    cp "$source" "$work_dir/$label/$arm/spec/lexicon/zh.toml"
-  done
+  mkdir -p "$work_dir/$label/spec/lexicon"
+  cp "$source" "$work_dir/$label/spec/lexicon/zh.toml"
   (
-    cd "$work_dir/$label/python"
-    uv run --project "$repo_root" python "$repo_root/tools/render_lexicon.py"
-  ) >"$work_dir/$label-python.log" 2>&1 ||
-    { cat "$work_dir/$label-python.log" >&2; fail "$label: the Python generator failed"; }
-  (
-    cd "$work_dir/$label/rust"
+    cd "$work_dir/$label"
     "$binary"
-  ) >"$work_dir/$label-rust.log" 2>&1 ||
-    { cat "$work_dir/$label-rust.log" >&2; fail "$label: the Rust generator failed"; }
+  ) >"$work_dir/$label.log" 2>&1 ||
+    { cat "$work_dir/$label.log" >&2; fail "$label: the generator failed"; }
 }
 
 page() {
-  printf '%s\n' "$work_dir/$1/$2/site/index.html"
+  printf '%s\n' "$work_dir/$1/site/index.html"
 }
 
-# The committed source: the two generators must agree, and the page they agree
-# on must be the committed one.
-render_both committed "$repo_root/spec/lexicon/zh.toml"
-if ! cmp -s "$(page committed python)" "$(page committed rust)"; then
-  cmp "$(page committed python)" "$(page committed rust)" >&2 || true
-  fail 'the Python and Rust generators disagree about spec/lexicon/zh.toml'
+# The committed source must render to the committed page.
+render committed "$repo_root/spec/lexicon/zh.toml"
+if ! cmp -s "$(page committed)" "$repo_root/site/index.html"; then
+  cmp "$(page committed)" "$repo_root/site/index.html" >&2 || true
+  fail 'site/index.html is out of date; rerun `cargo run --example render-lexicon`'
 fi
-if ! cmp -s "$(page committed python)" "$repo_root/site/index.html"; then
-  fail 'site/index.html is out of date; rerun tools/render_lexicon.py'
-fi
-printf '%s\n' 'committed source: both generators agree, and site/index.html matches'
+printf '%s\n' 'committed source: site/index.html matches'
 
 # The control arm. One entry is appended, chosen to move the parts of the page
-# that are easiest to port wrongly: a tone-marked pinyin that has to sort ahead
+# that are easiest to get wrong: a tone-marked pinyin that has to sort ahead
 # of every existing entry, characters HTML has to escape, and a back-quoted
 # span that becomes a `<code>` element.
 perturbed="$work_dir/perturbed.toml"
@@ -96,19 +91,15 @@ examples = [
   { before = "a < b && c > d", after = "`code` 与 'quotes' 与 \"quotes\"" },
 ]
 TOML
-render_both perturbed "$perturbed"
-if ! cmp -s "$(page perturbed python)" "$(page perturbed rust)"; then
-  cmp "$(page perturbed python)" "$(page perturbed rust)" >&2 || true
-  fail 'the Python and Rust generators disagree about the perturbed source'
-fi
-if cmp -s "$(page perturbed python)" "$repo_root/site/index.html"; then
+render perturbed "$perturbed"
+if cmp -s "$(page perturbed)" "$repo_root/site/index.html"; then
   fail 'the perturbed source rendered to the committed page; the comparison is vacuous'
 fi
-# Agreement plus a changed page is still what two generators that both
-# dropped `fault` would show: the other fields of the appended entry move the
-# page on their own. So the field's rendering is asserted directly, on the
-# escaped form the page must carry.
-expected_fault='<p class="fault"><span class="label">病</span>对照臂的 <code>fault</code>：&lt;b&gt; &amp; &quot;quotes&quot; 也要走同一条转义。</p>'
-grep -qF -- "$expected_fault" "$(page perturbed python)" ||
+# A changed page is still what a generator that dropped `fault` would show:
+# the other fields of the appended entry move the page on their own. So the
+# field's rendering is asserted directly, on the escaped form the page must
+# carry.
+expected_fault='<p class="fault"><span class="label">病</span>对照臂的 <code>fault</code>：&#60;b&#62; &#38; &#34;quotes&#34; 也要走同一条转义。</p>'
+grep -qF -- "$expected_fault" "$(page perturbed)" ||
   fail 'the perturbed source did not render its `fault` as the expected escaped HTML'
-printf '%s\n' 'control arm: both generators followed the changed source, the page changed with it, and `fault` rendered as expected'
+printf '%s\n' 'control arm: the page changed with the source, and `fault` rendered as expected'
