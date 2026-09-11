@@ -215,10 +215,19 @@ setup_path() {
     return 0
   fi
 
-  if [ -e "$rc" ] && grep -Fq "$MARK_BEGIN" "$rc"; then
+  # Both markers, not just the opening one. A file carrying only one of the
+  # two has a block that was never finished — an interrupted write, a hand
+  # edit, a merge conflict — and reading that as "the block is there" would
+  # skip the write and leave the next terminal without limae on PATH, while
+  # printing that everything is in order.
+  if [ -e "$rc" ] && grep -Fq "$MARK_BEGIN" "$rc" && grep -Fq "$MARK_END" "$rc"; then
     say ''
     say "$rc already carries a limae block; it was left as it is."
   else
+    if [ -e "$rc" ] && { grep -Fq "$MARK_BEGIN" "$rc" || grep -Fq "$MARK_END" "$rc"; }; then
+      say ''
+      say "$rc carries one limae marker without its pair, so the block there is unfinished. A complete one is being appended; the stray marker is a comment and is safe to delete."
+    fi
     {
       printf '\n%s\n' "$MARK_BEGIN"
       path_line "$bin_dir"
@@ -246,7 +255,12 @@ main() {
   need_cmd uname
   need_cmd mktemp
 
+  # A trailing slash is an ordinary way to type a directory into an
+  # environment variable, and PATH entries do not carry one — so without this
+  # the "already on PATH" test below would miss and an extra, equivalent
+  # entry would be written to the rc file.
   bin_dir="${LIMAE_INSTALL_DIR:-$HOME/.local/bin}"
+  bin_dir="${bin_dir%/}"
   target="$(detect_target)"
   version="${LIMAE_VERSION:-$(resolve_version)}"
   tarball="$BIN_NAME-$target.tar.gz"
