@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -331,5 +332,75 @@ fn the_walk_sorts_relative_markdown_and_refuses_a_directory_it_cannot_read() -> 
             ])
         );
     }
+    Ok(())
+}
+
+/// An oracle that shares none of the selection's own defaults.
+///
+/// Enumerate the tree with `std::fs` alone and every name ending in `.md` must
+/// be selected, unless it is a directory. In a tree with no repository and no
+/// ignore file there is nothing else the selection may legitimately leave out,
+/// so this says what the contract is instead of listing what has gone wrong:
+/// hidden entries, links, and links that will not resolve are not named here,
+/// and neither is whatever the next omission turns out to be. Naming the known
+/// cases one at a time can only ever cover the ones already found.
+#[cfg(unix)]
+#[test]
+fn every_markdown_a_plain_walk_finds_is_selected_unless_it_is_a_directory() -> TestResult {
+    fn plain_walk(dir: &Path, root: &Path, found: &mut Vec<PathBuf>) -> TestResult {
+        for entry in fs::read_dir(dir)? {
+            let path = entry?.path();
+            if path.extension() == Some(OsStr::new("md")) {
+                found.push(path.strip_prefix(root)?.to_owned());
+            }
+            // `symlink_metadata` does not resolve, so a linked directory is
+            // not descended here either; that bound is the walk's, not a
+            // property of Markdown, so the oracle has to share it.
+            if fs::symlink_metadata(&path)?.is_dir() {
+                plain_walk(&path, root, found)?;
+            }
+        }
+        Ok(())
+    }
+
+    let root = TempDir::new()?;
+    fs::create_dir_all(root.path().join(".hiddendir"))?;
+    fs::create_dir_all(root.path().join("nested"))?;
+    fs::create_dir(root.path().join("dir.md"))?;
+    for name in [
+        "a.md",
+        ".hidden.md",
+        ".hiddendir/inside.md",
+        "nested/deep.md",
+        "notes.txt",
+    ] {
+        fs::write(root.path().join(name), "ACME")?;
+    }
+    std::os::unix::fs::symlink("a.md", root.path().join("link.md"))?;
+    std::os::unix::fs::symlink("absent.md", root.path().join("broken.md"))?;
+    std::os::unix::fs::symlink("nested", root.path().join("linkdir.md"))?;
+
+    let mut oracle = Vec::new();
+    plain_walk(root.path(), root.path(), &mut oracle)?;
+    oracle.sort();
+    // A link that will not resolve is not a directory, so it stays in the
+    // expectation: "cannot tell" has to fall on the side that gets checked.
+    let expected: Vec<PathBuf> = oracle
+        .iter()
+        .filter(|path| !root.path().join(path).is_dir())
+        .cloned()
+        .collect();
+    assert_eq!(
+        expected,
+        paths(&[
+            ".hidden.md",
+            ".hiddendir/inside.md",
+            "a.md",
+            "broken.md",
+            "link.md",
+            "nested/deep.md"
+        ])
+    );
+    assert_eq!(walk_markdown(root.path())?, expected);
     Ok(())
 }
