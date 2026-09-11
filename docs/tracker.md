@@ -204,6 +204,11 @@ backlog 的正本，由实现方在改动所属的 PR 里记账，`limae-orchest
   **下一个 PR 的前置条件**：用户把五个包 (`@limae/cli` 与四个 `@limae/<platform>`) 的 Trusted Publisher 都配好，**且每个都手选了 `npm publish`**。步骤在[发版手册](knowledge/release.md)「npm 的凭证」一节。
   **手册里那条直链没核过，明写了**：`https://www.npmjs.com/package/<包名>/access` 这个路径是从第三方文章读来的，官方文档只说「Navigate to your package settings on npmjs.com」。npmjs.com 对没登录的请求一律答 403 —— 2026-09-10 四臂实测 (包页面、`/access`、一个不存在的包、一个瞎编的路径) 四个都是 403，**这个观察对「路径对不对」零分辨力**，所以手册写成「直链多半是这个，打不开就从包页面点进 Settings」。五个包存在且均为 0.13.2 这一条倒是核过的，读的是 registry 的 `dist-tags.latest`。
 
+- **发行包的 README 改英文** (2026-09-10，本 PR)：`launchers/npm/cli`、`launchers/npm/platform`、`launchers/pypi` 三份改成英文，各留一句指向仓库 README 的链接并写明它是中文。**仓库根 `README.md` 一个字不动** —— 用户定的是仓库 README 默认中文、英文版他自己另做一份再从中文那份链过去；`Cargo.toml` 的 `readme` 指的也是它，所以 crates.io 渲染的仍是中文。`package.json` 与 wheel METADATA 的 `description` 同样没动：那串由 `tools/build_launchers.sh` 从 `cargo metadata` 取，只有一个来源，而且本来就是英文。
+  **对外生效的时点是下一次发版**：README 在 `npm pack` / `wheel pack` 那一刻才被打进包里，已经发出去的 0.13.2 页面不会变。
+  **验收的分辨力在「改动真的进包」那一臂**：`package.json` 的 `files` 里并没有列 README (npm 总是自动带上它)，所以这件事真跑了一次而不是假定 —— `gh release download v0.13.2 --pattern 'limae-*'` 取资产、`tools/build_launchers.sh v0.13.2 <assets> <out>` 打包，从 `limae-cli-0.13.2.tgz`、`limae-linux-x64-0.13.2.tgz` 与 musllinux wheel 的 `METADATA` 里解出来的都是新的英文那份。**对照臂**是同一条命令在 `origin/main` 的分离 worktree 上跑一遍，解出来的是旧的中文那份 —— 差异来自这次改动，不是来自打包流程本身。
+  **英文没有让本仓 linter 误报**：十三道门裸跑全绿，`pre-commit run --all-files` 里 `limae` 那个钩子照样扫到这三份 `.md` (`files: \.md$`) 并且 Passed。默认规则集只有 zh-typography 一族、en-tell 是默认关的实验规则，所以没有出现「为了让门变绿去改英文措辞」那种情况。
+
 ## 愿景 (正本 `docs/adr/0005-agent-native-positioning.md`，这里只记条目)
 
 - **LLM 语义润色**：agent 调用的语义层润色特性，与确定性 lint 互补。

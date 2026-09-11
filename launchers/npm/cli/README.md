@@ -1,9 +1,9 @@
 # @limae/cli
 
-[limae](https://github.com/Luolc/limae) 的 npm 启动器 (launcher)：`npm i -D @limae/cli` 之后 `npx limae` 即可用 (包名带 scope，命令名仍是 `limae`)。
+The npm launcher for [limae](https://github.com/Luolc/limae): `npm i -D @limae/cli`, then run `npx limae` (the package is scoped, the command is not).
 
-这个包不含任何代码逻辑，`bin/limae.js` 只是找到 npm 按平台装进来的 `@limae/<platform>` 包、执行里面的二进制。那个二进制与同版本 GitHub Release 上 `limae-<target>.tar.gz` 里的是同一份文件，打包时逐个比对过 sha256。
+This package carries no logic of its own. `bin/limae.js` finds the `@limae/<platform>` package that npm installed for the current machine and executes the binary inside it. That binary is the same file that ships as `limae-<target>.tar.gz` in the GitHub Release of the same version, checked sha256 by sha256 when the packages are built.
 
-支持的平台：`linux-x64`、`linux-arm64` (静态 musl 二进制，glibc 与 musl 系统都能跑)、`darwin-x64`、`darwin-arm64`。没有 Windows。
+Platforms: `linux-x64`, `linux-arm64` (static musl builds, so they run on glibc and musl systems alike), `darwin-x64`, `darwin-arm64`. No Windows.
 
-用法、规则与配置见 [仓库 README](https://github.com/Luolc/limae#readme)。
+Usage, rules and configuration live in the [repository README](https://github.com/Luolc/limae#readme), which is written in Chinese.

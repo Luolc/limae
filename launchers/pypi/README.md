@@ -1,9 +1,9 @@
 # limae
 
-[limae](https://github.com/Luolc/limae) 的 PyPI 启动器 (launcher)：`pip install limae` 或 `uv add --dev limae` 之后 `limae` 命令即可用。
+The PyPI launcher for [limae](https://github.com/Luolc/limae): `pip install limae` or `uv add --dev limae`, then run `limae`.
 
-这个 wheel 不含任何 Python 代码，只把预构建的 `limae` 二进制装进 scripts 目录。那个二进制与同版本 GitHub Release 上 `limae-<target>.tar.gz` 里的是同一份文件，打包时逐个比对过 sha256。
+The wheel carries no Python code. It drops a prebuilt `limae` binary into the scripts directory, and that binary is the same file that ships as `limae-<target>.tar.gz` in the GitHub Release of the same version, checked sha256 by sha256 when the wheels are built.
 
-支持的平台：Linux x86_64 / aarch64 (静态 musl 二进制，manylinux 与 musllinux 两种 wheel 装的是同一份文件)、macOS x86_64 / arm64。没有 Windows。
+Platforms: Linux x86_64 and aarch64 (static musl builds — the manylinux and musllinux wheels carry the same file), macOS x86_64 and arm64. No Windows.
 
-用法、规则与配置见 [仓库 README](https://github.com/Luolc/limae#readme)。
+Usage, rules and configuration live in the [repository README](https://github.com/Luolc/limae#readme), which is written in Chinese.
