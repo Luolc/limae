@@ -240,6 +240,11 @@ backlog 的正本，由实现方在改动所属的 PR 里记账，`limae-orchest
   **⑤ 残余风险：用户 2026-09-11 裁决接受**，理由是概率低加爆炸半径有限 —— 失效要三个条件同时成立、`displayContent` 只改屏幕不落盘 (677 条回复原文取自 transcript 而当时 hook 正开着、52% 需要修，说明 transcript 存的是未经改动的原文)、二进制里**能确立**两个 message id 空间与重试记账、**不能确立**重投时 client 侧 `message_id` 换不换。**不是「已排除」也不是「已验证安全」**，这个「能 / 不能」的划分在 ADR 里原样保留，不压缩成「大概率会换」。
   **本 PR 不碰 `AGENTS.md`**：「质量标准」里 `check_repo_contracts.sh` 那条描述仍写着已删除的 Codex Stop 承诺，按本仓规矩 `AGENTS.md` 单独成任务，留给 #180 合入之后的那一个。
 
+- **CI 偶发 `ExecutableFileBusy`：记账，复发再修**：症状是 `polish::engines::tests::empty_answer_is_rejected_and_temporary_resources_are_cleaned` 报 `Os code 26 ExecutableFileBusy`，发生在 spawn 一个刚由 `rust/polish/engines_tests.rs` 的 `stub()` 写出并 `chmod 0755` 的脚本时。**首次观测** 2026-09-11，run 34638236101，[PR #181](https://github.com/Luolc/limae/pull/181) —— 那个 PR 的 diff 零行 Rust，所以它在 main 上同样会发生；重跑同一个 job 即绿。
+  **证据等级**：本机 `cargo test --locked --lib` 连跑 5 次全绿、`Text file busy` 命中 0 —— **5/5 绿不证明它不会再红**，只说明这里没有稳定失败，复现没造出来。机制是推断、不是本次实测的归因：`fs::write` 自己会关掉句柄，所以问题不在 `stub()` 那几行里；`ETXTBSY` 的经典成因是另一个线程 `fork` 去起子进程时继承了这个写句柄、还没 `exec` 完，内核看到该文件仍有打开的写句柄于是拒绝 exec —— 这解释得了「只在多线程测试进程里偶发」，但没有证据把这一次的失败钉到这条路径上。
+  **为什么不现在修**：修之前得先有复现，否则那条回归测试在修复不在场时也不会红，是个永远不红的空洞，比不修更坏。**复发一次就升级成任务**；届时候选修法是「exec 遇 `ETXTBSY` 有界重试」或「这组测试串行跑」，两者都只动测试代码、不动 production。
+  **给下一个人的提醒**：不要把「重跑就绿」当成结论 —— 那个观察对「flake」与「真 bug 只是偶发」给出相同输出。
+
 ## 愿景 (正本 `docs/adr/0005-agent-native-positioning.md`，这里只记条目)
 
 - **LLM 语义润色**：agent 调用的语义层润色特性，与确定性 lint 互补。
