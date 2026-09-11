@@ -194,21 +194,95 @@ PyPI 的版本号**永远不能删除或重用**，npm 只有 72 小时反悔窗
 
 同一条预演在本机也能裸跑 (`gh release download <tag> --pattern 'limae-*' --dir <assets-dir>` 之后依次跑上面两个脚本)，退出码为准、不接管道。
 
-### `pypi-auth-check` 是脚手架，`v0.13.1` 发布成功后删掉
+### 预演里没有 PyPI 那一臂，这是有意的
 
-它长得像 crates.io 的 `auth-check`，性质不同：**PyPI 的 mint-token 端点对 pending publisher 会在 mint 那一刻建出项目、把 pending 转正** (warehouse 仓 `warehouse/oidc/views.py` 的 `mint_token`：`project_service.create_project(...)` 与 `oidc_service.reify_pending_publisher(...)`，2026-09-10 读 main 分支)。所以跑一次它就在 PyPI 上留下一个空的 `limae` 项目 —— 不烧版本号，但对外可见、不可逆。因此它挂在 dispatch 的布尔输入 `pypi_auth_check` 后面，默认 false，预演不碰它。
+crates.io 与 npm 在 dispatch 上各有一个只验凭证的 job，PyPI 没有。原因是 PyPI 的这一臂**做不到「只验证」**：**它的 mint-token 端点对 pending publisher 会在 mint 那一刻建出项目、把 pending 转正** (warehouse 仓 `warehouse/oidc/views.py` 的 `mint_token`：`project_service.create_project(...)` 与 `oidc_service.reify_pending_publisher(...)`，2026-09-10 读 main 分支)。跑一次就在 PyPI 上留下一个项目 —— 不烧版本号，但对外可见、不可逆。
 
-它买到的只是「更早知道」：TP 配错时真实发布本来就在上传前安全失败。这次值得买，是因为三家要同版本一起发，PyPI 一家掉队就是 tag / manifest 守卫要防的同一类分叉。首发成功之后项目已存在、publisher 已转正，它再也验不到发布没验过的东西，退化成一个永远绿的开关 —— 到那时删掉这个 job 与那个输入。
+曾经有过一个 `pypi-auth-check` job 挂在 dispatch 的布尔输入后面，默认 false，为的是在**首发之前**验一次那条链通不通 —— 那时没有别的办法。`limae` 0.13.1 与 0.13.2 都已发到 PyPI，那个问题因此被更强的证据回答了，它也随之删掉 ([PR #173](https://github.com/Luolc/limae/pull/173))：项目已存在、publisher 已转正，它再也验不到发布没验过的东西，只剩一个永远绿的开关和那个副作用。
 
-两家 Trusted Publishing 的 `environment:` 这次一致：crates.io 那边配置里留空，PyPI 的 pending publisher 页面上 Environment name 显示 `(Any)` (用户 2026-09-10 截图，经 orchestra 转述)，所以 `publish-pypi` 与 `pypi-auth-check` 都不写 `environment:` —— 写了反而是给自己加一个没被要求的条件。若首发报环境相关的错，说明这条读数错了，如实报。
+**别把它照抄到新项目里。** 一个带不可逆副作用的检查，代价要与它买到的东西一起算：它买到的只是「更早知道」，而 TP 配错时真实发布本来就在上传前安全失败。
 
-### 发布顺序与 npm token
+PyPI 侧的 `environment:` 留空：pending publisher 页面上 Environment name 显示 `(Any)` (用户 2026-09-10 截图，经 orchestra 转述)，与 crates.io 那边一致，所以 `publish-pypi` 不写 `environment:` —— 写了反而是给自己加一个没被要求的条件。
+
+### 发布顺序与失败重跑
 
 tag 推上去后三家按「越不可撤销越先」发，且互相串着：`publish` (crates.io，先断言 tag == manifest) → `publish-pypi` (`pypa/gh-action-pypi-publish`，OIDC) → `publish-npm` (四个平台包先发、主包 `@limae/cli` 最后，`optionalDependencies` 落地即可解析)。链上任一家红，后面的不发。
 
 **中途失败后可以 `gh run rerun --failed` 续，靠的是两个发布 job 各自先问 registry**：PyPI 与 npm 都不允许同名文件 / 同 name@version 上传两次，所以「从头再传一遍」会撞上已经落地的那几个，而 PyPI action 的 `skip-existing` 分不开「同一份已传」与「别的东西占了这个名字」。`tools/pypi_upload_set.sh <project> <version> <dir>` 用 PyPI 的 JSON API 拿到该版本已有文件的 sha256，与本次成品逐个比：不在 → 留着上传，同 sha256 → 从目录删掉，不同 → 退出 1 什么都不传 (PyPI 答 404 即全传，其它状态码一律退出 1)；`tools/npm_publish_set.sh <dir> [--dry-run]` 对每个 tgz 用 `npm view <name@version> dist.integrity --json` 比本地 tarball 的 sha512，先比完全部再发第一个，任一不同即停；只有 registry 明确答 E404 才算「不在」，连不上、5xx 之类一律退出 1 (查不到不等于没有)。三臂读数 (2026-09-10 本机)：PyPI 侧对 `six 1.17.0` 的真 wheel 报 dropped、假文件名报 to be uploaded、改一字节的同名文件退出 1；npm 侧对 `npm pack` 下来的两个真包报 skipped、重新打包内容不同的那份退出 1、我们自己那 5 个未发布的包全部 to be published、registry 指到不可达地址时退出 1 且零次 publish；PyPI 侧另有一臂：全部 wheel 都已在 PyPI 时 `publish-pypi` 那步数出 `count=0`、上传 action 被跳过 (计数前开 `nullglob`，否则空目录数出的是模式自己那一个)。
 
-npm 首发用的是仓库 secret `NPM_TOKEN` (npm 的 Trusted Publishing 要求包已存在才能配)，有效期 7 天 (2026-09-10 存入)。首发之后换 OIDC、删 token，是后续任务。npm 上五个包全部带 `@limae` scope，scoped 包默认 restricted，所以 `publishConfig.access = "public"` 写在每个 `package.json` 里跟着包走，不依赖发布命令怎么写。
+npm 上五个包全部带 `@limae` scope，scoped 包默认 restricted，所以 `publishConfig.access = "public"` 写在每个 `package.json` 里跟着包走，不依赖发布命令怎么写。
+
+### npm 的凭证：今天是 `NPM_TOKEN`，要迁到 Trusted Publishing
+
+**今天的状态**：`publish-npm` 与 `npm-auth-check` 用的是仓库 secret `NPM_TOKEN` (2026-09-10 存入)，经 `actions/setup-node` 的 `registry-url` 接到 `NODE_AUTH_TOKEN`。三家里只有 npm 还留着长期凭证，crates.io 与 PyPI 都走 OIDC。
+
+**要迁的理由是「CI 里不留长期凭证」**，与那枚 token 什么时候到期无关 —— 到期只是提醒，不是理由。
+
+**顺序是这件事的全部难点，而且错的那一侧不可逆：**
+
+> **必须先由用户在 npmjs.com 上把五个包一个个配好 (下面 👤 那一节)，才能改 CI。**
+> 反过来做，下一次推 tag 时 `publish-npm` 直接发不出去 —— 而那时 crates.io 与 PyPI 已经收下了这个版本号，两家都不能删除或重用，只能 bump 一个新版本往前走。
+
+所以**本仓今天的 `release.yml` 仍是 token 那条路，一个字没改**，等配置到位再开 PR 改 CI。
+
+#### 👤 用户要做的：给五个包各配一次 Trusted Publisher
+
+npm 的 Trusted Publishing **是逐包配的，没有 scope 级或 org 级入口** (官方文档原文：「Navigate to your package settings on npmjs.com and find the "**Trusted Publisher**" section.」)，所以五个包就是五次，每次填的内容完全一样。包必须已经存在才配得了 —— 五个包都已在 0.13.2，这个前提满足。
+
+在浏览器里做，先登录 npm 账号。手机浏览器也打得开，但这一节每个包都有四个要**逐字照抄**的字段、外加一个必须手选的勾，**能用电脑就用电脑**。对下面五个包各做一遍：
+
+1. `@limae/cli`
+2. `@limae/linux-x64`
+3. `@limae/linux-arm64`
+4. `@limae/darwin-x64`
+5. `@limae/darwin-arm64`
+
+每个包的步骤，一次一个动作：
+
+1. 打开这个包的页面，例如 <https://www.npmjs.com/package/@limae/cli>，进它的 **Settings**。
+
+   直链多半是 `https://www.npmjs.com/package/<包名>/access`，但**这个路径没核过** —— npmjs.com 对没登录的请求一律答 403，连一个明摆着不存在的路径也答 403 (2026-09-10 四臂实测：包页面、`/access`、不存在的包、瞎编的路径，四个都是 403)，所以「403」对「路径对不对」零分辨力。直链打不开就从包页面点进 Settings，官方文档给的也只是这一句：「Navigate to your package settings on npmjs.com」。
+2. 找到 **Trusted Publisher** 这一栏，在 **Select your publisher** 下面点 **GitHub Actions** 那个按钮。
+3. 填四个字段，**逐字照抄，大小写敏感**：
+   - **Organization or user**：`Luolc`
+   - **Repository**：`limae`
+   - **Workflow filename**：`release.yml` —— 只填文件名，不要填 `.github/workflows/release.yml` 这样的路径，且必须带 `.yml` 后缀
+   - **Environment name**：**留空** (本仓没有建 GitHub Actions environment，与 crates.io、PyPI 两边的配置一致)
+4. **Allowed actions：必须亲手勾上 `npm publish`。这一步单独成一步，因为它是这一节唯一会静默出错的地方。**
+
+   官方注记原文：「Configurations created after Sep 03, 2026 are automatically set to allow `npm stage publish`, and you can choose whether to also permit direct publishing with `npm publish`.」今天 (2026-09-10) 落在这条里 —— **按默认保存，配出来的是「只允许 staged publish」**，而我们的 `publish-npm` 敲的是 `npm publish`，会被拒。
+
+   **这件事在配置过程中看不出来**：五个包全配完、每一步都显示成功，然后下一次发版红。所以要盯着这一栏本身看，**不要以「保存成功了」当判据**。
+
+   **这一步的完成判据**：保存前，`npm publish` 那个勾是**勾上的** (`npm stage publish` 勾不勾都行，它本来就总是允许)。
+
+5. 保存。
+
+   **这个包的完成判据**：页面刷新后，Trusted Publisher 一栏里出现一条记录，显示 GitHub Actions、`Luolc`、`limae`、`release.yml`，**且 allowed actions 那一项里看得到 `npm publish`**。看不到就是没配上，重来一次 —— 别放过去。
+
+五个包 (`@limae/cli`、`@limae/linux-x64`、`@limae/linux-arm64`、`@limae/darwin-x64`、`@limae/darwin-arm64`，2026-09-10 从 registry 核过，均为 0.13.2) 都做完之后，回报一句「五个包都配好了」，CI 那边的改动才开始。
+
+**npm 不替你验配置**，官方原文：「npm does not verify your trusted publisher configuration when you save it. Double-check that your repository, workflow filename, and other details are correct, as errors will only appear when you attempt to publish.」所以上面第 3 步的逐字照抄是这一节唯一的判据来源，填错要到下一次真发布才会知道。
+
+#### CI 侧要改什么 (等配置到位后另开 PR)
+
+记在这里是为了到时候不必重新查一遍，**这些今天都还没做**：
+
+- `publish-npm` 加 `id-token: write` (`contents: read` 保留，`actions/checkout` 要读仓库)。
+- **`registry-url` 与 OIDC 的那件事：按现在的读数，本仓多半不必动它 —— 但这要在迁移 PR 里用两臂在 runner 上定，不在这里定。**
+
+  曾经有一个真实的坑：`actions/setup-node` 会往 `.npmrc` 写一行 `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`，并且**导出一个占位符 `NODE_AUTH_TOKEN: XXXXX-XXXXX-XXXXX-XXXXX`**，npm 据此认为 auth 已配置，于是不发起 OIDC 交换，报 `ENEEDAUTH` 或 404。
+
+  **它已经修了，而且修在我们用的那条线上。** [actions/setup-node#1440](https://github.com/actions/setup-node/issues/1440) 由 PR #1558 修复，**只进了 v7 线**；[#1551](https://github.com/actions/setup-node/issues/1551) 作为它的重复被关闭，关闭评论里 maintainer 报告用同一份配置 (带 `registry-url`、占位符在场) 成功用 OIDC 发布过。两个 issue **都已 CLOSED** (2026-09-10 `gh issue view` 读：#1551 closed 2026-05-18、#1440 closed 2026-05-29)；仍然开着的只有 [npm/documentation#1960](https://github.com/npm/documentation/issues/1960)。
+
+  **本仓两处 `setup-node` 都已经钉在 `@v7`** (`release.yml` 的 `publish-npm` 与 `npm-auth-check`)。两臂读数 (2026-09-10 本机，抓 action 自己的 `dist/setup/index.js` grep 那个占位符串)：**`v6` 命中 1 次，`v7` 命中 0 次** —— 修复确实在 v7 里，不在 v6 里。npm 官方 Trusted Publishers 文档给的 GitHub Actions 完整示例**也仍然带着 `registry-url`**。
+
+  **所以「去掉 `registry-url`」是一个候选 workaround，不是硬要求。** 上面那个 grep 只证明占位符不在 v7 的包里，**不证明 OIDC 在我们这条流水线上真能换到 token** —— 两者不是一回事。迁移 PR 里按这个顺序做：**先照官方示例原样跑** (保留 `registry-url`、不设 `NODE_AUTH_TOKEN`)，通了就到此为止；**不通再上 workaround**，并且两臂都留读数 (`sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG"`，或干脆去掉 `registry-url`)。**不要在没跑之前就把 workaround 写成步骤。**
+- npm CLI **>= 11.5.1**、Node **>= 22.14.0** (官方文档)。`node-version: 24` 今天满足 Node 那一半，npm 那一半随 runner 镜像走 —— 改 CI 时加一条正向断言把版本打进日志，别假定。
+- **不要加 `--provenance`。** OIDC + 公开仓 + 公开包三条同时成立时 npm 自动生成 provenance，官方原文：「This happens by default—you don't need to add the `--provenance` flag to your publish command.」三条我们都成立。
+- `npm-auth-check` 一并删掉：它验的是 `NPM_TOKEN` (`npm whoami`)，token 没了它就没有对象。**npm 侧没有 crates.io `auth-check` 那样的等价物** —— npm 的 OIDC 交换只挂在 `npm publish` 上，没有一条「只认证不发布」的命令。所以这一步换来的是**预演里少一条 npm 凭证臂**，OIDC 通不通只有下一次真发布才知道；这是这次迁移的已知代价，不要拿一个看起来像检查的东西补上它。
+- `NPM_TOKEN` 这个仓库 secret 由用户在配置与 CI 改动都落地、且下一次发版验证成功之后再删。
+- `repository.url` 必须与 GitHub 仓库逐字相符 (官方对 GitHub 这条路的要求)。`tools/build_launchers.sh` 生成的是 `git+https://github.com/Luolc/limae.git`，已相符，不必改。
 
 ## 五、pre-commit 镜像仓
 
