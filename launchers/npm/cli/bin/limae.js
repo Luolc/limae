@@ -31,7 +31,7 @@ try {
   binary = require.resolve(`${pkg}/limae`);
 } catch {
   console.error(
-    `limae: ${pkg} is not installed; it is an optional dependency of limae, so ` +
+    `limae: ${pkg} is not installed; it is an optional dependency of @limae/cli, so ` +
       "reinstall without --omit=optional / --no-optional",
   );
   process.exit(1);

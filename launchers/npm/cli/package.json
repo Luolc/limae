@@ -1,5 +1,5 @@
 {
-  "name": "limae",
+  "name": "@limae/cli",
   "version": "0.0.0",
   "description": "A Markdown linter that starts from Chinese technical-writing typography rules, with opt-in experimental rules for AI tells and terminology",
   "license": "Apache-2.0",

@@ -151,7 +151,7 @@ jobs:
           [ "${#wheel[@]}" -eq 1 ]
           uvx --from "${wheel[0]}" limae --help >/dev/null
           mkdir smoke && cd smoke && npm init -y >/dev/null
-          npm install --omit=optional ../dist/npm/limae-linux-x64-*.tgz ../dist/npm/limae-[0-9]*.tgz
+          npm install --omit=optional ../dist/npm/limae-linux-x64-*.tgz ../dist/npm/limae-cli-*.tgz
           npx limae --help >/dev/null
           echo "smoke: both launchers ran"
       - uses: actions/upload-artifact@v7
