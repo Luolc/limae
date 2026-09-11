@@ -198,7 +198,7 @@ PyPI 的版本号**永远不能删除或重用**，npm 只有 72 小时反悔窗
 
 crates.io 与 npm 在 dispatch 上各有一个只验凭证的 job，PyPI 没有。原因是 PyPI 的这一臂**做不到「只验证」**：**它的 mint-token 端点对 pending publisher 会在 mint 那一刻建出项目、把 pending 转正** (warehouse 仓 `warehouse/oidc/views.py` 的 `mint_token`：`project_service.create_project(...)` 与 `oidc_service.reify_pending_publisher(...)`，2026-09-10 读 main 分支)。跑一次就在 PyPI 上留下一个项目 —— 不烧版本号，但对外可见、不可逆。
 
-曾经有过一个 `pypi-auth-check` job 挂在 dispatch 的布尔输入后面，默认 false，为的是在**首发之前**验一次那条链通不通 —— 那时没有别的办法。`limae` 0.13.1 与 0.13.2 都已发到 PyPI，那个问题因此被更强的证据回答了，它也随之删掉：项目已存在、publisher 已转正，它再也验不到发布没验过的东西，只剩一个永远绿的开关和那个副作用。
+曾经有过一个 `pypi-auth-check` job 挂在 dispatch 的布尔输入后面，默认 false，为的是在**首发之前**验一次那条链通不通 —— 那时没有别的办法。`limae` 0.13.1 与 0.13.2 都已发到 PyPI，那个问题因此被更强的证据回答了，它也随之删掉 ([PR #173](https://github.com/Luolc/limae/pull/173))：项目已存在、publisher 已转正，它再也验不到发布没验过的东西，只剩一个永远绿的开关和那个副作用。
 
 **别把它照抄到新项目里。** 一个带不可逆副作用的检查，代价要与它买到的东西一起算：它买到的只是「更早知道」，而 TP 配错时真实发布本来就在上传前安全失败。
 
