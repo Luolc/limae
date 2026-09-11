@@ -66,7 +66,7 @@ LGTM 后从评论取 approved SHA，确认本地 tip 与之相同 (`git rev-pars
 
 **发版必须先有用户本人的同意。** 合并是常规动作、不需要额外授权 (见上节)；发版是另一档，因为它按下去收不回来。
 
-- **闸口是任何把版本送出仓库的动作**。今天它只有一条路：推 `v<major>.<minor>.<patch>` tag，`.github/workflows/release.yml` 由这个 tag push 触发，此后 GitHub Release 与 crates.io / PyPI / npm 三家的发布全部自动发生，tag 推出去之后没有一处还等着人点头 —— 所以不必逐个列举 workflow 内部的下游步骤。**但闸口不等于那一条路**：绕开 workflow 直接敲 `cargo publish` / `twine upload` / `npm publish` / `gh release create`，全程没有任何 tag 被推过，同样是发版、同样要授权 (crates.io 的 token 仍在用户手上，这条路是通的)。判据钉在「做了什么」上，不钉在「今天怎么做的」上，明天多一条发布路径时它自动落在闸口里面。
+- **闸口是任何把版本送出仓库的动作**。今天**受支持的自动发版路径**只有一条：推 `v<major>.<minor>.<patch>` tag，`.github/workflows/release.yml` 由这个 tag push 触发，此后 GitHub Release 与 crates.io / PyPI / npm 三家的发布全部自动发生，tag 推出去之后没有一处还等着人点头 —— 所以不必逐个列举 workflow 内部的下游步骤。**但闸口不等于那一条路**：绕开 workflow 直接敲 `cargo publish` / `twine upload` / `npm publish` / `gh release create`，全程没有任何 tag 被推过，同样是发版、同样要授权 (crates.io 的 token 仍在用户手上，这条路是通的)。判据钉在「做了什么」上，不钉在「今天怎么做的」上，明天多一条发布路径时它自动落在闸口里面。
 - **这些都不是发版，不需要额外授权**：改 `Cargo.toml` 的版本号、开 bump PR、合入任何 PR、跑 `workflow_dispatch` 的 launcher dry-run (`pypi_auth_check=false`)。bump PR 是发版的直接输入，但它本身可逆，改错了再改回来即可。
 - **`pypi_auth_check=true` 那条臂按发版同档处理**：它会在 PyPI 上建出项目，是对外可见、收不回的动作，所以要授权，尽管它不发任何版本。
 - **什么算「用户同意」**，两种形式都算：**即时授权** (「现在发一版」) 与**条件式预授权** (「把某个 feature 做完测完发一版」)。后者按用户说的条件逐项核，核的是**条件本身**：「做完测完」是「做完」且「测完」，不是「合入」。本仓合入的前提是 required check `check` 绿，而那就是十三道门，所以合入通常已经蕴含「测完」，不必在 CI 证过的事情上再叠一层人工确认；但蕴含不是等同 —— 验收臂依赖已发布产物的 feature (安装路径这类，`brew install` 与 `curl … | sh` 都得先有一个真的 Release) 在合入那一刻根本还没跑过，「测完」就没兑现。逐项都成立才可以执行、不必回头再问；有一项说不清就回去问用户，不往宽里读。**不算的**：agent 自己判断「现在是个好时机」、「反正都测完了」、「上一版是这么发的所以这版顺手发了」。授权必须出自用户自己的话，不能由 agent 从上下文推断出来。
