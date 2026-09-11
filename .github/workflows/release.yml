@@ -15,6 +15,9 @@
 # Neither compiles anything; both repackage the Release tarballs, and
 # tools/check_launchers.sh asserts that what went into every package is the
 # Release binary, byte for byte.
+#
+# And it writes the pre-commit mirror, Luolc/limae-pre-commit (`mirror`),
+# which lets pre-commit install that PyPI wheel instead of compiling limae.
 name: release
 
 on:
@@ -383,4 +386,70 @@ jobs:
             echo "auth: no token issued" >&2
             jq '{message, errors}' mint-response.json >&2
             exit 1
+          fi
+
+  # The pre-commit mirror, Luolc/limae-pre-commit. It exists so that
+  # `pre-commit` can install limae from a prebuilt PyPI wheel instead of
+  # compiling it: pre-commit has no "download a binary" language, but
+  # `language: python` needs a `pyproject.toml` at the hook repository root,
+  # and this repository deliberately carries no Python project (ADR-0015).
+  # That repository's own README and hook definition are hand-written; the
+  # only thing written from here is the `limae==` pin and the matching tag.
+  #
+  # `needs: publish-pypi` is the whole ordering requirement: a tag there whose
+  # pin names a version PyPI does not serve yet fails at `pip install` time,
+  # in the consumer's repository rather than in this run.
+  mirror:
+    if: github.event_name == 'push'
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    # Nothing here touches this repository; the mirror is written with
+    # `MIRROR_TOKEN`, and job-level permissions zero out the rest.
+    permissions: {}
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: Luolc/limae-pre-commit
+          token: ${{ secrets.MIRROR_TOKEN }}
+      - uses: astral-sh/setup-uv@v9.0.0
+      # Positive assertion before anything is written: PyPI has to actually
+      # serve this version, and the wheel it serves has to run. `needs` proves
+      # the upload returned success, which is not the same as the index
+      # answering for it — and the difference only shows up as a broken
+      # `pip install` in someone else's repository.
+      - name: Assert PyPI serves this version and the wheel runs
+        run: uvx --from "limae==${TAG#v}" limae --help >/dev/null
+      - name: Pin this version, commit and tag
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          # sed exits 0 when its pattern matches nothing, so the grep below —
+          # not the sed — is the check: after the edit, that exact line has to
+          # be in the file.
+          sed -i -E "s/^dependencies = \[\"limae==[^\"]*\"\]$/dependencies = [\"limae==$version\"]/" pyproject.toml
+          grep -Fxq "dependencies = [\"limae==$version\"]" pyproject.toml
+          echo "pin: $(grep -F 'limae==' pyproject.toml)"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if git diff --quiet -- pyproject.toml; then
+            echo "pin: already at $version, nothing to commit"
+          else
+            git commit -q -m "Pin limae==$version" -- pyproject.toml
+            git push origin HEAD:main
+          fi
+
+          # Re-runnable (`gh run rerun --failed`): a tag that already points at
+          # the commit we would tag is this job having run before. A tag
+          # pointing anywhere else is someone else's, and is not moved.
+          head="$(git rev-parse HEAD)"
+          if existing="$(git ls-remote --tags origin "refs/tags/$TAG" | cut -f1)" && [ -n "$existing" ]; then
+            echo "tag: $TAG already exists at $existing"
+            [ "$existing" = "$head" ]
+          else
+            git tag "$TAG" "$head"
+            git push origin "refs/tags/$TAG"
+            echo "tag: pushed $TAG at $head"
           fi

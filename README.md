@@ -17,7 +17,28 @@ Rust 实现是唯一的实现、正式的 `limae` 命令。默认规则集是中
 
 ## 使用
 
-作为 pre-commit 远端 hook (推荐)，`rev` 固定到一个 tag ([tag 列表](https://github.com/Luolc/limae/tags))：
+### 接 pre-commit
+
+两条远端 hook 并存，**不是替换关系** —— 差别在消费方要有什么、以及支不支持 Windows：
+
+| hook | 消费方要有什么 | 首次耗时 | 覆盖的平台 |
+| --- | --- | --- | --- |
+| 镜像仓 `language: python` | 什么都不用额外装 | 几秒，下一个 wheel | Linux x86_64 / aarch64、macOS x86_64 / arm64，**没有 Windows** |
+| 本仓 `language: rust` | Rust 工具链 | 一次完整编译 | 任何平台，含 Windows |
+
+**默认走镜像仓** [`Luolc/limae-pre-commit`](https://github.com/Luolc/limae-pre-commit)，`rev` 固定到它的一个 tag ([tag 列表](https://github.com/Luolc/limae-pre-commit/tags))：
+
+```yaml
+repos:
+  - repo: https://github.com/Luolc/limae-pre-commit
+    rev: <tag>     # 一个 tag 对应一个 limae 版本：v0.13.2 即 limae 0.13.2
+    hooks:
+      - id: limae
+```
+
+镜像仓的 `pyproject.toml` 只做一件事：把 limae 钉到一个版本。pre-commit 按 [Python language 合同](https://pre-commit.com/#python) 在自己的缓存里 `pip install` 它，装下来的是 PyPI 上那个 wheel 里的**预构建二进制** —— 不编译、不需要 Rust 工具链。pre-commit 的 21 种 language 里没有「下载预编译 binary」这一种，`language: python` 之所以够用，是因为 pre-commit 自己就是 Python 写的：能跑 pre-commit 就一定有 Python (ruff 走的也是这条路)。**为什么是独立的一个仓**：这条合同要求在 hook 仓根上 `pip install .` 装得起来，也就是仓根要有 `pyproject.toml`，而本仓已经整体删掉了 Python (ADR-0015 补记)。镜像仓的 tag 与 pin 由本仓 release workflow 在 wheel 发上 PyPI 之后写进去，不是手改的。
+
+**Windows 上用本仓这条。** Release 只有四个 target、没有 Windows 产物，所以 Windows 上 `pip install limae` 找不到 wheel，镜像仓那条会**装不上**；本仓的 [Rust language 合同](https://pre-commit.com/#rust) 用 Cargo 把 binary 编进 pre-commit 自己的缓存，因此在任何平台上都能用，代价是机器上要有 Rust 工具链、第一次安装要联网并等一次编译 (之后走缓存)。
 
 ```yaml
 repos:
@@ -27,7 +48,20 @@ repos:
       - id: limae
 ```
 
-默认只检查、不修复；要自动修复就自己加 `args: ["--fix"]`。`id: limae` 装的是 Rust 实现：pre-commit 按它的 [Rust language 合同](https://pre-commit.com/#rust) 用 Cargo 把 binary 编进自己的缓存，消费方不必预装 `limae`，但机器上要有 Rust 工具链，且第一次安装要联网、要等一次编译 (之后走缓存)。
+两条 hook 的 id 都是 `limae`，跑起来行为相同：默认只检查、不修复；要自动修复就自己加 `args: ["--fix"]`。
+
+#### 规则一律进配置文件，`args:` 里不放规则开关
+
+`--disable` / `--enable` 是**替换**配置文件，不是叠加：命令行上一旦出现其中任何一个，`limae.toml` 与 `pyproject.toml` 的 `[tool.limae]` **根本不会被读** (`rust/config.rs` 的 `resolve`)，而且**不报错、不警告**。所以下面这样写，等于把仓库自己的整份 limae 配置静默关掉：
+
+```yaml
+# 错的：仓库根上的 limae.toml 会被整个忽略，且没有任何提示
+hooks:
+  - id: limae
+    args: [--disable, zh-typography-3]
+```
+
+规则选择写进配置文件，仓库自己跑的 limae 与这条 hook 读到的才是同一份。配置文件的发现顺序 (`rust/config.rs` 的 `find_config`)：从被检查文件所在目录往上走，**碰到含 `.git` 的那一层就停**；每一层先看 `limae.toml`，再看 `pyproject.toml` 的 `[tool.limae]` 表，取先命中的那一个。两者键结构相同，只差 `pyproject.toml` 多一层表头 —— Node 项目因此只能用 `limae.toml`，`package.json` 不是配置来源。
 
 不接 pre-commit、手动或在 CI 里一次性跑：
 
@@ -110,7 +144,7 @@ disable = ["zh-tell-3"]
 severity = { zh-word-1 = "error" }
 ```
 
-临时在命令行上开关，整体覆盖配置文件：
+临时在命令行上开关，**整体覆盖**配置文件 —— 带上其中任何一个，配置文件就根本不会被读，也不会有任何提示 (所以不要把它们写进 pre-commit 的 `args:`，见上)：
 
 ```sh
 limae --disable zh-typography-3 <file>...

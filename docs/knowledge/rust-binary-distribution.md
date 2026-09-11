@@ -34,7 +34,9 @@ Rust 命令名为 `limae`，是本项目唯一的 CLI (ADR-0015 阶段 E，Pytho
 
 ## 验收 pre-commit 的 hook id
 
-唯一的 id `limae` 是 Rust hook (`language: rust`)。[pre-commit 的 Rust language 合同](https://pre-commit.com/#rust) 会在自己的缓存中用 Cargo 安装 binary，不要求预装全局 `limae`。本手册与验收脚本以机器已有可用 Rust 工具链为前提；首次安装需要联网取得源码与 Cargo 依赖。
+本仓的唯一 id `limae` 是 Rust hook (`language: rust`)。[pre-commit 的 Rust language 合同](https://pre-commit.com/#rust) 会在自己的缓存中用 Cargo 安装 binary，不要求预装全局 `limae`。本手册与验收脚本以机器已有可用 Rust 工具链为前提；首次安装需要联网取得源码与 Cargo 依赖。
+
+同名的 id 另有一条路径：镜像仓 `Luolc/limae-pre-commit` 的 `language: python` hook，装的是 PyPI 上的预构建 wheel、不需要 Rust 工具链，但没有 Windows 产物。两条并存不是替换，取舍与它自己的验收读数见 [发布手册](release.md)「五、pre-commit 镜像仓」，本文只覆盖本仓这条。
 
 过渡期的 opt-in id `limae-rs` 已随默认 id 切换删除，回退 id `limae-python` 已随 Python 参考实现删除 (2026-09-10)：留一个同义或已无实现的 id 只是第二个名字指同一件东西 (ADR-0013 对旧名别名的处置同理)。已经钉在旧 `rev` 上的消费仓不受影响 —— 它们装出来的仍是那个 `rev` 上的定义。
 
