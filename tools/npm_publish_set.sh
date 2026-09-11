@@ -49,6 +49,14 @@ shift
 # `limae-cli-<version>.tgz` — a file name a `limae-*-*.tgz` glob reads as a
 # platform package, leaving no launcher at all. The name is what the registry
 # publishes under; the file name was only ever a proxy for it.
+#
+# Both branches assert what the tarball is, rather than one of them taking
+# "not the launcher" for "a platform package": a tarball this script does not
+# recognise stops the set before the first publish. Under the old globs such a
+# file was silently ignored, and the direction matters — being published is
+# the side that cannot be taken back. The directory is produced by the job
+# that runs tools/check_launchers.sh, which asserts its contents exhaustively,
+# but that is another script in another job and nothing here depends on it.
 launcher_name='@limae/cli' # launchers/npm/cli/package.json
 
 platform_tarballs=()
@@ -58,8 +66,10 @@ for tarball in "$dir"/*.tgz; do
     fail "cannot read the package name out of $tarball"
   if [[ $name == "$launcher_name" ]]; then
     launcher_tarballs+=("$tarball")
-  else
+  elif [[ $name == @limae/* ]]; then
     platform_tarballs+=("$tarball")
+  else
+    fail "$tarball holds $name, which is neither $launcher_name nor an @limae/<platform> package"
   fi
 done
 [[ ${#platform_tarballs[@]} -gt 0 ]] || fail "no platform tarballs in $dir"
