@@ -1,9 +1,10 @@
 //! Where one session's hook state lives, and what is allowed to be in it.
 //!
-//! The state directory holds assistant replies — the cached batches of a
-//! message still streaming, and the A/B ledger beside them — so every rule here
-//! is about keeping them the user's own and keeping them short-lived
-//! (ADR-0009 sections 五, 六 and 八).
+//! The state directory holds assistant replies — the batches of every message
+//! that has streamed through the hook, kept for the prefix replay
+//! (ADR-0016 section 二) — so every rule here is about keeping them the user's
+//! own and keeping them short-lived. The boundary is the one ADR-0009 section
+//! 八 and ADR-0012 drew for the ledger that used to live here, inherited whole.
 //!
 //! Four of those rules are load-bearing and each has one function to itself:
 //!
@@ -20,10 +21,9 @@
 //! * **Not for long.** [`prune`] has two horizons because state is left behind
 //!   two ways: [`RETENTION`] for a session nobody has been in, and
 //!   [`ORPHAN_RETENTION`] for one message's batches inside a session that is
-//!   still live.
+//!   still live. Nothing but the sweep removes a message's batches.
 //! * **No prose.** [`note`] writes a step and a kind of failure and nothing
-//!   else. The file outlives the run, this repository is public, and an engine
-//!   is free to quote its environment back at us.
+//!   else. The file outlives the run and this repository is public.
 //!
 //! Ids arrive from the host and become path segments here, so [`identifier`]
 //! folds away anything that is not a plain name before any of that starts.
@@ -33,12 +33,13 @@
 //! creates anything, rather than quietly leaving a world-readable directory of
 //! the user's replies behind on the way to reporting that it could not set its
 //! mode; the hook then has nowhere to put a reply and does nothing, which is
-//! its behaviour for every other failure (ADR-0009 section 六).
+//! its behaviour for every other failure (ADR-0016 section 一).
 
 use std::ffi::OsString;
 use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[cfg(unix)]
@@ -47,68 +48,67 @@ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use serde_json::json;
 use soft_canonicalize::soft_canonicalize;
 
-use crate::polish::diagnosis::FailureReason;
 use crate::polish::value;
 
 /// The one directory under the system's scratch directory that all of this
 /// lives in.
 pub const STATE_DIRECTORY: &str = "limae-hook";
-/// Where a session keeps the batches of messages that have not finished
-/// streaming, one directory per message.
+/// Where a session keeps the batches of its messages, one directory per
+/// message instance ([`instance`]).
 pub const PARTS_DIRECTORY: &str = "parts";
 /// Where a fail-open path says what it did.
 ///
 /// Failing open means the user is never interrupted, and on its own it also
-/// means nobody can find out why a reply went unpolished — "no block appeared"
-/// would be the whole of the evidence. This file is the other half of ADR-0009
-/// section 六: the user still sees nothing, and whoever is debugging sees the
-/// step and the kind of failure, which is what a person needs to know where to
-/// look next.
+/// means nobody can find out why a batch went unfixed — "the typography was not
+/// fixed" would be the whole of the evidence. This file is the other half of
+/// ADR-0016 section 一: the user still sees nothing, and whoever is debugging
+/// sees the step and the kind of failure, which is what a person needs to know
+/// where to look next.
 pub const DIAGNOSTICS_FILENAME: &str = "diagnostics.jsonl";
 /// What a batch is called once it is all there.
 pub const PART_SUFFIX: &str = ".part";
 /// What a batch is called while it is being written.
 pub const TEMPORARY_SUFFIX: &str = ".writing";
+/// The file that marks a message instance as abandoned: every later batch of
+/// it is shown as it came ([`void`]).
+pub const VOID_FILENAME: &str = "void";
 /// The mode every directory here is created with.
 pub const DIRECTORY_MODE: u32 = 0o700;
 /// The mode every file here is created with.
 pub const FILE_MODE: u32 = 0o600;
 /// How long a session's state is kept.
 ///
-/// It is scratch: the batches of a finished message are deleted as soon as they
-/// are assembled, and what is left is the A/B ledger of sessions that have
-/// ended.
+/// It is scratch: what is in a session directory is its diagnostics and the
+/// batches the sweep below has not reached yet.
 pub const RETENTION: Duration = Duration::from_secs(24 * 3600);
-/// How long one message's cached batches are kept when its final batch never
-/// comes.
+/// How long one message's cached batches are kept.
 ///
-/// That happens for real: a message the host abandons mid-stream — the session
-/// is interrupted, or restarted with `--resume` — gets no final flush, so
-/// nothing ever assembles it and nothing deletes it (2026-09-01, one such
-/// message left five batches behind). [`RETENTION`] alone does not reach these,
-/// because the session they are in is the live one. An hour is orders of
-/// magnitude past the seconds a message spends streaming, so a sweep can never
-/// take the batches of a message still arriving.
+/// Every message leaves its batches behind, and only the sweep takes them. The
+/// final batch does not delete them, because a batch before it may still be
+/// running and reading the same directory (the host dispatches batches
+/// concurrently); and an interrupted message never gets a final batch at all —
+/// every batch of it is `final: false` and then nothing (2026-09-11,
+/// `limae-orchestra`, two interruptions in an isolated session, `esc` and
+/// `Ctrl-C`). Interruptions are routine, so this is the ordinary way out, not
+/// the exception. [`RETENTION`] alone does not reach these, because the session
+/// they are in is the live one. An hour is orders of magnitude past the seconds
+/// a message spends streaming, so a sweep can never take the batches of a
+/// message still arriving.
 pub const ORPHAN_RETENTION: Duration = Duration::from_secs(3600);
 
-/// The longest a sanitised id may be.
-const NAME_LIMIT: usize = 64;
+/// The longest an encoded id may be: two of them and a dot make an instance
+/// name, and a file name is 255 bytes on the filesystems this runs on.
+const NAME_LIMIT: usize = 120;
 
-/// Which step of a turn failed open.
+/// Which step of a batch failed open.
 ///
-/// A diagnostics line says where to look without saying what was being
-/// polished.
+/// A diagnostics line says where to look without saying what was being fixed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Step {
-    /// Putting a message back together from its cached batches.
-    Assemble,
-    /// The one engine call of an ordinary turn.
-    Single,
-    /// The two engine calls of a sampled turn.
-    Ab,
-    /// Writing the session's record of what polish did.
-    Record,
-    /// This repository's own deterministic fixes over a rewrite.
+    /// Waiting for the batches before this one and putting the prefix
+    /// together, and the two signals read off that prefix.
+    Siblings,
+    /// This repository's own deterministic fixes over the prefix and the batch.
     Fix,
     /// Anything that got as far as the top of the hook and crashed.
     Display,
@@ -119,10 +119,7 @@ impl Step {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Assemble => "assemble",
-            Self::Single => "single",
-            Self::Ab => "ab",
-            Self::Record => "record",
+            Self::Siblings => "siblings",
             Self::Fix => "fix",
             Self::Display => "display",
         }
@@ -130,19 +127,21 @@ impl Step {
 }
 
 /// How a step failed.
-///
-/// The engine's own reasons are carried as they are; the rest are the ways this
-/// code fails on its own.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Kind {
-    /// The engine did not answer, and why.
-    Engine(FailureReason),
-    /// A message went to the deadline with a batch missing.
+    /// A batch before this one never arrived, or this message instance was
+    /// abandoned: a batch was re-sent with different content, or the message
+    /// outgrew a limit.
     Incomplete,
-    /// The deterministic fixes changed the rewrite, which is a selection signal
-    /// and not only a display fix.
-    Repaired,
-    /// The `[polish]` table says something this code cannot act on.
+    /// A line boundary is not where a batch boundary is: the prefix ends in
+    /// the middle of a line, or a middle batch does.
+    Partial,
+    /// The text so far may still be inside an inline code span that a later
+    /// batch could close, so how to fix this batch is not settled yet.
+    Unclosed,
+    /// The rule configuration this batch would be fixed under cannot be read,
+    /// or the reply carries an inline directive naming a rule that does not
+    /// exist.
     Misconfigured,
     /// A bug here, or a state directory that would not cooperate.
     Crashed,
@@ -153,32 +152,58 @@ impl Kind {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Engine(reason) => reason.as_str(),
             Self::Incomplete => "incomplete",
-            Self::Repaired => "repaired",
+            Self::Partial => "partial",
+            Self::Unclosed => "unclosed",
             Self::Misconfigured => "config",
             Self::Crashed => "crashed",
         }
     }
 }
 
-/// Turn one id from the payload into a safe path segment.
+/// Turn one id from the payload into a safe path segment, keeping it unique.
 ///
-/// Session and message ids are UUIDs, but they arrive from outside and become
-/// path segments here, so everything that is not a plain name is folded away
-/// rather than trusted. A dot is folded too: `..` is a perfectly
-/// ordinary-looking name that would leave the directory.
+/// Ids arrive from outside and become path segments here, so they are encoded
+/// rather than trusted: an ASCII letter, digit or hyphen stands for itself,
+/// and every other byte becomes `_` and its two hex digits — the underscore
+/// included, so that no two ids share an encoding. A UUID passes through
+/// unchanged; `..`, `/` and anything else that could leave the directory
+/// cannot come out. Nothing here presumes the host's ids are UUIDs: the
+/// encoding is one-to-one on any input, which is what a key has to be
+/// (ADR-0016 section 二「消息实例身份」).
 ///
-/// The result is empty when there was no usable id, which is how a caller knows
-/// there is nothing to do.
+/// The result is empty when there was no usable id — none, empty, or one so
+/// long its encoding could not be a file name — which is how a caller knows
+/// there is nothing to do. Cutting a long id short would make two ids one.
 #[must_use]
 pub fn identifier(value: Option<&str>) -> String {
-    value
-        .unwrap_or_default()
-        .chars()
-        .take(NAME_LIMIT)
-        .map(|character| if plain(character) { character } else { '_' })
-        .collect()
+    let mut encoded = String::new();
+    for byte in value.unwrap_or_default().bytes() {
+        if byte.is_ascii_alphanumeric() || byte == b'-' {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push_str(&format!("_{byte:02X}"));
+        }
+        if encoded.len() > NAME_LIMIT {
+            return String::new();
+        }
+    }
+    encoded
+}
+
+/// Return the directory name of one message instance.
+///
+/// `message` and `turn` are expected to have been through [`identifier`]
+/// already. The two are joined on a dot, which [`identifier`] never produces,
+/// so no two pairs of ids share a name. The turn is part of the key
+/// so that the batches of one message never serve as the prefix of another
+/// that the host sends under the same message id in a later turn: an ordinary
+/// text batch left behind at index 1 would stand in for the missing fence
+/// opener of the new message, and its code would be fixed as prose
+/// (ADR-0016 section 二「消息实例身份」).
+#[must_use]
+pub fn instance(message: &str, turn: &str) -> String {
+    format!("{message}.{turn}")
 }
 
 /// Return whether a path is inside a git checkout.
@@ -226,25 +251,63 @@ pub fn part(parts: &Path, index: usize) -> PathBuf {
     parts.join(format!("{index:06}{PART_SUFFIX}"))
 }
 
-/// Cache one batch of an unfinished message.
+/// Cache one batch of a message, unless one is already there.
 ///
-/// The batch is written under a temporary name and renamed into place in one
-/// step, because another batch of the same message may be reading this
-/// directory right now: the host starts one process per batch and does not wait
-/// for it before starting the next (2026-09-01, Claude Code 2.1.257: the
-/// dispatcher only serialises what the answers do to the screen, not the runs).
-/// The temporary name carries this process's id so that the exclusive create
-/// stays exclusive without a leftover from a dead sibling blocking it.
+/// The batch is written under a temporary name and then linked into place in
+/// one step, because another batch of the same message may be reading this
+/// directory right now: the host starts one process per batch and does not
+/// wait for it before starting the next (2026-09-01, Claude Code 2.1.257: the
+/// dispatcher only serialises what the answers do to the screen, not the
+/// runs). A hard link, not a rename: a rename replaces whatever is there, and
+/// two processes given the same index at once would each replace the other's,
+/// leaving no trace that they disagreed (2026-09-11, review of PR #180: 59 of
+/// 500 concurrent pairs). A link refuses when the name is taken, atomically
+/// and across processes, so exactly one batch is published under an index and
+/// the other process is told.
+///
+/// The temporary name carries this process's id and a counter, so that the
+/// exclusive create stays exclusive without a leftover from a dead sibling
+/// blocking it, and without two threads of one process meeting on it.
+///
+/// # Errors
+/// [`io::ErrorKind::AlreadyExists`] when a batch is already published under
+/// this index — this one was not written, and the caller decides what the
+/// disagreement means. Anything else is the state directory refusing.
 pub fn keep(parts: &Path, index: usize, delta: &str) -> io::Result<()> {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
     create_directory(parts)?;
     let writing = parts.join(format!(
-        "{index:06}.{}{TEMPORARY_SUFFIX}",
-        std::process::id()
+        "{index:06}.{}.{}{TEMPORARY_SUFFIX}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
     ));
     let mut file = create(&writing)?;
     file.write_all(delta.as_bytes())?;
     drop(file);
-    fs::rename(&writing, part(parts, index))
+    let published = fs::hard_link(&writing, part(parts, index));
+    // The temporary file has served either way; a leftover would only be a
+    // name the next sweep has to step over.
+    let _ = fs::remove_file(&writing);
+    published
+}
+
+/// Mark one message instance as abandoned.
+///
+/// Every later batch of it is shown as it came. Nothing is deleted: a batch
+/// that is still waiting for its siblings is reading this directory.
+pub fn void(parts: &Path) -> io::Result<()> {
+    create_directory(parts)?;
+    match create(&parts.join(VOID_FILENAME)) {
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
+/// Return whether a message instance has been abandoned.
+#[must_use]
+pub fn voided(parts: &Path) -> bool {
+    parts.join(VOID_FILENAME).is_file()
 }
 
 /// Write down that one fail-open path fired.
@@ -252,8 +315,8 @@ pub fn keep(parts: &Path, index: usize, delta: &str) -> io::Result<()> {
 /// Failing open is the right behaviour and a bad witness. One line per failure
 /// fixes that without moving the boundary: it goes to the session-state
 /// directory, never to the screen, and what it may hold is bounded by the same
-/// rule as the ledger (ADR-0009 section 八) — the message's id, the step, the
-/// kind. Never the prose, never what an engine printed, never a credential.
+/// rule as the batches beside it (ADR-0016 section 五) — the message's id, the
+/// step, the kind. Never the prose, never a credential.
 ///
 /// A hook that cannot write its own diagnostics still has a reply to get out of
 /// the way of, so nothing is reported when this fails.
@@ -283,10 +346,9 @@ pub fn stale(path: &Path, now: SystemTime, keep: Duration) -> bool {
 ///
 /// Two horizons, because there are two ways state is left behind. A whole
 /// session goes when nobody has been in it for [`RETENTION`]. Inside a session
-/// that is still live, one message's batches go after [`ORPHAN_RETENTION`],
-/// when its final batch never came — the host abandons a message it is killed
-/// in the middle of, and those batches would otherwise sit there until the
-/// session itself expired.
+/// that is still live, one message's batches go after [`ORPHAN_RETENTION`] —
+/// this is the only thing that removes them, whether the message finished or
+/// was interrupted.
 pub fn prune(root: &Path, now: SystemTime) {
     let Ok(sessions) = fs::read_dir(root) else {
         return;
@@ -310,11 +372,6 @@ pub fn prune(root: &Path, now: SystemTime) {
             }
         }
     }
-}
-
-/// Return whether a character may stand for itself in a path segment.
-fn plain(character: char) -> bool {
-    character.is_ascii_alphanumeric() || character == '_' || character == '-'
 }
 
 /// Append one line to the session's diagnostics file, creating what is missing.

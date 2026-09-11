@@ -1,5 +1,5 @@
 target/
-# Claude Code's per-checkout settings, where the polish hook is turned on
+# Claude Code's per-checkout settings, where the typography hook is turned on
 # for this repository's own sessions (ADR-0009 section 七).
 .claude/settings.local.json
 # The lexicon page is no longer committed: GitHub Actions renders it from

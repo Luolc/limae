@@ -1,14 +1,13 @@
 use super::{
     DIAGNOSTICS_FILENAME, DIRECTORY_MODE, FILE_MODE, Kind, ORPHAN_RETENTION, PART_SUFFIX,
-    PARTS_DIRECTORY, RETENTION, STATE_DIRECTORY, Step, TEMPORARY_SUFFIX, identifier, in_work_tree,
-    keep, note, part, prune, root, session, stale, timestamp,
+    PARTS_DIRECTORY, RETENTION, STATE_DIRECTORY, Step, TEMPORARY_SUFFIX, VOID_FILENAME, identifier,
+    in_work_tree, instance, keep, note, part, prune, root, session, stale, timestamp, void, voided,
 };
-use crate::polish::diagnosis::FailureReason;
 
 use std::error::Error;
 use std::ffi::OsString;
-use std::fs::{self, OpenOptions};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -97,26 +96,40 @@ fn environment(pairs: &[(&str, &str)]) -> Vec<(OsString, OsString)> {
 
 // -- ids becoming path segments ------------------------------------------
 
-/// A well-formed id has to survive, or the folding below is just renaming
-/// everything and no arm here can tell the two apart.
+/// A UUID has to survive, or the encoding below is just renaming everything
+/// and no arm here can tell the two apart.
 #[test]
 fn a_well_formed_id_is_left_exactly_as_it_arrived() {
-    assert_eq!(identifier(Some("Sess-01_ab")), "Sess-01_ab");
+    assert_eq!(
+        identifier(Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")),
+        "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    );
 }
 
+/// Everything that is not a letter, a digit or a hyphen is spelled out as
+/// bytes, the underscore included, so that no two ids share a name: the
+/// pairs below would collide under a fold-to-underscore.
 #[test]
-fn an_id_that_names_a_parent_directory_is_folded_into_one_segment() {
-    assert_eq!(identifier(Some("../../escape")), "______escape");
-    assert_eq!(identifier(Some("a/b")), "a_b");
-    assert_eq!(identifier(Some("..")), "__");
+fn an_id_that_names_a_parent_directory_is_encoded_into_one_segment() {
+    assert_eq!(identifier(Some("../../escape")), "_2E_2E_2F_2E_2E_2Fescape");
+    assert_eq!(identifier(Some("a/b")), "a_2Fb");
+    assert_eq!(identifier(Some("a?b")), "a_3Fb");
+    assert_eq!(identifier(Some("a_b")), "a_5Fb");
+    assert_eq!(identifier(Some("..")), "_2E_2E");
+    assert_eq!(identifier(Some("甲")), "_E7_94_B2");
+    assert_ne!(identifier(Some("a/b")), identifier(Some("a?b")));
+    assert_ne!(identifier(Some("a_2Fb")), identifier(Some("a/b")));
 }
 
+/// An id too long to be a file name is no id at all, rather than the first
+/// part of one — cutting it short would make two ids one. The length is
+/// spelled out rather than read back from `NAME_LIMIT`: an assertion against
+/// the constant it is checking holds for every value of it.
 #[test]
-fn an_id_is_cut_to_the_name_limit_and_a_missing_one_is_empty() {
-    // The length is spelled out rather than read back from `NAME_LIMIT`: an
-    // assertion against the constant it is checking holds for every value of
-    // it.
-    assert_eq!(identifier(Some(&"x".repeat(200))), "x".repeat(64));
+fn an_id_too_long_to_name_a_file_is_empty_and_so_is_a_missing_one() {
+    assert_eq!(identifier(Some(&"x".repeat(120))), "x".repeat(120));
+    assert_eq!(identifier(Some(&"x".repeat(121))), "");
+    assert_eq!(identifier(Some(&"甲".repeat(41))), "");
     assert_eq!(identifier(None), "");
     assert_eq!(identifier(Some("")), "");
 }
@@ -134,7 +147,7 @@ fn a_session_id_cannot_name_a_directory_outside_the_state_root() -> TestResult {
     let directory = session(&root, &identifier(Some("../../escape")))?;
 
     assert_eq!(directory.parent(), Some(root.as_path()));
-    assert_eq!(names(&root)?, vec!["______escape".to_owned()]);
+    assert_eq!(names(&root)?, vec!["_2E_2E_2F_2E_2E_2Fescape".to_owned()]);
     assert_eq!(names(&nested)?, vec![STATE_DIRECTORY.to_owned()]);
     assert_eq!(names(scratch.path())?, vec!["nested".to_owned()]);
     Ok(())
@@ -214,7 +227,8 @@ fn nothing_holding_a_reply_is_created_readable_by_others() -> TestResult {
         let directory = session(&root, "session")?;
         let parts = directory.join(PARTS_DIRECTORY).join("message");
         keep(&parts, 0, "一批。")?;
-        note(&directory, "message", Step::Single, Kind::Crashed, now());
+        void(&parts)?;
+        note(&directory, "message", Step::Fix, Kind::Crashed, now());
 
         // Every level, not only the last one: a directory of directories of
         // replies is as much this user's own as the replies are.
@@ -226,6 +240,7 @@ fn nothing_holding_a_reply_is_created_readable_by_others() -> TestResult {
         assert_eq!(mode(&directory.join(PARTS_DIRECTORY))?, 0o700);
         assert_eq!(mode(&parts)?, 0o700);
         assert_eq!(mode(&part(&parts, 0))?, 0o600);
+        assert_eq!(mode(&parts.join(VOID_FILENAME))?, 0o600);
         assert_eq!(mode(&directory.join(DIAGNOSTICS_FILENAME))?, 0o600);
         assert_eq!((DIRECTORY_MODE, FILE_MODE), (0o700, 0o600));
         Ok(())
@@ -278,44 +293,78 @@ fn a_batch_lands_under_its_index_and_leaves_nothing_half_written() -> TestResult
     Ok(())
 }
 
-/// The batch is written under a temporary name and renamed into place, so a
-/// target that this process may not write to is still replaced.
-///
-/// An implementation that opened the target directly would fail here with
-/// `EACCES`. It is the owner's own permissions that do the work, so this arm
-/// says nothing when the tests run as root — every other arm still holds.
+/// A batch already under an index is never replaced: the second `keep` is
+/// refused, says so by kind, and the first batch is what stays. This is the
+/// whole of what keeps two processes given the same index from silently
+/// writing over each other.
 #[test]
-fn a_batch_is_renamed_into_place_rather_than_written_over_the_target() -> TestResult {
-    let scratch = TempDir::new("atomic")?;
+fn a_batch_already_under_an_index_is_never_written_over() -> TestResult {
+    let scratch = TempDir::new("noreplace")?;
     let parts = scratch.path().join("parts/message");
-    fs::create_dir_all(&parts)?;
-    let target = part(&parts, 0);
-    let _ = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o400)
-        .open(&target)?;
+    keep(&parts, 0, "甲")?;
 
-    keep(&parts, 0, "乙")?;
-    assert_eq!(fs::read_to_string(&target)?, "乙");
+    let refused = keep(&parts, 0, "乙")
+        .err()
+        .ok_or("a second batch under the index must be refused")?;
+
+    assert_eq!(refused.kind(), std::io::ErrorKind::AlreadyExists);
+    assert_eq!(fs::read_to_string(part(&parts, 0))?, "甲");
     assert_eq!(names(&parts)?, vec![format!("000000{PART_SUFFIX}")]);
     Ok(())
 }
 
-/// The temporary name carries this process's id, so a leftover from a sibling
-/// that died mid-write does not stop the exclusive create.
+/// The temporary name carries this process's id and a counter, so a leftover
+/// from a sibling that died mid-write does not stop the exclusive create.
 #[test]
 fn a_leftover_temporary_file_from_another_process_does_not_block_a_batch() -> TestResult {
     let scratch = TempDir::new("leftover")?;
     let parts = scratch.path().join("parts/message");
     fs::create_dir_all(&parts)?;
     fs::write(
-        parts.join(format!("000000.4294967295{TEMPORARY_SUFFIX}")),
+        parts.join(format!("000000.4294967295.0{TEMPORARY_SUFFIX}")),
         "半",
     )?;
 
     keep(&parts, 0, "甲")?;
     assert_eq!(fs::read_to_string(part(&parts, 0))?, "甲");
+    Ok(())
+}
+
+// -- one message instance ------------------------------------------------
+
+/// The turn is part of the key, and the join is on the one character
+/// [`identifier`] never lets through, so no two pairs of ids share a name.
+#[test]
+fn an_instance_is_named_by_its_message_and_its_turn() {
+    assert_eq!(instance("m", "t"), "m.t");
+    assert_ne!(instance("m", "t1"), instance("m", "t2"));
+    assert_ne!(instance("a-b", "c"), instance("a", "b-c"));
+    assert!(!identifier(Some("a.b")).contains('.'));
+}
+
+/// The mark is a file beside the batches, not the absence of the directory: a
+/// sibling still waiting on this instance has to find what it was waiting for.
+#[test]
+fn a_voided_instance_keeps_its_batches_and_says_so_twice_without_complaint() -> TestResult {
+    let scratch = TempDir::new("void")?;
+    let parts = scratch.path().join("parts/message.turn");
+    keep(&parts, 0, "甲\n")?;
+    assert!(!voided(&parts));
+
+    void(&parts)?;
+    void(&parts)?;
+
+    assert!(voided(&parts));
+    assert_eq!(fs::read_to_string(part(&parts, 0))?, "甲\n");
+    assert_eq!(
+        names(&parts)?,
+        vec!["000000.part".to_owned(), VOID_FILENAME.to_owned()]
+    );
+
+    // An instance nothing has been cached under yet can be abandoned too.
+    let fresh = scratch.path().join("parts/fresh.turn");
+    void(&fresh)?;
+    assert!(voided(&fresh));
     Ok(())
 }
 
@@ -325,14 +374,8 @@ fn a_leftover_temporary_file_from_another_process_does_not_block_a_batch() -> Te
 fn each_fail_open_path_appends_one_line_and_says_only_where_and_how() -> TestResult {
     let scratch = TempDir::new("note")?;
     let directory = scratch.path().join("session");
-    note(&directory, "m1", Step::Assemble, Kind::Incomplete, now());
-    note(
-        &directory,
-        "m2",
-        Step::Single,
-        Kind::Engine(FailureReason::TimedOut),
-        now(),
-    );
+    note(&directory, "m1", Step::Siblings, Kind::Incomplete, now());
+    note(&directory, "m2", Step::Fix, Kind::Misconfigured, now());
 
     let written = lines(&directory.join(DIAGNOSTICS_FILENAME))?;
     assert_eq!(written.len(), 2);
@@ -342,11 +385,11 @@ fn each_fail_open_path_appends_one_line_and_says_only_where_and_how() -> TestRes
         keys.sort_unstable();
         assert_eq!(keys, vec!["at", "kind", "message_id", "step"]);
     }
-    assert_eq!(written[0]["step"], "assemble");
+    assert_eq!(written[0]["step"], "siblings");
     assert_eq!(written[0]["kind"], "incomplete");
     assert_eq!(written[0]["message_id"], "m1");
-    assert_eq!(written[1]["step"], "single");
-    assert_eq!(written[1]["kind"], "timeout");
+    assert_eq!(written[1]["step"], "fix");
+    assert_eq!(written[1]["kind"], "config");
     Ok(())
 }
 
@@ -355,27 +398,19 @@ fn each_fail_open_path_appends_one_line_and_says_only_where_and_how() -> TestRes
 #[test]
 fn every_step_and_kind_is_written_down_under_the_name_it_is_documented_by() {
     assert_eq!(
-        [
-            Step::Assemble,
-            Step::Single,
-            Step::Ab,
-            Step::Record,
-            Step::Fix,
-            Step::Display,
-        ]
-        .map(Step::as_str),
-        ["assemble", "single", "ab", "record", "fix", "display"],
+        [Step::Siblings, Step::Fix, Step::Display].map(Step::as_str),
+        ["siblings", "fix", "display"],
     );
     assert_eq!(
         [
             Kind::Incomplete,
-            Kind::Repaired,
+            Kind::Partial,
+            Kind::Unclosed,
             Kind::Misconfigured,
             Kind::Crashed,
-            Kind::Engine(FailureReason::NoEngine),
         ]
         .map(Kind::as_str),
-        ["incomplete", "repaired", "config", "crashed", "no-engine"],
+        ["incomplete", "partial", "unclosed", "config", "crashed"],
     );
 }
 
@@ -440,9 +475,10 @@ fn a_session_is_kept_for_a_day_and_not_for_an_orphan_s_hour() -> TestResult {
     Ok(())
 }
 
-/// A message the host is killed in the middle of never gets its final batch, so
-/// nothing assembles it and nothing deletes it. Its session is the live one, so
-/// session retention does not reach it either.
+/// Nothing but this sweep removes a message's batches: a finished message
+/// leaves them (a sibling may still be reading), and a message the host is
+/// killed in the middle of never gets a final batch at all. Its session is the
+/// live one, so session retention does not reach it either.
 ///
 /// The abandoned directory here is younger than [`RETENTION`], so an
 /// implementation with only one horizon keeps it.

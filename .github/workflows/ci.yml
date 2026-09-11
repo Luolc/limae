@@ -108,9 +108,9 @@ jobs:
         run: tools/check_lexicon_lint.sh
 
       # The promises this repository makes to its own maintainers, which no
-      # crate test can carry: the Codex Stop hook, the handbook's kind
-      # table, and the file patterns of the cargo-fmt and limae-lexicon
-      # hooks. Needs the Rust toolchain.
+      # crate test can carry: the handbook's kind table, and the file
+      # patterns of the cargo-fmt and limae-lexicon hooks. Needs the Rust
+      # toolchain.
       - name: Repository contracts
         run: tools/check_repo_contracts.sh
 

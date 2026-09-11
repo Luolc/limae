@@ -401,3 +401,27 @@ fn inert_code_opener_can_shorten_a_quotation() -> Result<(), regex::Error> {
     assert!(!protection[0].is_exempt(tail + '中'.len_utf8()..tail + '中'.len_utf8()));
     Ok(())
 }
+
+/// The signal the display hook reads before fixing a batch: whether a backtick
+/// run in the last paragraph is still without a partner, so that a line
+/// arriving later could close it. Only the paragraph the end of the input left
+/// open counts, and inside a fence nothing does.
+#[test]
+fn an_unpaired_backtick_run_in_the_open_last_paragraph_is_unclosed() -> Result<(), regex::Error> {
+    let scanner = Markdown::new()?;
+    for (lines, unclosed) in [
+        (vec!["前文`"], true),
+        (vec!["前文 `code", "续行"], true),
+        (vec!["`a` 与 ``b", "续行"], true),
+        (vec!["前文 `code`"], false),
+        (vec!["前文`", ""], false),
+        (vec!["# 标题`未闭合"], false),
+        (vec!["```", "code`"], false),
+        (vec!["```", "code`", "```"], false),
+        (vec!["> `你好", "> 函数`"], false),
+        (vec!["- a`", "- b`"], true),
+    ] {
+        assert_eq!(scanner.unclosed_span(&lines), unclosed, "{lines:?}");
+    }
+    Ok(())
+}

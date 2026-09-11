@@ -474,52 +474,33 @@ fn the_polish_subcommand_rewrites_standard_input_through_a_custom_command() -> T
 /// The offline arms exercise `hook::cli::run` directly; this one is here for
 /// what only a process has: the subcommand dispatch, the ambient environment
 /// and standard input, and the exit code the host reads. The host's contract is
-/// that this exit code is always 0 (ADR-0009 section 六), which is why the
+/// that this exit code is always 0 (ADR-0016 section 一), which is why the
 /// screen output beside it is what says the run did anything at all.
 #[cfg(unix)]
 #[test]
 fn the_hook_subcommand_answers_one_message_display_event_on_standard_input() -> TestResult {
     use std::io::Write as _;
-    use std::os::unix::fs::PermissionsExt;
     use std::process::Stdio;
 
     let root = TempDir::new()?;
-    let bin = root.path().join("bin");
-    fs::create_dir(&bin)?;
-    // Shell built-ins only: `PATH` is this directory alone, so no engine
-    // installed on the machine can answer and nothing reaches a real model.
-    let stub = bin.join("claude");
-    fs::write(
-        &stub,
-        "#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' 'ACME 的报告写得不好 —— 请改得像人话一些。'\n",
-    )?;
-    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755))?;
-    fs::write(
-        root.path().join("limae.toml"),
-        "[polish]\nengine = \"claude\"\n",
-    )?;
-    let message = "ACME 的报告写得不好，请把它改得像人话一些。".repeat(20);
     let payload = format!(
         concat!(
             r#"{{"session_id":"11111111-2222-3333-4444-555555555555","#,
             r#""message_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","#,
+            r#""turn_id":"99999999-8888-7777-6666-555555555555","#,
             r#""hook_event_name":"MessageDisplay","cwd":{cwd},"#,
-            r#""index":0,"final":true,"delta":{delta}}}"#
+            r#""index":0,"final":false,"delta":"ACME 的报告写得不好,请改得像人话一些。\n"}}"#
         ),
         cwd = serde_json::to_string(&root.path().to_string_lossy())?,
-        delta = serde_json::to_string(&message)?,
     );
 
     let mut child = Command::new(env!("CARGO_BIN_EXE_limae"))
         .current_dir(root.path())
         .env_clear()
-        .env("PATH", &bin)
         .env("HOME", root.path().join("home"))
-        .env("XDG_CACHE_HOME", root.path().join("cache"))
         // Where scratch goes is where the state goes: the hook has no setting
         // of its own for it, on purpose.
         .env("TMPDIR", root.path().join("scratch"))
-        .env("LIMAE_HOOK_AB_RATE", "0")
         .arg("hook")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -538,8 +519,78 @@ fn the_hook_subcommand_answers_one_message_display_event_on_standard_input() -> 
         .and_then(serde_json::Value::as_str)
         .ok_or("no displayContent in the answer")?;
     assert_eq!((code, stderr.as_str()), (0, ""));
-    assert!(shown.starts_with(&message), "{shown:?}");
-    assert!(shown.contains("── 润色 ──"), "{shown:?}");
+    assert_eq!(shown, "ACME 的报告写得不好，请改得像人话一些。\n");
+    assert!(
+        !root.path().join("home").exists(),
+        "nothing under the home directory"
+    );
+    Ok(())
+}
+
+/// Two real `limae hook` processes given the same index of the same message
+/// with different content, at the same time, thirty times over. Every time,
+/// one batch is published, the other is a conflict, and the instance is
+/// abandoned — the `void` mark is there. This is the shape the host can
+/// produce, and the shape a read-then-write cache misses: in the review of
+/// PR #180, 59 of 500 such pairs left no mark and each batch silently wrote
+/// over the other's.
+#[cfg(unix)]
+#[test]
+fn two_hook_processes_given_one_index_at_once_leave_the_instance_abandoned() -> TestResult {
+    use std::io::Write as _;
+    use std::process::Stdio;
+
+    let root = TempDir::new()?;
+    let scratch = root.path().join("scratch");
+    let spawn = |delta: &str, message: &str| -> Result<std::process::Child, Box<dyn Error>> {
+        let payload = format!(
+            concat!(
+                r#"{{"session_id":"11111111-2222-3333-4444-555555555555","#,
+                r#""message_id":{message},"turn_id":"99999999-8888-7777-6666-555555555555","#,
+                r#""hook_event_name":"MessageDisplay","cwd":{cwd},"#,
+                r#""index":0,"final":false,"delta":{delta}}}"#
+            ),
+            message = serde_json::to_string(message)?,
+            cwd = serde_json::to_string(&root.path().to_string_lossy())?,
+            delta = serde_json::to_string(delta)?,
+        );
+        let mut child = Command::new(env!("CARGO_BIN_EXE_limae"))
+            .current_dir(root.path())
+            .env_clear()
+            .env("HOME", root.path().join("home"))
+            .env("TMPDIR", &scratch)
+            .arg("hook")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+        child
+            .stdin
+            .take()
+            .ok_or("missing child stdin")?
+            .write_all(payload.as_bytes())?;
+        Ok(child)
+    };
+
+    for round in 0..30 {
+        let message = format!("aaaaaaaa-bbbb-cccc-dddd-{round:012}");
+        let first = spawn("甲,乙\n", &message)?;
+        let second = spawn("丙,丁\n", &message)?;
+        let (first, second) = (first.wait_with_output()?, second.wait_with_output()?);
+        assert!(
+            first.status.success() && second.status.success(),
+            "round {round}"
+        );
+        let parts = scratch
+            .join("limae-hook/11111111-2222-3333-4444-555555555555/parts")
+            .join(format!("{message}.99999999-8888-7777-6666-555555555555"));
+        assert!(parts.join("void").is_file(), "round {round}: no void mark");
+        let kept = fs::read_to_string(parts.join("000000.part"))?;
+        assert!(
+            kept == "甲,乙\n" || kept == "丙,丁\n",
+            "round {round}: {kept:?}"
+        );
+    }
     Ok(())
 }
 
