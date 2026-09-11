@@ -8,9 +8,9 @@
 # Only the sidecars are read: the formula points Homebrew at the Release URLs
 # and hands it the digests, and Homebrew does the downloading and checking.
 #
-# Everything that varies between releases is the version and the four
-# digests. Everything else is the template below — so the thing to review is
-# this file, once, rather than a generated formula on every release.
+# Everything that varies between releases is the tag and the four digests.
+# Everything else is the template below — so the thing to review is this
+# file, once, rather than a generated formula on every release.
 set -euo pipefail
 
 if [ "$#" -ne 3 ]; then
@@ -22,13 +22,12 @@ tag="$1"
 assets="$2"
 out="$3"
 
-# The tag is pasted into four download URLs and into `version`, so it is
-# asserted to be a tag rather than trusted to be one.
+# The tag is pasted into four download URLs, so it is asserted to be a tag
+# rather than trusted to be one.
 if [[ ! $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "$0: \`$tag\` is not a v<major>.<minor>.<patch> tag" >&2
   exit 1
 fi
-version="${tag#v}"
 
 # Reads one sidecar and returns its digest, having checked that it is one.
 # A missing or malformed sidecar stops the run here; the alternative is a
@@ -60,6 +59,13 @@ base="https://github.com/Luolc/limae/releases/download/$tag"
 # 80 characters and rejects a leading article, and the crate's description is
 # 150 characters beginning with "A". Two audiences, two sentences.
 #
+# There is no `version` line: Homebrew scans the version out of the download
+# URL, and `brew audit --strict` rejects a declaration that repeats what it
+# scanned ("`version <x>` is redundant with version scanned from URL"). What
+# the declaration used to be — the one place saying which version this is —
+# is taken over by tools/check_formula_version.sh, which the release workflow
+# runs against the rendered formula.
+#
 # The `test do` block has both arms. A clean file has to pass and a file that
 # breaks a default rule has to come back non-zero and name the rule — a test
 # that only ran `--help` would pass just as well for a binary that lints
@@ -70,7 +76,6 @@ cat >"$out" <<FORMULA
 class Limae < Formula
   desc "Markdown linter for Chinese technical-writing typography"
   homepage "https://github.com/Luolc/limae"
-  version "$version"
   license "Apache-2.0"
 
   on_macos do

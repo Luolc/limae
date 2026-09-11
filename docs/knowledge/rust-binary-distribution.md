@@ -91,3 +91,7 @@ tools/render_homebrew_formula.sh v0.13.2 <装着 .sha256 边车的目录> /tmp/l
 退出 0 并打印 `rendered …`，即四个 digest 都读到了、四条 URL 都带上了这个 tag。负臂三条：tag 不是 `v<x>.<y>.<z>`、边车缺一份、边车里不是 digest，各自报错退出 1。
 
 **`brew audit` / `brew install` / `brew test` 在本地一条都跑不了** —— 开发机是 Linux 且没有 Homebrew (2026-09-10 实测 `command -v brew` 无输出)，连 `ruby -c` 这样的语法检查都做不了，机器上没有 ruby。所以「formula 文件渲染出来了」这个观察对「formula 能装」与「语法对但装不起来」给出相同输出，不能拿它当验收。真正的验收在 release workflow 的 `homebrew` job 里：它跑在 macOS runner 上，把 formula 放进一个本地 tap，依次 `brew audit --strict`、`brew install`、`brew test`，全过之后才推 tap，而且这一串在 `workflow_dispatch` 上对着一个已有 tag 就能整条跑 —— 推 tap 那一步才是唯一只在 tag push 上执行的。**第一次 dispatch 就是这三条命令的第一次运行**，在那之前它们的读数是空的。
+
+渲染出的 formula **不写 `version`**：Homebrew 从下载 URL 里扫得出版本号，`brew audit --strict` 判显式声明冗余 (2026-09-11 run 34566953423 的读数：`` `version 0.13.2` is redundant with version scanned from URL ``，也是 `brew audit` 有史以来第一次执行)。删掉那行的代价是「版本号对不对」从此没有断言守着 —— URL 命名一改，版本号会静默变错，而一个扫出错版本的 formula 照样过 audit。接手这件事的是 `tools/check_formula_version.sh`：它在 `homebrew` job 里 audit 之前跑，把 `brew info --json=v2` 读出的 `versions.stable` 与 `${TAG#v}` 正向比对。
+
+这条断言的两臂可以在 Linux 上跑 —— 把一个假 `brew` 放在 PATH 前面，只让它按 `STUB_VERSION` 吐出 `brew info --json=v2` 的形状：版本等于 tag 时退出 0 并打印读到的版本，版本差一个补丁号 (`0.13.1` 对 `v0.13.2`) 时退出 1 并同时报出两个值 (2026-09-11 dev-oregon 实测)。另外四条负臂同日实测退 1：`versions.stable` 是 `null`、`brew info` 自己退非 0、tag 不是 `v<x>.<y>.<z>`、参数个数不对。**假 `brew` 证的是比对逻辑，不是真 Homebrew 的 JSON 形状** —— 后者与 audit、install、test 一样，只有 runner 上那一次 dispatch 说了算。

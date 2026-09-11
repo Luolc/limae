@@ -298,6 +298,10 @@ crates.io 那边 `auth-check` 能「只认证不发布」，是因为 `rust-lang
 
 **脚本的读数 (2026-09-11 本机，七臂)**：不给参数 / 给一个不存在的 manifest / 一个 `name` 不是 `@limae/*` 的 manifest / 一个只有 `name` 没有 `optionalDependencies` 的 manifest，四臂各自退出 1 并说清哪里不对；拿真的 `launchers/npm/cli/package.json` 跑，列出的正好是那五个包；**把 GitHub 的 token 端点换成本机一个返回假 id_token 的 stub、对真 registry 跑完整循环**，五个包各报 `HTTP 401 / keys [message] / OIDC token exchange error - unauthorized`，脚本汇总后退出 1；同一个 stub 改成不返回 `.value`，脚本在发第一个交换请求之前就退出 1。**唯一没跑过的是成功那一臂** —— 它要一枚真的 GitHub OIDC token，只有在 Actions 里才有，第一次 `workflow_dispatch` 就是它的首跑。
 
+**首跑的读数：交换成功，但脚本判红** (run 34568232100，2026-09-11，`tag=v0.13.2`)。五个包全部答 **HTTP 201 Created**、`keys [created,expires,token,token_type]` —— token 真发出来了，这是「五个包的 trusted publisher 都配好了」第一次拿到独立读数。红在脚本自己身上：状态码那道门写的是 `== 200`，而 npm 答 201。**判据比它要证的事窄，就会把成功报成失败。** 修法是让状态码只进日志、不做判决，判决全部交给下一行本来就在的 token 形状断言 (脚本里那句注释「HTTP 200 is not the check: the answer has to carry a token」原本就是这么写的，只是实现没照着做)；日志里那个写死的 `HTTP 200` 一并改成打印真实状态码。
+
+**改完之后的六臂读数** (2026-09-11 本机，PATH 上放一个按 `STUB_STATUS` / `STUB_BODY` 作答的假 `curl`，跑的是真脚本)：`201` 带 token → 退 0；`200` 带 token → 退 0；`201` 不带 token (配置只勾了 stage 这类) → 退 1；`404` / `401` → 各退 1 并带出响应里的 `message`；2xx 但响应不是 JSON → 退 1。**分辨力的证据是同一组臂在旧脚本上的读数**：第一臂 (`201` 带 token) 在旧脚本上退 1，逐字复现了 run 34568232100 的那四行 —— 两个版本对同一个输入给出不同结论，这个对照才说明修的是那一处。**假 `curl` 证不了真 registry 的行为**，201 这个读数来自上面那次真跑，不来自桩。
+
 #### 第一次 OIDC 发布之前，还没有读数的是什么
 
 - **`npm publish` 这条路本身。** 上面所有读数加起来证明的是「配置在、交换端点认我们、版本够新、`.npmrc` 那行不挡路」，**不是「`npm publish` 会成功」**。这是这次迁移的已知缺口。
