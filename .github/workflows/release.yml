@@ -519,12 +519,19 @@ jobs:
         run: tools/render_homebrew_formula.sh "$TAG" assets limae.rb
       # Through a local tap rather than as a bare file path: a formula handed
       # to brew as a path is a different code path from the one a user takes,
-      # and taking the user's is the whole point of the two steps after this.
+      # and taking the user's is the whole point of the steps after this.
       - name: Put the formula in a local tap
         run: |
           set -euo pipefail
           brew tap-new --no-git luolc/local
           cp limae.rb "$(brew --repository luolc/local)/Formula/limae.rb"
+      # Before audit, because this is the claim audit does not make: a
+      # formula that scanned the wrong version out of its URL passes
+      # `brew audit --strict` just the same. The formula declares no
+      # `version` of its own, so this step is the only thing standing
+      # between a renamed tag or asset path and a silently wrong version.
+      - name: Assert the formula's version is this tag
+        run: tools/check_formula_version.sh "$TAG" luolc/local/limae
       - name: brew audit
         run: brew audit --strict luolc/local/limae
       # The arm that cannot be run anywhere else. `brew test` runs the
