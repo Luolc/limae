@@ -1,4 +1,4 @@
-//! List every `kind` the polish hook can write into its diagnostics.
+//! List every `kind` the hook can write into its diagnostics.
 //!
 //! One name per line, in declaration order. `tools/check_repo_contracts.sh`
 //! holds the `kind` table in `docs/knowledge/polish-hook-self-trial.md` to
@@ -11,11 +11,12 @@
 //! `match` with no wildcard. A variant added to the enum and not to the
 //! invocation is a missing arm, and that is a compile error; the only edits
 //! that fix it also put the variant's values in the array, and the array is
-//! what the gate compares with the handbook. A variant that carries data is
-//! named together with the constant array of its payloads, and every element
-//! of that array is written into the output — there is no way to name a
-//! variant for the `match` without also producing it. Compiling is enough
-//! to trip the lock, and `cargo clippy --all-targets` and `cargo test` both do.
+//! what the gate compares with the handbook. A variant that carries data would
+//! be named together with the constant array of its payloads, every element of
+//! which is written into the output — there is no way to name a variant for
+//! the `match` without also producing it; none of today's variants carries
+//! data. Compiling is enough to trip the lock, and `cargo clippy
+//! --all-targets` and `cargo test` both do.
 //!
 //! The Cargo target is `[[example]]` for the same reason `render-lexicon` is:
 //! it must not ship with `cargo install`. It reads nothing at run time, so it
@@ -30,7 +31,6 @@ use std::io::{self, Write};
 use std::process::ExitCode;
 
 use limae::hook::state::Kind;
-use limae::polish::diagnosis::FailureReason;
 
 /// Name every variant of an enum once, as an array and as a `match`.
 ///
@@ -76,22 +76,7 @@ macro_rules! every_variant {
     };
 }
 
-every_variant!(REASONS: FailureReason = [
-    NoEngine,
-    NotInstalled,
-    TimedOut,
-    Unreachable,
-    Rejected,
-    NonzeroExit,
-    EmptyAnswer,
-    UnreadableAnswer,
-    Other,
-]);
-
-every_variant!(
-    KINDS: Kind = [Incomplete, Repaired, Misconfigured, Crashed],
-    carrying: [Engine(REASONS)]
-);
+every_variant!(KINDS: Kind = [Incomplete, Partial, Unclosed, Misconfigured, Crashed]);
 
 fn main() -> ExitCode {
     let mut stdout = io::stdout().lock();

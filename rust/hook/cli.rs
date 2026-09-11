@@ -1,43 +1,34 @@
 //! The host protocol of the `hook` subcommand: one process, one event.
 //!
-//! `docs/adr/0009-polish-hook-contract.md` is the normative description; the
-//! Python reference implementation this was ported from has since been
-//! deleted. Every
-//! decision about *what* to show is already made by the time this module runs
-//! — [`crate::hook::block`] makes it — so what is left here is the shape the
-//! two hosts speak in, and the entry point that always ends at exit code 0.
+//! `docs/adr/0016-hook-mechanical-only.md` is the normative description. What
+//! to show is decided by [`crate::hook::parts`]; what is left here is the shape
+//! the host speaks in, the bookkeeping of one message instance across the
+//! processes that serve its batches, and the entry point that always ends at
+//! exit code 0.
 //!
-//! **Two hosts, three events, three shapes on the wire.**
+//! **One host, one event.** Claude Code's `MessageDisplay` fires once per
+//! batch of newly completed lines while an assistant message streams. Each
+//! batch is fixed in the light of every batch before it and the answer replaces
+//! that batch, as `hookSpecificOutput.displayContent`; a batch the fixes leave
+//! alone produces no output at all, which is how the host displays the
+//! original. `MessageDisplay` is display-only: the transcript and what the
+//! model sees are untouched. Every other event, `Stop` included, is received
+//! and left alone.
 //!
-//! * Claude Code's `MessageDisplay` fires once per batch of newly completed
-//!   lines while an assistant message streams, so the batches are cached by
-//!   message id and the model is called once, on the batch marked `final`, over
-//!   the whole message (ADR-0009 section 二). The answer replaces that batch, as
-//!   `hookSpecificOutput.displayContent`; a middle batch produces no output at
-//!   all, which is how the host displays the original.
-//! * Claude Code's `Stop` is the other half of the A/B trial
-//!   ([`crate::hook::ab`]): a `MessageDisplay` rewrite is invisible to the
-//!   model, so the code name is handed over here as
-//!   `hookSpecificOutput.additionalContext`.
-//! * Codex has no display-replacement event. Its `Stop` supplies the whole
-//!   `last_assistant_message` instead, so that host needs no batch cache: the
-//!   rewrite is returned as a `systemMessage` warning below the original reply.
-//!   It does not replace the input message or return any continuation field
-//!   (ADR-0014).
-//!
-//! **Failure is silence on screen, and only there.** A missing engine, a
-//! timeout, an empty answer, a malformed payload, a bug in this file: every one
-//! of them ends the same way, with no output and the user's own text on screen
-//! (ADR-0009 section 六). The exit code is 0 for every one of them, which is the
-//! opposite of the CLI's contract (ADR-0008 section 六) and deliberately so —
-//! this code sits in front of every reply the user reads, so the worst thing it
-//! can do is get in the way. The one exit code that is not 0 belongs to a person
-//! who ran the subcommand by hand, which is not a hook event at all.
+//! **Failure is silence on screen, and only there.** A missing sibling, a
+//! malformed payload, a configuration that will not read, a bug in this file:
+//! every one of them ends the same way, with no output and the user's own text
+//! on screen (ADR-0016 section 一). The exit code is 0 for every one of them,
+//! which is the opposite of the CLI's contract (ADR-0008 section 六) and
+//! deliberately so — this code sits in front of every reply the user reads, so
+//! the worst thing it can do is get in the way. The one exit code that is not 0
+//! belongs to a person who ran the subcommand by hand, which is not a hook
+//! event at all.
 //!
 //! Silent on screen is not the same as silent everywhere: each of those paths
 //! also writes one line to the session's diagnostics, because failing open and
-//! leaving no trace are two different things and only the first one was ever the
-//! intention.
+//! leaving no trace are two different things and only the first one was ever
+//! the intention.
 
 use std::ffi::OsString;
 use std::io::{self, Read, Write};
@@ -46,20 +37,17 @@ use std::time::{Instant, SystemTime};
 
 use serde_json::{Map, Value, json};
 
+use super::parts::{self, Limits, Outcome, Stored};
 use super::state::{self, Kind, Step};
-use super::{ab, block, parts, render};
 use crate::polish::engines::HOOK_DISABLE_VARIABLE;
 use crate::polish::value;
-use crate::text::is_python_whitespace;
 
 /// What this subcommand is called on the command line.
 pub const SUBCOMMAND: &str = "hook";
-/// Claude Code's per-batch display event.
+/// Claude Code's per-batch display event, the one event this acts on.
 pub const MESSAGE_DISPLAY: &str = "MessageDisplay";
-/// The end-of-turn event both hosts send, with different payloads.
-pub const STOP: &str = "Stop";
 
-/// What a hook event exits with, whatever happened (ADR-0009 section 六).
+/// What a hook event exits with, whatever happened (ADR-0016 section 一).
 pub const OK: u8 = 0;
 /// What a person who ran this by hand with arguments gets.
 pub const BAD_USAGE: u8 = 2;
@@ -82,6 +70,26 @@ pub fn run(
     stderr: &mut dyn Write,
     now: SystemTime,
 ) -> u8 {
+    serve(args, cwd, env, stdin, stdout, stderr, now, &Limits::DEFAULT)
+}
+
+/// The body of [`run`], with the limits a message is held to passed in so that
+/// a test can reach them.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "every process boundary is a parameter, so that no test mutates \
+              process-global state; the limits are the one addition"
+)]
+pub fn serve(
+    args: &[OsString],
+    cwd: &Path,
+    env: &[(OsString, OsString)],
+    stdin: &mut dyn Read,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+    now: SystemTime,
+    limits: &Limits,
+) -> u8 {
     if !args.is_empty() {
         let _ = writeln!(
             stderr,
@@ -100,7 +108,7 @@ pub fn run(
     let Ok(Value::Object(payload)) = serde_json::from_reader::<_, Value>(stdin) else {
         return OK;
     };
-    match output(&payload, env, cwd, now, stderr) {
+    match output(&payload, env, cwd, now, stderr, limits) {
         Ok(Some(answer)) => {
             // Non-ASCII goes out as itself, which is `ensure_ascii=False`:
             // what this prints is Chinese prose bound for a screen.
@@ -110,8 +118,8 @@ pub fn run(
         Ok(None) => OK,
         Err(_) => {
             // Fail open, and mean it: nothing this file can go wrong at is
-            // worth showing the user instead of their own reply (ADR-0009
-            // section 六). Silent on screen is not the same as silent
+            // worth showing the user instead of their own reply (ADR-0016
+            // section 一). Silent on screen is not the same as silent
             // everywhere, so a crash says so where the other failures do —
             // best effort, since the state directory is exactly the sort of
             // thing that may be why we are here.
@@ -127,7 +135,7 @@ pub fn run(
             {
                 state::note(
                     &root.join(session),
-                    &message(&payload),
+                    &named(&payload, "message_id"),
                     Step::Display,
                     Kind::Crashed,
                     now,
@@ -138,15 +146,15 @@ pub fn run(
     }
 }
 
-/// Handle one supported host event and build its wire output.
+/// Handle one host event and build its wire output.
 ///
-/// `None` when there is nothing to say, which is every unsupported event and
-/// every fail-open path: no JSON at all is printed, and the host displays what
-/// it already had.
+/// `None` when there is nothing to say, which is every event but
+/// `MessageDisplay` and every fail-open path: no JSON at all is printed, and
+/// the host displays what it already had.
 ///
 /// # Errors
-/// Whatever the event's handler could not do — a state directory that will not
-/// hold the batches, a cached batch that will not read back. The caller owes all
+/// Whatever the batch's handler could not do — a state directory that will not
+/// hold the batch, a cached batch that will not read back. The caller owes all
 /// of it the same fail-open path.
 fn output(
     payload: &Map<String, Value>,
@@ -154,254 +162,134 @@ fn output(
     cwd: &Path,
     now: SystemTime,
     stderr: &mut dyn Write,
+    limits: &Limits,
 ) -> io::Result<Option<Value>> {
-    let event = payload.get("hook_event_name").and_then(Value::as_str);
-    if event == Some(MESSAGE_DISPLAY) {
-        let answer = display(payload, env, cwd, now, stderr)?;
-        if !answer.is_empty() {
-            return Ok(Some(json!({
-                "hookSpecificOutput": {
-                    "hookEventName": MESSAGE_DISPLAY,
-                    "displayContent": answer,
-                }
-            })));
-        }
-    } else if event == Some(STOP) && is_codex_stop(payload) {
-        let answer = codex_stop(payload, env, cwd, now)?;
-        if !answer.is_empty() {
-            return Ok(Some(json!({ "systemMessage": answer })));
-        }
-    } else if event == Some(STOP) {
-        let answer = stop(payload, env)?;
-        if !answer.is_empty() {
-            return Ok(Some(json!({
-                "hookSpecificOutput": {
-                    "hookEventName": STOP,
-                    "additionalContext": answer,
-                }
-            })));
-        }
+    if payload.get("hook_event_name").and_then(Value::as_str) != Some(MESSAGE_DISPLAY) {
+        return Ok(None);
     }
-    Ok(None)
+    let answer = display(payload, env, cwd, now, stderr, limits)?;
+    Ok((!answer.is_empty()).then(|| {
+        json!({
+            "hookSpecificOutput": {
+                "hookEventName": MESSAGE_DISPLAY,
+                "displayContent": answer,
+            }
+        })
+    }))
 }
 
 /// Handle one `MessageDisplay` batch.
 ///
 /// Returns what to display in place of this batch, empty to leave it alone.
 ///
+/// The order of the checks is the order the costs come in. The instance's
+/// standing — abandoned, or over the batch limit — is settled before the batch
+/// is even cached; the batch is cached before the wait, so that the siblings
+/// after it can find it; the size limit is checked once the prefix is there to
+/// measure; and the fixer runs last. Abandoning an instance is permanent and
+/// marks the directory rather than deleting it, so that a sibling still waiting
+/// on it finds what it was waiting for.
+///
 /// # Errors
-/// The state directory would not take the batch, or a cached batch would not
-/// read back ([`parts::assemble`]).
+/// The state directory would not take the batch or the mark, or a cached batch
+/// would not read back ([`parts::assemble`]).
 fn display(
     payload: &Map<String, Value>,
     env: &[(OsString, OsString)],
     cwd: &Path,
     now: SystemTime,
     stderr: &mut dyn Write,
+    limits: &Limits,
 ) -> io::Result<String> {
-    let session = state::identifier(payload.get("session_id").and_then(Value::as_str));
-    let message = state::identifier(payload.get("message_id").and_then(Value::as_str));
+    let session = named(payload, "session_id");
+    let message = named(payload, "message_id");
+    let turn = named(payload, "turn_id");
     let Some(delta) = payload.get("delta").and_then(Value::as_str) else {
         return Ok(String::new());
     };
     let Some(root) = state::root(env) else {
         return Ok(String::new());
     };
-    if session.is_empty() || message.is_empty() {
+    // The turn is half of the instance key (ADR-0016 section 二): without it
+    // there is no directory this batch belongs in.
+    if session.is_empty() || message.is_empty() || turn.is_empty() {
         return Ok(String::new());
     }
-    // A batch index is a whole non-negative number that can also say how many
-    // batches there are, because indices are zero-based and increment by one
-    // per batch, so the final one's count is its successor. Both halves are
-    // read here, and an index without a successor is not one this can act on:
-    // ADR-0009 section 六 asks this process never to crash and never to exit
-    // anything but 0, and `usize::MAX + 1` would do the first in a debug build
-    // and, with Cargo's release default of `overflow-checks = false`, silently
-    // wrap to a count of zero in the build we ship.
-    //
-    // The reference implementation says the first half twice —
-    // `isinstance(index, int)` and then `not isinstance(index, bool)`, because
-    // in Python `True` is an `int` — where here JSON's booleans and its numbers
-    // are separate variants of `Value` and `as_u64` answers `None` to a boolean
-    // already.
-    let Some((index, batches)) = payload
+    // A batch index is a whole non-negative number; JSON's booleans are a
+    // separate variant of `Value`, so `as_u64` already answers `None` to one.
+    let Some(index) = payload
         .get("index")
         .and_then(Value::as_u64)
         .and_then(|index| usize::try_from(index).ok())
-        .and_then(|index| Some((index, index.checked_add(1)?)))
     else {
         return Ok(String::new());
     };
+    let is_final = payload.get("final") == Some(&Value::Bool(true));
     let directory = state::session(&root, &session)?;
-    let parts = directory.join(state::PARTS_DIRECTORY).join(&message);
-    state::keep(&parts, index, delta)?;
-    // `final` is the end-of-message signal whatever the delta holds: the last
-    // batch is empty when the message ends on a newline.
-    if payload.get("final") != Some(&Value::Bool(true)) {
+    let parts = directory
+        .join(state::PARTS_DIRECTORY)
+        .join(state::instance(&message, &turn));
+    // Every batch sweeps: no batch is the last one to run for its message
+    // (ADR-0016 section 二「清理」), so there is no better moment, and a sweep
+    // is a listing of directories an hour or a day old.
+    state::prune(&root, now);
+    let declined = |step: Step, kind: Kind| {
+        state::note(&directory, &message, step, kind, now);
+        Ok(String::new())
+    };
+    if state::voided(&parts) {
+        return declined(Step::Siblings, Kind::Incomplete);
+    }
+    if index >= limits.batches {
+        state::void(&parts)?;
+        return declined(Step::Siblings, Kind::Incomplete);
+    }
+    if parts::store(&parts, index, delta)? == Stored::Conflict {
+        state::void(&parts)?;
+        return declined(Step::Siblings, Kind::Incomplete);
+    }
+    // An empty batch — the final one, when the message ends on a line feed —
+    // has nothing to show, and nothing to wait for either.
+    if delta.is_empty() {
         return Ok(String::new());
     }
-    let text = parts::assemble(
+    let Some(prefix) = parts::assemble(
         &parts,
-        batches,
-        Instant::now() + parts::SIBLING_WAIT,
+        index,
+        Instant::now() + limits.wait,
         &directory,
         &message,
         now,
         stderr,
-    )?;
-    // The batches of a finished message are scratch and go now, whether or not
-    // they made a whole message; a sweep that will not run is not a reason to
-    // hold up the one that will.
-    let _ = std::fs::remove_dir_all(&parts);
-    state::prune(&root, now);
-    let Some(text) = text else {
+    )?
+    else {
         return Ok(String::new());
     };
-    let built = block::block(
-        &text,
-        &directory,
-        &message,
-        env,
-        &configured(payload, cwd),
-        now,
-    );
-    if built.is_empty() {
-        return Ok(String::new());
+    if prefix.len().saturating_add(delta.len()) > limits.bytes {
+        state::void(&parts)?;
+        return declined(Step::Siblings, Kind::Incomplete);
     }
-    Ok(joined(delta, &text, &built))
-}
-
-/// Put one blank line between the message and the block, whatever the message
-/// happens to end on.
-///
-/// `delta` is the final batch, which this answer replaces, and `text` is the
-/// whole message it closes.
-///
-/// The gap is a property of the screen, not of this batch: `displayContent`
-/// replaces the final delta and nothing before it, so the trailing newlines an
-/// earlier batch already painted cannot be taken back — only counted. A message
-/// ending on a newline is exactly that case, since its final delta is empty and
-/// every newline is already up there.
-fn joined(delta: &str, text: &str, block: &str) -> String {
-    // Saturating rather than plain: nothing this process does to a payload is
-    // worth a panic in a debug build or a wrap in a release one (ADR-0009
-    // section 六), and both differences are unreachable — an `ending` is a
-    // count of newlines in a string, so no pair of them can leave `i64`.
-    let painted = ending(text).saturating_sub(ending(delta));
-    let gap = i64::try_from(render::BLOCK_GAP)
-        .unwrap_or(0)
-        .saturating_sub(painted);
-    let gap = usize::try_from(gap).unwrap_or(0);
-    format!(
-        "{}{}{block}",
-        delta.trim_end_matches('\n'),
-        "\n".repeat(gap)
-    )
-}
-
-/// Handle one Claude Code `Stop` event.
-///
-/// Returns the context to hand the model, empty when the turn that just ended
-/// had no A/B trial.
-///
-/// # Errors
-/// The session-state directory would not open.
-fn stop(payload: &Map<String, Value>, env: &[(OsString, OsString)]) -> io::Result<String> {
-    let session = state::identifier(payload.get("session_id").and_then(Value::as_str));
-    let Some(root) = state::root(env) else {
-        return Ok(String::new());
-    };
-    if session.is_empty() {
-        return Ok(String::new());
+    match parts::replay(&prefix, delta, is_final, &configured(payload, cwd)) {
+        Outcome::Fixed(shown) => Ok(shown),
+        Outcome::Unchanged => Ok(String::new()),
+        Outcome::Declined(step, kind) => declined(step, kind),
     }
-    Ok(ab::context(&state::session(&root, &session)?))
 }
 
-/// Polish the complete reply carried by a Codex `Stop` event.
-///
-/// Returns the warning to append below the original reply, empty when the
-/// payload is incomplete or polishing fails open.
-///
-/// # Errors
-/// The session-state directory would not open.
-fn codex_stop(
-    payload: &Map<String, Value>,
-    env: &[(OsString, OsString)],
-    cwd: &Path,
-    now: SystemTime,
-) -> io::Result<String> {
-    let session = state::identifier(payload.get("session_id").and_then(Value::as_str));
-    let message = message(payload);
-    let text = payload
-        .get("last_assistant_message")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    let Some(root) = state::root(env) else {
-        return Ok(String::new());
-    };
-    if session.is_empty() || message.is_empty() || text.is_empty() {
-        return Ok(String::new());
-    }
-    let directory = state::session(&root, &session)?;
-    state::prune(&root, now);
-    let built = block::block(
-        text,
-        &directory,
-        &message,
-        env,
-        &configured(payload, cwd),
-        now,
-    );
-    if built.is_empty() {
-        return Ok(String::new());
-    }
-    let built = built.trim_end_matches(is_python_whitespace);
-    // `ab::record` leaves a pending note for Claude Code's second `Stop` hook.
-    // Codex has only this one event, and returning `decision:block` to
-    // manufacture another would run the model again. Consume the note here; the
-    // comparison and its code remain in the ledger and on screen. A
-    // `systemMessage` is not ADR-0009's model-context channel, so this preserves
-    // the reader's code without claiming the model received it.
-    let context = ab::context(&directory);
-    Ok(if context.is_empty() {
-        built.to_owned()
-    } else {
-        format!("{built}\n\n{context}")
-    })
-}
-
-/// Return whether a `Stop` payload carries Codex's extensions.
-fn is_codex_stop(payload: &Map<String, Value>) -> bool {
-    payload.get("model").is_some_and(Value::is_string)
-        && payload.contains_key("last_assistant_message")
-}
-
-/// Return the host's safe per-message identifier.
-fn message(payload: &Map<String, Value>) -> String {
-    let named = |key: &str| state::identifier(payload.get(key).and_then(Value::as_str));
-    let id = named("message_id");
-    if id.is_empty() { named("turn_id") } else { id }
+/// Return one of the host's ids as a safe path segment, empty when absent.
+fn named(payload: &Map<String, Value>, key: &str) -> String {
+    state::identifier(payload.get(key).and_then(Value::as_str))
 }
 
 /// Return the directory this event's rule configuration is looked up from.
 ///
 /// The host says where the session is; this process's own working directory is
-/// the fallback, which is where the reference implementation's `Path.cwd()`
-/// lands.
+/// the fallback.
 fn configured(payload: &Map<String, Value>, cwd: &Path) -> PathBuf {
     payload
         .get("cwd")
         .and_then(Value::as_str)
         .map_or_else(|| cwd.to_owned(), PathBuf::from)
-}
-
-/// The trailing newlines of one piece of text, as [`joined`] counts them.
-///
-/// Signed, because the reference implementation's subtraction is: the `max(0, …)`
-/// there is what puts the floor back, and doing it in unsigned arithmetic would
-/// move the floor one step earlier.
-fn ending(text: &str) -> i64 {
-    i64::try_from(render::trailing_newlines(text)).unwrap_or(i64::MAX)
 }
 
 // Unix-only: every path here writes session state, and on another platform every

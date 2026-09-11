@@ -1,30 +1,12 @@
-# 手册：在本仓开关 polish 的 hook，与怎么看 A/B 台账
+# 手册：在本仓开关排版修复的 hook，与怎么查它的诊断
 
-本文是操作手册，不是决策记录 —— 挂哪个 hook、为什么按批缓存、A/B 怎么呈现、为什么先在本仓自试，正本都在 `docs/adr/0009-polish-hook-contract.md`，本文不重复。
+本文是操作手册，不是决策记录 —— 挂哪个 hook、为什么按批就地修、跨批为什么靠前缀重放、两道 fail-open 是什么，正本都在 `docs/adr/0016-hook-mechanical-only.md`，本文不重复。文件名里的 polish 是历史：这条 hook 曾经调模型润色，2026-09-11 起只做 `limae --fix` 那一套机械排版修复，不再调任何模型 (ADR-0016)。
 
-一句话：`limae hook` 让模型重写一次助手回复，但不改 transcript。Claude Code 在原位置改显示，Codex 保留原回复、再在下方用 warning 追加润色版；任何一步出问题都只留下原回复 (fail-open)。两种宿主为什么不同，见 `docs/adr/0014-codex-stop-polish-hook.md`。
+一句话：`limae hook` 在 Claude Code 显示每一批回复的时候，把这一批过一遍本仓的确定性修复，修后文本只替换屏幕上的这一批；transcript 与模型看到的内容不动。任何一步出问题都只留下原文 (fail-open)，并在会话态诊断里记一行。
 
-回复下方那一块是**表头加完整的改写**：表头写这一轮有几处实质改动 (「── 润色 ── 3 处改动」)，下面是整段改写后的文字。处数回答「它到底动没动」，完整文本回答「读起来有没有更好」 —— 后者只有人能判断，所以要给全文，不能只给摘要。
-
-一字未动时写「── 润色 ── 无改动」；动了但只动了空白、或只把标点换了个宽度时写「── 润色 ── 仅排版改动」，宽度正是确定性规则自己会挑的东西，不计入处数。**处数的判据只折叠宽度、不删标点** —— 把括号整对删掉、或把 `(注)` 换成 `「注」`，都不是排版，本仓没有任何规则会做这两件事，它们照常计入。不重贴整篇的理由是它没有信息：那正是读者刚读完的文字，而模型通常只移动其中很小一部分字符，混在一屏散文里看不见。处数按字符算，不按行：中文段落一段就是一行，按行数会把「改了一个字」和「整段重写」算成同一件事。
-
-本仓 2026-09-02T03:31:04-07:00 读到的这个会话的记录 (37 条，全部计入，未筛选) 给出的量级：`original` 与 `text` 逐字相同的 7 条 (19%)；按引擎分组的归一化编辑距离 (`difflib.SequenceMatcher` 的 ratio 取补) 是 claude/sonnet n=32、中位 0.017、范围 0–0.274，codex/gpt-5.6-terra n=5、中位 0.047、范围 0.029–0.122。**分布长尾且两组样本量悬殊，这些数只描述这一个会话这一个作者，不能当作型号之间的比较结论。**
+**Codex 那侧的 hook 已废弃** (ADR-0016 §六)：Codex 没有等价于 `MessageDisplay` 的替换事件，`.codex/config.toml` 已删除；历史读数见 `docs/adr/0014-codex-stop-polish-hook.md`「实测」一节。
 
 ## 一、怎么开
-
-### Codex
-
-本仓已经把 hook 写进 `.codex/config.toml`，不会改 `~/.codex/config.toml`，也不会影响其它仓库；所有安装了 limae 并信任 limae checkout 的 clone 都会启用。试用配置把 A/B 采样率固定为 0，所以每条回复最多追加一份润色版。
-
-1. 在运行 Codex 的开发机终端进入 limae checkout，执行 `cargo build`。看到结尾一行 `Finished`，且 `target/debug/limae` 存在，即为完成。
-2. 在同一终端从这个 checkout 启动一个新的 Codex 会话。若出现 hook trust 界面，先确认正文列出的命令来自本仓 `.codex/config.toml`，再选择信任；进入输入框即为完成。
-3. 在 Codex 输入一段超过 200 个非空白字符的合成中文正文。原回复下方出现 `── 润色 ──` warning 块，或会话态诊断记录了失败原因，即为 hook 已触发。
-
-Codex 的 `Stop` 一次给出完整的 `last_assistant_message`，所以不走下面的分批缓存。hook 只返回 `systemMessage`，不返回官方明定会续跑的 `decision: "block"` 或 `reason`。原回复字段没有被 hook 改写；Codex 是否另存 warning 事件不由这件事推出。Codex 没有 Claude Code 的 `additionalContext` 回注通道，不能把 `systemMessage` 上的 A/B 编号当成模型已经收到的上下文；本仓配置因此关闭 A/B。
-
-`codex-cli 0.153.0` 在 2026-09-05 的 linked-worktree 实测没有加载该 worktree 自己的 hook。需要在合入前的 linked worktree 试验时，把 `.codex/config.toml` 的 `hooks.Stop` 作为会话级配置传入；正常安装与最终试用应在主 checkout 或普通 clone 中验收。已有 Codex 会话是否热加载合入后的配置也要单独确认，没确认前就按「新开或 resume 一次会话」处理。
-
-### Claude Code
 
 hook 配置写进 `.claude/settings.local.json`。这个文件不入库 (见 `.gitignore`)，只影响在本仓开的会话。
 
@@ -36,19 +18,7 @@ hook 配置写进 `.claude/settings.local.json`。这个文件不入库 (见 `.g
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR/target/debug/limae\" hook",
-            "timeout": 120
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR/target/debug/limae\" hook",
-            "timeout": 15
+            "command": "\"$CLAUDE_PROJECT_DIR/target/debug/limae\" hook"
           }
         ]
       }
@@ -57,150 +27,91 @@ hook 配置写进 `.claude/settings.local.json`。这个文件不入库 (见 `.g
 }
 ```
 
-三处不能省：
+两处要注意：
 
-- **`timeout` 必须给，而且要大于模型一次调用的时间**。`MessageDisplay` 事件在宿主里的默认超时是 10 秒 (2026-09-01 在 Claude Code `2.1.257` 的二进制里核到：每个 hook 取 `timeout * 1000`，没写才用事件的默认值，`MessageDisplay` 那个默认值是 `1e4`)。不给 `timeout`，模型永远赶不上，每条回复都白跑一次。
-- **两个事件用同一条命令**：进程按 stdin 里的 `hook_event_name` 自己分流，不需要参数。
-- **走 `target/debug/limae` 这个已建好的 binary，不要写 `cargo run`**：这条命令每批新行都要起一次进程 (一条回复约十次)，而且 `MessageDisplay` 的各批是并发派发的 —— `cargo run` 会让它们排在 Cargo 的 build 目录锁上，一个一个来。没有 `target/debug/limae` 就先 `cargo build`；**改完 Rust 源码要重建**，否则挂着的是上一次建出来的那个。本机 2026-09-07 实测 (10 次)：Rust binary 约 2 ms 一次。
+- **只挂 `MessageDisplay`，不要 `timeout`**：一批的成本是整篇重修的十几毫秒 (release 构建，ADR-0016 读数 C) 加最多 2 秒的兄弟批等待，落在宿主给 `MessageDisplay` 的默认 10 秒之内。`Stop` 不用挂：进程收到它只是静默退出 0，挂着是白起一次进程。
+- **走 `target/debug/limae` 这个已建好的 binary，不要写 `cargo run`**：这条命令每批新行都要起一次进程 (一条回复十几次到上百次)，而且各批是并发派发的 —— `cargo run` 会让它们排在 Cargo 的 build 目录锁上，一个一个来。没有 `target/debug/limae` 就先 `cargo build`；**改完 Rust 源码要重建**，否则挂着的是上一次建出来的那个。
 
 改完**重开一个 Claude Code 会话**才生效。
 
 ## 二、怎么关
 
-Codex 只关本次时，在启动 Codex 前给进程环境设置 `LIMAE_HOOK_DISABLE=1`；完成判据是长回复下方不再出现 `── 润色 ──`。要关掉本仓 Codex 试用，须另提 PR 删除 `.codex/config.toml`，不直接改 main。
+按影响面从小到大：
 
-Claude Code 按影响面从小到大：
-
-1. **只关本次**：把 `LIMAE_HOOK_DISABLE=1` 加进 `.claude/settings.local.json` 的 `env` 表 (或在启动 agent 的环境里设)，进程一进来就退出，一个模型都不调。
+1. **只关本次**：把 `LIMAE_HOOK_DISABLE=1` 加进 `.claude/settings.local.json` 的 `env` 表 (或在启动 agent 的环境里设)，进程一进来就退出，连 stdin 都不读。
 2. **关掉这台机器上的本仓**：删掉上面那段 `hooks`，重开会话。
 3. **彻底**：删掉 `.claude/settings.local.json`。
 
-## 三、旋钮
+## 三、旋钮与配置
 
-都是环境变量 —— hook 拿得到的就是会话的环境。写错值 (不是数字) 一律回落到默认值，不会因此打断显示。Codex 的本仓配置在 hook 命令上固定 `LIMAE_HOOK_AB_RATE=0`；其余默认值与 Claude Code 相同。
+只剩一个环境变量：
 
 | 变量 | 默认 | 管什么 |
 | --- | --- | --- |
 | `LIMAE_HOOK_DISABLE` | 空 | 非空即全关 |
-| `LIMAE_HOOK_MIN_CHARS` | 200 | 低于这个字数的回复不润色 (剥掉围栏代码块后按非空白字符计) |
-| `LIMAE_HOOK_AB_RATE` | 0.1 | 命中 A/B 双跑的概率，0 表示只单跑，1 表示每条都双跑 |
-| `LIMAE_HOOK_TIMEOUT` | 60 | 每个模型调用等多少秒；要小于上面 `settings.local.json` 里的 `timeout` |
 
-单跑用哪个引擎，走的是 `limae polish` 那套配置 (`limae.toml` 的 `[polish]`、`LIMAE_ENGINE`)；A/B 双跑不看这套，它从 ADR-0008 §五 的七个候选里现抽两个。hook 调起的润色子进程会收到 `LIMAE_HOOK_DISABLE=1`，避免 Codex 调 Codex 时递归触发同一个 hook；这个内部标记不需要手工设置。
+`LIMAE_HOOK_MIN_CHARS`、`LIMAE_HOOK_AB_RATE`、`LIMAE_HOOK_TIMEOUT` 已随模型润色与 A/B 一起退役 (ADR-0016 §四)，设了也没有作用。
 
-## 四、A/B 台账在哪、怎么看
+**修什么由仓级规则配置决定，与 `limae --fix` 读的是同一份**：从事件里的 `cwd` 起按 `rust/config.rs` 的 `find_config` 逐层向上找 `limae.toml` 或 `pyproject.toml` 的 `[tool.limae]`，碰到含 `.git` 的那一层就停；一层都没有就是默认集。所以仓库里 `disable` 掉的规则在屏幕上同样不修。**配置错误的处理与 CLI 相反**：CLI 报错退出 2，hook 这一批原文放行、记一行 `fix` / `config` (见第五节)。没有用户级配置，也不会在家目录创建任何东西 (ADR-0016 §三)。
 
-命中 A/B 的那一轮，屏幕上原文之后多出两栏：
+## 四、会话态目录里有什么
+
+每一批都是一个新进程，跨批的状态只能经磁盘传 (ADR-0016 §二)。状态就是**这条消息到目前为止的原文**，按批分文件：
 
 ```text
-[A/B 灯塔] 原文如上，以下是两个候选：
-
-── A ──
-……
-
-── B ──
-……
+$TMPDIR/limae-hook/<session_id>/parts/<message_id>.<turn_id>/000000.part
+$TMPDIR/limae-hook/<session_id>/parts/<message_id>.<turn_id>/000001.part
+$TMPDIR/limae-hook/<session_id>/diagnostics.jsonl
 ```
 
-**屏幕上不写型号，这是故意的** —— ADR-0008 §五 要的是盲评。**对应关系只在会话态台账里**：想知道「灯塔那轮 A 是谁」就问 agent，它会去读台账。
+- **这个位置没有配置项**，也不接受任何一个项目的配置去改它 —— 分片里是助手回复原文，一旦落进工作树就可能被 `git add` 带走，而本仓是 public 仓；程序另会拒绝任何解析后落在 git 工作树里的状态目录，命中就什么都不写、也不修。
+- 目录 0700、文件 0600，重启即随 `$TMPDIR` 一起没。
+- **清理只靠年龄，不靠末批**：每个事件都顺手扫一遍 —— 超过 1 小时没动过的消息分片目录、超过 24 小时没动过的会话目录，扫掉。末批不删自己的分片，因为它前面的某一批可能还在跑、还在读同一个目录；被打断的消息根本收不到末批 (2026-09-11 实测：esc 与 Ctrl-C 各一次，被打断的消息所有批次都是 `final: false`，之后没有了)，中断很频繁，所以按年龄扫是常态路径，不是兜底。
+- 分片目录里若多出一个 `void` 文件，说明这条消息实例已作废 (同一个 index 被重送了不同内容、或消息超过了字节数 / 分片数上限)：之后各批一律原样上屏，目录留给年龄清理。
+- 它含助手回复原文，**不进本仓库、不经 agent 间通道传递** (ADR-0009 §八、ADR-0012 立的边界，ADR-0016 §二 一条不少地继承)。
 
-轮末 `Stop` 还会在屏幕上多出一句 `Stop hook feedback: limae A/B：本轮有一次 A/B 对照，编号「灯塔」……` —— 那是给 agent 的提示，**它同样不写型号**。早期版本在这句里写了型号名，等于把答案印在盲评题旁边 (原因与修正见 `docs/adr/0011-ab-code-only-stop-context.md`)；**在那之前给出的偏好不算盲评结果**，不能当型号的证据用。
+## 五、出问题了怎么查
 
-台账目录：`$TMPDIR/limae-hook/<session_id>/`，一轮一个 JSON 文件，文件名就是编号。**这个位置没有配置项**，也不接受任何一个项目的配置去改它 —— 台账里是助手回复原文，一旦落进工作树就可能被 `git add` 带走，而本仓是 public 仓；程序另会拒绝任何解析后落在 git 工作树里的状态目录，命中就什么都不写、也不润色。
-
-```sh
-ls "${TMPDIR:-/tmp}"/limae-hook/*/ab/
-jq -r '.code, (.candidates[] | "\(.label) = \(.engine) \(.model)")' \
-  "${TMPDIR:-/tmp}"/limae-hook/*/ab/灯塔.json
-```
-
-一份台账里有：编号、UTC 时间、回复原文、两个候选各自的 label / 引擎 / 型号 / 改写全文。
-
-**保留期**：整个目录是会话态的 —— 文件权限 0600、目录 0700，重启即随 `$TMPDIR` 一起没；此外 hook 每次处理完一条消息会顺手删掉超过 24 小时没动过的会话目录。要长期留证据就自己把文件拷出来，**但它含助手回复原文，不进本仓库、不经 agent 间通道传递** (ADR-0009 §五、§八)。
-
-## 四之二、没命中 A/B 的那些轮次记在哪
-
-**每一次单路润色也落一份记录**，与 A/B 台账同一个会话态目录、同样的权限、同样随会话过期：
-
-```sh
-ls "${TMPDIR:-/tmp}"/limae-hook/*/polish/
-jq -r '.engine, .model' "${TMPDIR:-/tmp}"/limae-hook/*/polish/<reply_id>.json
-```
-
-一轮一个 JSON，**文件名就是宿主给的回复 id**：Claude Code 用 `message_id`，Codex 用 `turn_id`；同一条回复重跑会覆盖它自己那份。JSON 内的字段名仍是 `message_id`，值采用同一个宿主 id。里面有六项：时间、`message_id`、引擎与型号，以及三份文本 —— **它们是三份不是两份，这一点是有用的**：
-
-| 字段 | 是什么 |
-| --- | --- |
-| `original` | 助手自己写的原文 |
-| `text` | 模型改写完的样子 (**没有**经过本仓规则) |
-| `displayed` | 用户实际看到的，也就是 `text` 再过一遍确定性修复 |
-
-把 `text` 与 `displayed` 分开记，是为了能回答「这一轮的整洁有多少是模型的功劳、有多少是规则替它擦的」。合成一份就永远问不出来了。
-
-**为什么要留这份记录**：模型的改写不是固定函数。同一段输入连跑四次，结果从「一字未改」到「删光全部粗体标记并且弄脏标点」都出现过 —— 所以**看一次什么都证明不了**，要判断 prompt 或规则的改动有没有用，得有样本。样本要求每一轮的输入输出都在磁盘上。
-
-它含助手回复原文，边界与 A/B 台账完全一致：**不进本仓库、不经 agent 间通道传递**，随会话目录一起在 24 小时后被清掉。
-
-## 五、怎么给反馈
-
-用编号说话：「灯塔那轮 B 更像人话」。编号是双字中文名词，语音转写不容易错行；同一会话内不重复 (词表 48 个，用完就不再抽 A/B)。agent 拿到编号后去台账查对应关系，把判断记到该记的地方 —— 这批判断就是 ADR-0008 §五 定默认型号的依据。
-
-**给完偏好之前不要让 agent 说出哪一栏是哪个模型**，知道了就不是盲评了。
-
-## 六、出问题了怎么查
-
-**症状永远是「没润色」**，因为任何失败都退回原文，不会报错、不会卡住。**但从现在起失败会留下痕迹** —— 先看这个文件，再动手复现：
+**症状永远是「排版没修」**，因为任何失败都退回原文，不会报错、不会卡住。失败会留下痕迹 —— 先看这个文件，再动手复现：
 
 ```sh
 tail "${TMPDIR:-/tmp}"/limae-hook/*/diagnostics.jsonl
 ```
 
-**这个文件不存在，说明这个会话还没失败过** —— shell 会报 `no matches found` 或 `No such file`，那不是命令打错了。屏幕上没润色又没有这个文件，先回去看第三节的阈值：多半是消息没到 200 字，那不算失败，所以不记。
+**这个文件不存在，说明这个会话还没失败过** —— shell 会报 `no matches found` 或 `No such file`，那不是命令打错了。屏幕上没修又没有这个文件，多半是这一批本来就干净 (与 `--fix` 输出相同时 hook 什么都不输出)，那不算失败，所以不记。
 
 有的话，一行一次失败，四个字段：
 
 | 字段 | 是什么 |
 | --- | --- |
 | `at` | UTC 时间 |
-| `message_id` | 是哪条回复：Claude Code 记 `message_id`，Codex 记 `turn_id`，用来跟屏幕上的回复对上 |
-| `step` | 哪一步：`assemble` 拼分片、`single` 单跑润色、`ab` A/B 对照、`fix` 确定性修复、`record` 落台账、`display` hook 自己崩了 |
+| `message_id` | 是哪条回复，用来跟屏幕上的回复对上 |
+| `step` | 哪一步：`siblings` 等兄弟批次、拼前缀与读前缀上的两个信号，`fix` 跑规则，`display` hook 自己崩了 |
 | `kind` | 哪一类，见下表 |
 
-`kind` 是**完整的一张表** —— 按它反查就能定位，漏一类就等于那类失败查不到；`tools/check_repo_contracts.sh` 拿代码里的全集对着它核，漏一行门就红：
+`kind` 是**完整的一张表** —— 按它反查就能定位，漏一类就等于那类失败查不到；`tools/check_repo_contracts.sh` 拿代码里的全集 (Cargo example `hook-kinds` 打印) 对着它核，漏一行门就红：
 
 | `kind` | 什么意思 | 下一步 |
 | --- | --- | --- |
-| `timeout` | 引擎超过 `LIMAE_HOOK_TIMEOUT` 没回 | 调大超时，或换个更快的型号 |
-| `unreachable` | 网络不通 | 查网络再重试 |
-| `unauthorized` | 凭证被拒 (401 / 403) | 重新登录那个 CLI |
-| `exit` | 引擎非零退出 | 手工跑一次 `limae polish -` 看它说什么 |
-| `empty` | 引擎退出码 0 但什么都没吐 | 同上 |
-| `unreadable` | 引擎该写的输出文件读不出来 (codex 走 `--output-last-message`) | 同上；多半是引擎中途死了 |
-| `not-installed` | 二进制不在 `PATH` 上 | 装上，或用 `--engine` 指定别的 |
-| `no-engine` | `auto` 把每个引擎都探过，全失败 | 单跑 `limae polish -`，它会逐引擎报 |
-| `config` | `[polish]` 表写错了 | 按 `limae polish -` 打出的配置错误改 |
-| `incomplete` | 有分片没在 2 秒内落盘，这条消息拼不全 | 正常现象，见本节末尾 |
-| `crashed` | 这一步自己抛了异常 | 这是 bug，请报 |
-| `other` | 引擎失败但归不进上面任何一类 | 手工跑一次看 |
-| `repaired` | **不是失败** (见下) | 不用管 |
+| `incomplete` | 前面有一批没在 2 秒内落盘，这一批的前缀拼不全；或者这条消息实例已作废 (同一 index 重送了不同内容、超过字节数或分片数上限)，本批与之后各批都记这一条 | 正常现象，见本节末尾；连续出现且回复不长，去核宿主的分批行为 |
+| `partial` | 批次边界不在行边界上：前缀不以换行结尾，或一个中间批自己不以换行结尾 | 去核 ADR-0016 读数 A 的前提 —— 宿主的分批行为变了 |
+| `unclosed` | 这一批结尾可能还在一个行内代码 span 里 (有一段反引号串没配对上)，要等下一批才知道，所以这一批原样上屏 | 不是故障，是正常现象：开反引号在行尾的写法每次都会触发一次；下一批照常修 |
+| `config` | 仓级规则配置读不了 (不是合法 toml，或触犯 `spec/rules.md`「配置错误」清单)；或者回复里的行内指令点名了一个不存在的规则 id | 在那个仓里跑一次 `limae --all`，CLI 会把配置错误或指令错误打出来 |
+| `crashed` | 这一步自己崩了：状态目录不合作、分片读不出来、修后行数与修前不一致 | 这是 bug，请报 |
 
-`repaired` 是唯一一条不表示失败的：它说这一轮的改写带着排版违规，被本仓的规则修掉了。留着它是因为**哪个型号总要规则替它擦屁股，本身就是选型信号** (ADR-0008 §五)。
-
-**这个文件里不会有正文，也不会有引擎打印的任何东西** —— 只有上面四个字段。边界与台账同一条 (ADR-0009 §八)：引擎可以把它看到的环境原样打回来，而这是个比进程活得久的文件。保留期也跟台账一样，随会话目录一起在 24 小时后被清掉。
-
-**这不是新决定，是台账那条边界的同一套东西**：ADR-0009「后果」把台账的路径、格式与保留期明写为留给实现任务定，这个文件同类同边界，所以只记在这份手册里。
+**这个文件里不会有正文** —— 只有上面四个字段。保留期跟分片一样，随会话目录一起在 24 小时后被清掉。
 
 看完痕迹再复现：
 
 ```sh
-# 手工喂一条最终批进去，看它输不输出 displayContent。
-printf '%s' '{"session_id":"probe","transcript_path":"/dev/null","cwd":"'"$PWD"'",
+# 手工喂一个中间批进去，看它输不输出 displayContent。
+printf '%s' '{"session_id":"probe","cwd":"'"$PWD"'",
 "hook_event_name":"MessageDisplay","turn_id":"t","message_id":"m","index":0,
-"final":true,"delta":"<把一段两百字以上的中文粘在这里>"}' \
+"final":false,"delta":"你好,世界\n"}' \
   | TMPDIR=$(mktemp -d) ./target/debug/limae hook
 ```
 
-- 什么都不输出：先看这段文字够不够 200 字 (`LIMAE_HOOK_MIN_CHARS`)，再用 `printf '%s' '<同一段文字>' | ./target/debug/limae polish -` 单跑一次 —— CLI 那侧失败会把诊断打出来 (ADR-0008 §六 两侧的失败语义本就不同)。
-- 输出了但会话里没效果：多半是 `timeout` 没配 (第一节) 或者会话没重开。
-- stderr 出现 `limae hook: m/n batches arrived`：宿主是并发派发每一批的，这条说明有一批没在 2 秒内落盘。这一轮按原文显示，不会拿残缺的正文去润色 —— 只记片数，不记内容。同一件事在 `diagnostics.jsonl` 里是一行 `assemble` / `incomplete`。
-- **消息被杀在流中间** (会话被打断，或者 `--resume` 重启)：宿主不再发末批，这条消息就永远拼不起来，屏幕上也不会有润色。这是正常的，不是缺陷 —— 末批是唯一确定的「消息结束」信号，没有它就只能显示原文，绝不能猜。它留下的分片目录会在一小时后被扫掉。
+- 应输出 `{"hookSpecificOutput":{"hookEventName":"MessageDisplay","displayContent":"你好，世界\n"}}`。什么都不输出：先看 `cwd` 所在仓库的配置有没有关掉 zh-typography-1，再看 `$TMPDIR` 里的 `diagnostics.jsonl`。
+- 输出了但会话里没效果：多半是会话没重开，或挂着的 binary 是旧的。
+- stderr 出现 `limae hook: m/n earlier batches arrived`：宿主是并发派发每一批的，这条说明前面有一批没在 2 秒内落盘。这一批按原文显示，不会拿残缺的前缀去修 —— 只记片数，不记内容。同一件事在 `diagnostics.jsonl` 里是一行 `siblings` / `incomplete`。
+- **消息被打断** (esc、Ctrl-C，或 `--resume` 重启)：宿主不再发后续批次，已经上屏的各批都已经各自修过了，什么都不用做。它留下的分片目录会在一小时后被扫掉。

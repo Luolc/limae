@@ -168,6 +168,25 @@ impl Pipeline {
         }
     }
 
+    /// Return whether the text's last paragraph may still be inside an inline
+    /// code span that a later line could close.
+    ///
+    /// Lines are the ones [`Self::fix`] would see, except that a trailing LF
+    /// is the end of the last line and not an empty line after it: the caller
+    /// asking this has not seen what follows, and a span may cross the line
+    /// break it is asking about (`spec/rules.md`「全局豁免」第 2 条). Until
+    /// that span is closed or the paragraph is, the fix of the text after the
+    /// opening run is not settled — [`crate::markdown::Markdown::unclosed_span`]
+    /// says why one unpaired run anywhere in the paragraph is enough.
+    #[must_use]
+    pub fn unclosed_span(&self, text: &str) -> bool {
+        let mut lines: Vec<_> = text.split('\n').collect();
+        if lines.last() == Some(&"") {
+            lines.pop();
+        }
+        self.markdown.unclosed_span(&lines)
+    }
+
     fn fix_line(&self, line: &str, protection: &LineProtection, config: &ResolvedConfig) -> String {
         let LineProtection::Inline { code, prose } = protection else {
             return line.to_owned();

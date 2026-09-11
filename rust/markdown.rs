@@ -91,56 +91,95 @@ impl Markdown {
     #[must_use]
     pub fn protect(&self, lines: &[&str]) -> Vec<LineProtection> {
         let mut result = vec![LineProtection::Verbatim; lines.len()];
-        let mut paragraph = 0..0;
-        let mut in_fence = false;
-        for (i, line) in lines.iter().enumerate() {
-            let stripped = line.trim_start_matches(is_python_whitespace);
-            if stripped.starts_with("```") || stripped.starts_with("~~~") {
-                self.flush(lines, &mut result, &mut paragraph);
-                in_fence = !in_fence;
-            } else if in_fence {
-                continue;
-            } else if line.chars().all(is_python_whitespace) {
-                self.flush(lines, &mut result, &mut paragraph);
+        let tail = self.paragraphs(lines, |segment| match segment {
+            Segment::Blank(i) => {
                 result[i] = LineProtection::Inline {
                     code: Vec::new(),
                     prose: Vec::new(),
                 };
+            }
+            Segment::Paragraph(range) => self.flush(lines, &mut result, range),
+        });
+        self.flush(lines, &mut result, tail);
+        result
+    }
+
+    /// Return whether the text's last paragraph may still be inside an inline
+    /// code span that a line arriving later could close.
+    ///
+    /// The last paragraph is the one only the end of the input ended: nothing
+    /// in the text — no blank line, no block start, no fence — closed it, so a
+    /// later line would continue it, and a span can cross line breaks within a
+    /// paragraph (`spec/rules.md`「全局豁免」第 2 条). The answer is whether a
+    /// backtick run in that paragraph is still without a partner. Pairing is
+    /// greedy from the left, so a later partner for any unpaired run — not only
+    /// the last one — can re-pair every run after it, which is why one unpaired
+    /// run anywhere in the paragraph is enough.
+    ///
+    /// `false` inside a fenced code block, and after anything that closed the
+    /// paragraph. A trailing empty line counts as a blank line here, as it does
+    /// in [`Self::protect`]; a caller that has not seen the next line yet should
+    /// not pass one.
+    #[must_use]
+    pub fn unclosed_span(&self, lines: &[&str]) -> bool {
+        let tail = self.paragraphs(lines, |_| {});
+        if tail.is_empty() {
+            return false;
+        }
+        let joined = lines[tail].join("\n");
+        let runs: Vec<_> = self.backticks.find_iter(&joined).collect();
+        pair(&runs).1
+    }
+
+    /// Walk the lines the way `spec/rules.md` segments them, handing each
+    /// blank line and each closed paragraph to `segment` as it is met.
+    ///
+    /// Returns the paragraph the end of the input left open — empty when the
+    /// last line closed its own paragraph, or the text ends inside a fence.
+    fn paragraphs(&self, lines: &[&str], mut segment: impl FnMut(Segment)) -> Range<usize> {
+        let mut paragraph = 0..0;
+        let mut in_fence = false;
+        let close = |paragraph: &mut Range<usize>, segment: &mut dyn FnMut(Segment)| {
+            if paragraph.start < paragraph.end {
+                segment(Segment::Paragraph(paragraph.clone()));
+            }
+            paragraph.start = paragraph.end;
+        };
+        for (i, line) in lines.iter().enumerate() {
+            let stripped = line.trim_start_matches(is_python_whitespace);
+            if stripped.starts_with("```") || stripped.starts_with("~~~") {
+                close(&mut paragraph, &mut segment);
+                in_fence = !in_fence;
+            } else if in_fence {
+                continue;
+            } else if line.chars().all(is_python_whitespace) {
+                close(&mut paragraph, &mut segment);
+                segment(Segment::Blank(i));
             } else {
                 let continues_quote = !paragraph.is_empty()
                     && self.quote_line.is_match(line)
                     && self.quote_line.is_match(lines[paragraph.end - 1]);
                 if self.block_start.is_match(line) && !continues_quote {
-                    self.flush(lines, &mut result, &mut paragraph);
+                    close(&mut paragraph, &mut segment);
                 }
                 if paragraph.is_empty() {
                     paragraph.start = i;
                 }
                 paragraph.end = i + 1;
                 if self.single_line_block.is_match(line) {
-                    self.flush(lines, &mut result, &mut paragraph);
+                    close(&mut paragraph, &mut segment);
                 }
             }
         }
-        self.flush(lines, &mut result, &mut paragraph);
-        result
+        paragraph
     }
 
-    fn flush(&self, lines: &[&str], result: &mut [LineProtection], paragraph: &mut Range<usize>) {
+    fn flush(&self, lines: &[&str], result: &mut [LineProtection], paragraph: Range<usize>) {
         let joined = lines[paragraph.clone()].join("\n");
         let runs: Vec<_> = self.backticks.find_iter(&joined).collect();
-        let mut spans = Vec::new();
-        let mut i = 0;
-        while i < runs.len() {
-            if let Some(j) = (i + 1..runs.len()).find(|&j| runs[j].len() == runs[i].len()) {
-                spans.push(runs[i].end()..runs[j].start());
-                i = j + 1;
-            } else {
-                i += 1;
-            }
-        }
+        let (spans, _) = pair(&runs);
         let mut offset = 0;
-        for i in paragraph.clone() {
+        for i in paragraph {
             let end = offset + lines[i].len();
             let code: Vec<_> = spans
                 .iter()
@@ -151,7 +190,6 @@ impl Markdown {
             result[i] = LineProtection::Inline { code, prose };
             offset = end + 1;
         }
-        paragraph.start = paragraph.end;
     }
 
     fn prose_spans(&self, line: &str, code: &[Range<usize>]) -> Vec<Range<usize>> {
@@ -189,6 +227,35 @@ impl Markdown {
         prose.sort_by_key(|span| (span.start, span.end));
         prose
     }
+}
+
+/// One thing [`Markdown::paragraphs`] meets on its way through the lines.
+enum Segment {
+    /// A line of nothing but whitespace, outside any fence.
+    Blank(usize),
+    /// A run of lines the rules read as one paragraph, now closed.
+    Paragraph(Range<usize>),
+}
+
+/// Pair backtick runs into code spans: each run closes with the next run of
+/// the same length, and a run with no such partner is ordinary text.
+///
+/// Returns the interiors between paired runs, and whether any run was left
+/// without a partner.
+fn pair(runs: &[regex::Match<'_>]) -> (Vec<Range<usize>>, bool) {
+    let mut spans = Vec::new();
+    let mut unpaired = false;
+    let mut i = 0;
+    while i < runs.len() {
+        if let Some(j) = (i + 1..runs.len()).find(|&j| runs[j].len() == runs[i].len()) {
+            spans.push(runs[i].end()..runs[j].start());
+            i = j + 1;
+        } else {
+            unpaired = true;
+            i += 1;
+        }
+    }
+    (spans, unpaired)
 }
 
 fn claim(candidate: Range<usize>, code: &[Range<usize>], prose: &mut Vec<Range<usize>>) {

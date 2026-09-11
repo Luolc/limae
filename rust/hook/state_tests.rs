@@ -1,9 +1,8 @@
 use super::{
     DIAGNOSTICS_FILENAME, DIRECTORY_MODE, FILE_MODE, Kind, ORPHAN_RETENTION, PART_SUFFIX,
-    PARTS_DIRECTORY, RETENTION, STATE_DIRECTORY, Step, TEMPORARY_SUFFIX, identifier, in_work_tree,
-    keep, note, part, prune, root, session, stale, timestamp,
+    PARTS_DIRECTORY, RETENTION, STATE_DIRECTORY, Step, TEMPORARY_SUFFIX, VOID_FILENAME, identifier,
+    in_work_tree, instance, keep, note, part, prune, root, session, stale, timestamp, void, voided,
 };
-use crate::polish::diagnosis::FailureReason;
 
 use std::error::Error;
 use std::ffi::OsString;
@@ -214,7 +213,8 @@ fn nothing_holding_a_reply_is_created_readable_by_others() -> TestResult {
         let directory = session(&root, "session")?;
         let parts = directory.join(PARTS_DIRECTORY).join("message");
         keep(&parts, 0, "一批。")?;
-        note(&directory, "message", Step::Single, Kind::Crashed, now());
+        void(&parts)?;
+        note(&directory, "message", Step::Fix, Kind::Crashed, now());
 
         // Every level, not only the last one: a directory of directories of
         // replies is as much this user's own as the replies are.
@@ -226,6 +226,7 @@ fn nothing_holding_a_reply_is_created_readable_by_others() -> TestResult {
         assert_eq!(mode(&directory.join(PARTS_DIRECTORY))?, 0o700);
         assert_eq!(mode(&parts)?, 0o700);
         assert_eq!(mode(&part(&parts, 0))?, 0o600);
+        assert_eq!(mode(&parts.join(VOID_FILENAME))?, 0o600);
         assert_eq!(mode(&directory.join(DIAGNOSTICS_FILENAME))?, 0o600);
         assert_eq!((DIRECTORY_MODE, FILE_MODE), (0o700, 0o600));
         Ok(())
@@ -319,20 +320,52 @@ fn a_leftover_temporary_file_from_another_process_does_not_block_a_batch() -> Te
     Ok(())
 }
 
+// -- one message instance ------------------------------------------------
+
+/// The turn is part of the key, and the join is on the one character
+/// [`identifier`] never lets through, so no two pairs of ids share a name.
+#[test]
+fn an_instance_is_named_by_its_message_and_its_turn() {
+    assert_eq!(instance("m", "t"), "m.t");
+    assert_ne!(instance("m", "t1"), instance("m", "t2"));
+    assert_ne!(instance("a-b", "c"), instance("a", "b-c"));
+    assert!(!identifier(Some("a.b")).contains('.'));
+}
+
+/// The mark is a file beside the batches, not the absence of the directory: a
+/// sibling still waiting on this instance has to find what it was waiting for.
+#[test]
+fn a_voided_instance_keeps_its_batches_and_says_so_twice_without_complaint() -> TestResult {
+    let scratch = TempDir::new("void")?;
+    let parts = scratch.path().join("parts/message.turn");
+    keep(&parts, 0, "甲\n")?;
+    assert!(!voided(&parts));
+
+    void(&parts)?;
+    void(&parts)?;
+
+    assert!(voided(&parts));
+    assert_eq!(fs::read_to_string(part(&parts, 0))?, "甲\n");
+    assert_eq!(
+        names(&parts)?,
+        vec!["000000.part".to_owned(), VOID_FILENAME.to_owned()]
+    );
+
+    // An instance nothing has been cached under yet can be abandoned too.
+    let fresh = scratch.path().join("parts/fresh.turn");
+    void(&fresh)?;
+    assert!(voided(&fresh));
+    Ok(())
+}
+
 // -- diagnostics ---------------------------------------------------------
 
 #[test]
 fn each_fail_open_path_appends_one_line_and_says_only_where_and_how() -> TestResult {
     let scratch = TempDir::new("note")?;
     let directory = scratch.path().join("session");
-    note(&directory, "m1", Step::Assemble, Kind::Incomplete, now());
-    note(
-        &directory,
-        "m2",
-        Step::Single,
-        Kind::Engine(FailureReason::TimedOut),
-        now(),
-    );
+    note(&directory, "m1", Step::Siblings, Kind::Incomplete, now());
+    note(&directory, "m2", Step::Fix, Kind::Misconfigured, now());
 
     let written = lines(&directory.join(DIAGNOSTICS_FILENAME))?;
     assert_eq!(written.len(), 2);
@@ -342,11 +375,11 @@ fn each_fail_open_path_appends_one_line_and_says_only_where_and_how() -> TestRes
         keys.sort_unstable();
         assert_eq!(keys, vec!["at", "kind", "message_id", "step"]);
     }
-    assert_eq!(written[0]["step"], "assemble");
+    assert_eq!(written[0]["step"], "siblings");
     assert_eq!(written[0]["kind"], "incomplete");
     assert_eq!(written[0]["message_id"], "m1");
-    assert_eq!(written[1]["step"], "single");
-    assert_eq!(written[1]["kind"], "timeout");
+    assert_eq!(written[1]["step"], "fix");
+    assert_eq!(written[1]["kind"], "config");
     Ok(())
 }
 
@@ -355,27 +388,19 @@ fn each_fail_open_path_appends_one_line_and_says_only_where_and_how() -> TestRes
 #[test]
 fn every_step_and_kind_is_written_down_under_the_name_it_is_documented_by() {
     assert_eq!(
-        [
-            Step::Assemble,
-            Step::Single,
-            Step::Ab,
-            Step::Record,
-            Step::Fix,
-            Step::Display,
-        ]
-        .map(Step::as_str),
-        ["assemble", "single", "ab", "record", "fix", "display"],
+        [Step::Siblings, Step::Fix, Step::Display].map(Step::as_str),
+        ["siblings", "fix", "display"],
     );
     assert_eq!(
         [
             Kind::Incomplete,
-            Kind::Repaired,
+            Kind::Partial,
+            Kind::Unclosed,
             Kind::Misconfigured,
             Kind::Crashed,
-            Kind::Engine(FailureReason::NoEngine),
         ]
         .map(Kind::as_str),
-        ["incomplete", "repaired", "config", "crashed", "no-engine"],
+        ["incomplete", "partial", "unclosed", "config", "crashed"],
     );
 }
 
@@ -440,9 +465,10 @@ fn a_session_is_kept_for_a_day_and_not_for_an_orphan_s_hour() -> TestResult {
     Ok(())
 }
 
-/// A message the host is killed in the middle of never gets its final batch, so
-/// nothing assembles it and nothing deletes it. Its session is the live one, so
-/// session retention does not reach it either.
+/// Nothing but this sweep removes a message's batches: a finished message
+/// leaves them (a sibling may still be reading), and a message the host is
+/// killed in the middle of never gets a final batch at all. Its session is the
+/// live one, so session retention does not reach it either.
 ///
 /// The abandoned directory here is younger than [`RETENTION`], so an
 /// implementation with only one horizon keeps it.

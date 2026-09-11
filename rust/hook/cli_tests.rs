@@ -1,20 +1,19 @@
-use super::{BAD_USAGE, MESSAGE_DISPLAY, OK, STOP, is_codex_stop, message, run};
-use crate::hook::ab::PENDING_FILENAME;
-use crate::hook::render::BLOCK_GAP;
-use crate::hook::state::{DIAGNOSTICS_FILENAME, PARTS_DIRECTORY, RETENTION, STATE_DIRECTORY, part};
+use super::{BAD_USAGE, MESSAGE_DISPLAY, OK, serve};
+use crate::hook::parts::{Limits, SIBLING_WAIT};
+use crate::hook::state::{
+    DIAGNOSTICS_FILENAME, ORPHAN_RETENTION, PARTS_DIRECTORY, RETENTION, STATE_DIRECTORY,
+    VOID_FILENAME, instance, part,
+};
 
 use std::error::Error;
 use std::ffi::OsString;
-use std::fs::{self, FileTimes, Permissions};
+use std::fs::{self, FileTimes};
 use std::io::Cursor;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use serde_json::{Map, Value, json};
-
-use crate::polish::diagnosis::FailureReason;
+use serde_json::{Value, json};
 
 type TestResult = Result<(), Box<dyn Error>>;
 
@@ -27,25 +26,13 @@ fn now() -> SystemTime {
 /// sanitising unchanged.
 const SESSION: &str = "11111111-2222-3333-4444-555555555555";
 const MESSAGE: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+const TURN: &str = "99999999-8888-7777-6666-555555555555";
 
-/// One sentence of synthetic Chinese prose that this repository's own rules
-/// leave alone, so that a rewrite made of it changes only where a test changes
-/// it.
-const LINE: &str = "ACME 的报告写得不好，请把它改得像人话一些。";
-
-/// What the engine stubs answer with: the same sentence, tidied, so a block is
-/// built rather than the "no change" one.
-const REWRITE: &str = "ACME 的报告写得不好 —— 请把它改得像人话一些。";
-
-/// The marker every ordinary block carries on screen, spelled as
-/// [`crate::hook::block`] spells it so that the newlines before it can be
-/// counted.
-const HEADING: &str = "── 润色 ──";
-
-/// A message long enough to be worth polishing.
-fn long() -> String {
-    LINE.repeat(20)
-}
+/// One line of synthetic Chinese prose with a halfwidth comma in it, and what
+/// the rules make of it. Every arm that needs "a batch the fixes change" uses
+/// these, so that what changes is the one thing the arm is about.
+const LINE: &str = "ACME 的报告写得不好,请把它改得像人话一些。\n";
+const FIXED: &str = "ACME 的报告写得不好，请把它改得像人话一些。\n";
 
 struct TempDir(PathBuf);
 
@@ -101,51 +88,51 @@ impl Ran {
     }
 }
 
-/// One run's five directories: a `PATH` of fake CLIs, a home nothing real lives
-/// in, the scratch directory the state root is derived from, the directory the
-/// payload names, and the process's own working directory.
+/// One run's four directories: a home nothing real lives in, the scratch
+/// directory the state root is derived from, the directory the payload names,
+/// and the process's own working directory.
 ///
-/// The last two are deliberately different, so that a test which configures an
-/// engine in `cwd` is also saying the payload is what decides where the
+/// The last two are deliberately different, so that a test which configures a
+/// rule in `cwd` is also saying the payload is what decides where the
 /// configuration is read from.
 ///
 /// No assertion here depends on what this machine has installed or on what the
 /// user running the suite has configured.
 struct Fixture {
-    bin: TempDir,
     home: TempDir,
     scratch: TempDir,
     cwd: TempDir,
     elsewhere: TempDir,
+    /// What a message is held to; the defaults unless a test is about them.
+    limits: Limits,
 }
 
 impl Fixture {
     fn new(name: &str) -> Result<Self, std::io::Error> {
         Ok(Self {
-            bin: TempDir::new(&format!("{name}-bin"))?,
             home: TempDir::new(&format!("{name}-home"))?,
             scratch: TempDir::new(&format!("{name}-scratch"))?,
             cwd: TempDir::new(&format!("{name}-cwd"))?,
             elsewhere: TempDir::new(&format!("{name}-elsewhere"))?,
+            limits: Limits::DEFAULT,
         })
     }
 
-    /// The environment of a run, plus whatever knobs a test sets.
-    ///
-    /// Sampling is off unless a test asks for it: what these tests control is
-    /// the host protocol, never chance.
+    /// The same, with a wait short enough that an arm about a batch that never
+    /// comes does not sit through the real one.
+    fn impatient(name: &str) -> Result<Self, std::io::Error> {
+        let mut fixture = Self::new(name)?;
+        fixture.limits.wait = Duration::from_millis(50);
+        Ok(fixture)
+    }
+
+    /// The environment of a run, plus whatever a test sets.
     fn with(&self, extra: &[(&str, &str)]) -> Vec<(OsString, OsString)> {
         let mut env: Vec<(OsString, OsString)> = [
-            ("PATH", self.bin.path().as_os_str().to_owned()),
             ("HOME", self.home.path().as_os_str().to_owned()),
-            (
-                "XDG_CACHE_HOME",
-                self.home.path().join("cache").into_os_string(),
-            ),
             // Where scratch goes is where the state goes: the hook has no
             // setting of its own for it, on purpose.
             ("TMPDIR", self.scratch.path().as_os_str().to_owned()),
-            ("LIMAE_HOOK_AB_RATE", OsString::from("0")),
         ]
         .into_iter()
         .map(|(name, value)| (OsString::from(name), value))
@@ -158,71 +145,9 @@ impl Fixture {
         env
     }
 
-    /// Put one executable of the given name on the fake `PATH`.
-    ///
-    /// The engine's own `PATH` is the fake one, which holds these scripts and
-    /// nothing else, so a script that needs `cat` or `grep` gets this run's real
-    /// `PATH` back at the top of itself. Every stub also records that it ran, so
-    /// that a test can say how many engine calls a turn made.
-    fn install(&self, name: &str, script: &str) -> TestResult {
-        let tools = std::env::var("PATH").unwrap_or_default();
-        let path = self.bin.path().join(name);
-        fs::write(
-            &path,
-            format!(
-                "#!/bin/sh\nPATH='{tools}'\nexport PATH\necho run >> '{}'\n{script}\n",
-                self.log().display()
-            ),
-        )?;
-        fs::set_permissions(&path, Permissions::from_mode(0o755))?;
-        Ok(())
-    }
-
-    /// Install the engine every turn of these tests runs, answering `REWRITE`.
-    fn engine(&self) -> TestResult {
-        self.install(
-            "claude",
-            &format!("cat > /dev/null\ncat <<'ANSWER'\n{REWRITE}\nANSWER"),
-        )?;
-        self.configure("[polish]\nengine = \"claude\"\n")
-    }
-
-    /// Install an engine that keeps what it was asked to rewrite.
-    fn recording(&self) -> TestResult {
-        self.install(
-            "claude",
-            &format!(
-                "cat > '{}'\ncat <<'ANSWER'\n{REWRITE}\nANSWER",
-                self.asked().display()
-            ),
-        )?;
-        self.configure("[polish]\nengine = \"claude\"\n")
-    }
-
-    fn asked(&self) -> PathBuf {
-        self.home.path().join("asked")
-    }
-
-    fn log(&self) -> PathBuf {
-        self.home.path().join("calls")
-    }
-
-    /// How many times any stub engine has run.
-    fn calls(&self) -> usize {
-        fs::read_to_string(self.log()).map_or(0, |log| log.lines().count())
-    }
-
-    /// Write the `[polish]` table this run's configuration holds, where the
-    /// payload says to look for it.
+    /// Write the rule configuration where the payload says to look for it.
     fn configure(&self, table: &str) -> TestResult {
         fs::write(self.cwd.path().join("limae.toml"), table)?;
-        Ok(())
-    }
-
-    /// Write the same table where the *process* is running instead, which is
-    /// the fallback for a payload that names no directory.
-    fn configure_process(&self, table: &str) -> TestResult {
-        fs::write(self.elsewhere.path().join("limae.toml"), table)?;
         Ok(())
     }
 
@@ -234,8 +159,10 @@ impl Fixture {
         self.root().join(SESSION)
     }
 
-    fn parts(&self, message: &str) -> PathBuf {
-        self.session().join(PARTS_DIRECTORY).join(message)
+    fn parts(&self, message: &str, turn: &str) -> PathBuf {
+        self.session()
+            .join(PARTS_DIRECTORY)
+            .join(instance(message, turn))
     }
 
     /// The `(step, kind)` pairs of this session's diagnostics, in order.
@@ -269,6 +196,13 @@ impl Fixture {
         self.raw(&serde_json::to_string(payload)?, extra)
     }
 
+    /// Run one `MessageDisplay` batch of the usual message and return what the
+    /// host would show in its place — empty when the hook said nothing.
+    fn shown(&self, delta: &str, index: u64, is_final: bool) -> Result<String, Box<dyn Error>> {
+        self.hook(&batch(self, delta, index, is_final), &[])?
+            .displayed()
+    }
+
     /// Run one hook event over exactly these bytes of stdin.
     fn raw(&self, stdin: &str, extra: &[(&str, &str)]) -> Result<Ran, Box<dyn Error>> {
         self.argv(&[], stdin, extra)
@@ -285,7 +219,7 @@ impl Fixture {
         let mut input = Cursor::new(stdin.as_bytes().to_vec());
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        let code = run(
+        let code = serve(
             &args,
             self.elsewhere.path(),
             &self.with(extra),
@@ -293,6 +227,7 @@ impl Fixture {
             &mut stdout,
             &mut stderr,
             now(),
+            &self.limits,
         );
         Ok(Ran {
             code,
@@ -314,362 +249,497 @@ fn field<'a>(line: &'a Value, key: &str) -> &'a str {
     line.get(key).and_then(Value::as_str).unwrap_or_default()
 }
 
-/// One `MessageDisplay` batch, as Claude Code sends it.
-fn batch(fixture: &Fixture, delta: &str, index: u64, final_batch: bool, message: &str) -> Value {
+/// One `MessageDisplay` batch, as Claude Code sends it, of the usual message.
+fn batch(fixture: &Fixture, delta: &str, index: u64, is_final: bool) -> Value {
+    batch_of(fixture, delta, index, is_final, MESSAGE, TURN)
+}
+
+/// One `MessageDisplay` batch of the message and turn named.
+fn batch_of(
+    fixture: &Fixture,
+    delta: &str,
+    index: u64,
+    is_final: bool,
+    message: &str,
+    turn: &str,
+) -> Value {
     json!({
         "session_id": SESSION,
         "transcript_path": "/dev/null",
         "cwd": fixture.cwd.path().to_string_lossy(),
         "hook_event_name": MESSAGE_DISPLAY,
-        "turn_id": "turn",
+        "prompt_id": "prompt",
+        "turn_id": turn,
         "message_id": message,
         "index": index,
-        "final": final_batch,
+        "final": is_final,
         "delta": delta,
     })
 }
 
-/// One whole message in one batch, which is the shortest way to a block.
-fn whole(fixture: &Fixture, text: &str) -> Value {
-    batch(fixture, text, 0, true, MESSAGE)
-}
-
-/// Claude Code's `Stop`: no `model`, and the reply carried for the transcript's
-/// sake rather than for polishing.
-fn claude_stop() -> Value {
-    json!({
-        "session_id": SESSION,
-        "transcript_path": "/dev/null",
-        "cwd": "/nonexistent",
-        "hook_event_name": STOP,
-        "stop_hook_active": false,
-        "last_assistant_message": LINE,
-    })
-}
-
-/// Codex's `Stop`: the whole reply, and a `model` to say whose event this is.
-fn codex(fixture: &Fixture, text: &str, ids: &[(&str, &str)]) -> Value {
-    let mut payload = json!({
-        "session_id": SESSION,
-        "transcript_path": "/dev/null",
-        "cwd": fixture.cwd.path().to_string_lossy(),
-        "hook_event_name": STOP,
-        "model": "synthetic-model",
-        "stop_hook_active": false,
-        "last_assistant_message": text,
-    });
-    for (key, value) in ids {
-        payload[*key] = Value::String((*value).to_owned());
+/// Feed one message through the hook the way the host does — every batch a
+/// run of its own, in order — and put the answers back together, taking the
+/// batch itself wherever the hook said nothing.
+///
+/// Middle batches are the whole lines given; the final batch is `tail`, which
+/// is what follows the message's last line feed and may be empty.
+fn streamed(fixture: &Fixture, middles: &[&str], tail: &str) -> Result<String, Box<dyn Error>> {
+    let mut screen = String::new();
+    for (index, delta) in middles.iter().enumerate() {
+        assert!(delta.ends_with('\n'), "a middle batch ends on a line feed");
+        let shown = fixture.shown(delta, u64::try_from(index)?, false)?;
+        screen.push_str(if shown.is_empty() { delta } else { &shown });
     }
-    payload
+    let shown = fixture.shown(tail, u64::try_from(middles.len())?, true)?;
+    screen.push_str(if shown.is_empty() { tail } else { &shown });
+    Ok(screen)
 }
 
-fn object(payload: &Value) -> Result<Map<String, Value>, Box<dyn Error>> {
-    Ok(payload
-        .as_object()
-        .ok_or("the payload builders make objects")?
-        .clone())
+/// The whole message, fixed at once, the way `limae --fix` fixes it.
+fn whole(text: &str) -> Result<String, Box<dyn Error>> {
+    Ok(crate::pipeline::Pipeline::new()?.fix(text, &crate::config::ResolvedConfig::default())?)
 }
 
-/// Leave the pending note a sampled turn leaves, without running a trial.
-fn pending(fixture: &Fixture, code: &str) -> TestResult {
-    let session = fixture.session();
-    fs::create_dir_all(&session)?;
-    fs::write(
-        session.join(PENDING_FILENAME),
-        json!({ "code": code }).to_string(),
-    )?;
-    Ok(())
-}
-
-/// Count the newlines standing between what is already on screen and the block.
-fn gap(screen: &str) -> Result<usize, Box<dyn Error>> {
-    let (head, _) = screen
-        .split_once(HEADING)
-        .ok_or_else(|| format!("no block on screen: {screen:?}"))?;
-    Ok(head.len() - head.trim_end_matches('\n').len())
-}
-
-// -- the three shapes on the wire -----------------------------------------
+// -- the wire shape -------------------------------------------------------
 
 /// A `MessageDisplay` answer replaces the batch, and does it through the field
 /// that host reads. Asserting only that some JSON was printed cannot tell this
-/// event's shape from either `Stop`'s.
+/// event's shape from a `Stop`'s.
 #[test]
 fn a_display_batch_answers_through_display_content() -> TestResult {
     let fixture = Fixture::new("shape-display")?;
-    fixture.engine()?;
 
-    let ran = fixture.hook(&whole(&fixture, &long()), &[])?;
-    let answer = ran.answer()?.ok_or("the final batch is answered")?;
+    let ran = fixture.hook(&batch(&fixture, LINE, 0, false), &[])?;
 
     assert_eq!(ran.code, OK);
+    let answer = ran.answer()?.ok_or("no answer")?;
     assert_eq!(
-        answer
-            .pointer("/hookSpecificOutput/hookEventName")
-            .and_then(Value::as_str),
-        Some(MESSAGE_DISPLAY)
-    );
-    assert!(ran.displayed()?.contains(HEADING), "{answer}");
-    assert!(answer.get("systemMessage").is_none(), "{answer}");
-    assert!(
-        answer
-            .pointer("/hookSpecificOutput/additionalContext")
-            .is_none(),
-        "{answer}"
+        answer,
+        json!({
+            "hookSpecificOutput": {
+                "hookEventName": MESSAGE_DISPLAY,
+                "displayContent": FIXED,
+            }
+        })
     );
     Ok(())
 }
 
-/// Codex has no display-replacement event, so its rewrite arrives below the
-/// original as a `systemMessage` and never as a `displayContent` that would
-/// claim to replace it (ADR-0014).
-#[test]
-fn a_codex_stop_answers_through_a_system_message() -> TestResult {
-    let fixture = Fixture::new("shape-codex")?;
-    fixture.engine()?;
-
-    let ran = fixture.hook(&codex(&fixture, &long(), &[("turn_id", "turn")]), &[])?;
-    let answer = ran.answer()?.ok_or("a Codex reply is answered")?;
-
-    assert_eq!(ran.code, OK);
-    let warning = answer
-        .get("systemMessage")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    assert!(warning.contains(HEADING), "{answer}");
-    // The block is written for a screen it ends by scrolling off; this one is
-    // a paragraph inside a host's own message, so it stops where it stops.
-    assert_eq!(warning.trim_end(), warning, "{answer}");
-    assert!(answer.get("hookSpecificOutput").is_none(), "{answer}");
-    Ok(())
-}
-
-/// Claude Code's `Stop` carries the A/B code name to the model, through the
-/// third field and not either of the other two.
-#[test]
-fn a_claude_stop_answers_through_additional_context() -> TestResult {
-    let fixture = Fixture::new("shape-stop")?;
-    pending(&fixture, "灯塔")?;
-
-    let ran = fixture.hook(&claude_stop(), &[])?;
-    let answer = ran.answer()?.ok_or("a turn with a trial is answered")?;
-
-    assert_eq!(ran.code, OK);
-    assert_eq!(
-        answer
-            .pointer("/hookSpecificOutput/hookEventName")
-            .and_then(Value::as_str),
-        Some(STOP)
-    );
-    let context = answer
-        .pointer("/hookSpecificOutput/additionalContext")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    assert!(context.contains("灯塔"), "{answer}");
-    assert!(answer.get("systemMessage").is_none(), "{answer}");
-    assert!(
-        answer
-            .pointer("/hookSpecificOutput/displayContent")
-            .is_none(),
-        "{answer}"
-    );
-    Ok(())
-}
-
-/// An event this hook does not handle leaves the host alone entirely: no JSON
-/// at all, rather than an empty object the host would have to interpret.
-#[test]
-fn an_event_this_hook_does_not_handle_prints_nothing_at_all() -> TestResult {
-    let fixture = Fixture::new("shape-other")?;
-    fixture.engine()?;
-    let mut payload = whole(&fixture, &long());
-    payload["hook_event_name"] = Value::String("PreToolUse".to_owned());
-
-    let ran = fixture.hook(&payload, &[])?;
-
-    assert_eq!(ran.code, OK);
-    assert_eq!(ran.stdout, "");
-    assert_eq!(fixture.calls(), 0);
-    Ok(())
-}
-
-/// The answer goes out as one line, with its Chinese as itself: the reference
-/// implementation's `ensure_ascii=False`, and this text is bound for a screen.
+/// The answer goes out as one line, with its Chinese as itself: this text is
+/// bound for a screen.
 #[test]
 fn the_answer_is_one_line_of_json_with_its_chinese_intact() -> TestResult {
-    let fixture = Fixture::new("wire-encoding")?;
-    fixture.engine()?;
+    let fixture = Fixture::new("shape-line")?;
 
-    let ran = fixture.hook(&whole(&fixture, &long()), &[])?;
+    let ran = fixture.hook(&batch(&fixture, LINE, 0, true), &[])?;
 
-    assert!(ran.stdout.ends_with('\n'), "{:?}", ran.stdout);
-    assert_eq!(ran.stdout.lines().count(), 1, "{:?}", ran.stdout);
-    assert!(ran.stdout.contains("润色"), "{:?}", ran.stdout);
-    assert!(!ran.stdout.contains("\\u"), "{:?}", ran.stdout);
+    assert_eq!(ran.stdout.matches('\n').count(), 1);
+    assert!(ran.stdout.ends_with('\n'));
+    assert!(
+        ran.stdout.contains("请把它改得像人话一些"),
+        "{}",
+        ran.stdout
+    );
+    assert!(!ran.stdout.contains("\\u"), "{}", ran.stdout);
     Ok(())
 }
 
-// -- the batches of one message -------------------------------------------
-
-/// A middle batch is the host's own to paint: no answer, and no model call
-/// either, because the message it belongs to is not finished.
+/// `Stop` — Claude Code's, and the Codex one that used to be answered — is
+/// received and left alone: no JSON at all, exit 0, and no state either. The
+/// display arm beside them is what says the silence is the event's and not the
+/// fixture's.
 #[test]
-fn a_middle_batch_prints_nothing_and_calls_no_engine() -> TestResult {
-    let fixture = Fixture::new("batch-middle")?;
-    fixture.engine()?;
+fn a_stop_from_either_host_prints_nothing_at_all() -> TestResult {
+    let fixture = Fixture::new("shape-stop")?;
+    let claude = json!({
+        "session_id": SESSION,
+        "transcript_path": "/dev/null",
+        "cwd": fixture.cwd.path().to_string_lossy(),
+        "hook_event_name": "Stop",
+        "stop_hook_active": false,
+        "last_assistant_message": LINE,
+    });
+    let codex = json!({
+        "session_id": SESSION,
+        "cwd": fixture.cwd.path().to_string_lossy(),
+        "hook_event_name": "Stop",
+        "turn_id": TURN,
+        "model": "gpt-5.6-terra",
+        "last_assistant_message": LINE,
+    });
 
-    let ran = fixture.hook(&batch(&fixture, &long(), 0, false, MESSAGE), &[])?;
-
-    assert_eq!(ran.code, OK);
-    assert_eq!(ran.stdout, "");
-    assert_eq!(fixture.calls(), 0);
-    assert!(part(&fixture.parts(MESSAGE), 0).is_file());
-    Ok(())
-}
-
-/// The final index says how many batches there were, so the model is asked
-/// about the whole message and not about its last piece.
-#[test]
-fn the_final_index_says_how_many_batches_the_message_had() -> TestResult {
-    let fixture = Fixture::new("batch-count")?;
-    fixture.recording()?;
-    let pieces = [LINE.repeat(7), LINE.repeat(7), LINE.repeat(6)];
-
-    for (index, piece) in pieces.iter().enumerate() {
-        let final_batch = index + 1 == pieces.len();
-        let ran = fixture.hook(
-            &batch(&fixture, piece, u64::try_from(index)?, final_batch, MESSAGE),
-            &[],
-        )?;
-        assert_eq!(ran.stdout.is_empty(), !final_batch, "batch {index}");
+    for payload in [&claude, &codex] {
+        let ran = fixture.hook(payload, &[])?;
+        assert_eq!((ran.code, ran.stdout.as_str()), (OK, ""), "{payload}");
     }
+    assert!(!fixture.root().exists());
 
-    let asked = fs::read_to_string(fixture.asked())?;
-    assert!(asked.ends_with(&pieces.concat()), "{asked:?}");
-    assert_eq!(fixture.calls(), 1);
-    // The batches of a finished message are scratch and go the moment they are
-    // assembled.
-    assert!(!fixture.parts(MESSAGE).exists());
+    assert_eq!(fixture.shown(LINE, 0, true)?, FIXED);
     Ok(())
 }
 
-/// `final` is the end-of-message signal whatever the delta holds, and the gap
-/// is a property of the screen rather than of this batch: what an earlier batch
-/// painted cannot be taken back by `displayContent`, only counted.
+// -- batch by batch equals the whole -------------------------------------
+
+/// The shape of ADR-0016 读数 B: a fence with the two forms the line-by-line
+/// fix got wrong in it — `status.success()` and `..limits() }` — and prose
+/// with violations around it, cut into batches of one line and of several.
+/// What reaches the screen batch by batch is what `limae --fix` makes of the
+/// whole, byte for byte.
 #[test]
-fn the_gap_counts_the_newlines_an_earlier_batch_already_painted() -> TestResult {
-    let fixture = Fixture::new("batch-painted")?;
-    fixture.engine()?;
-    let opening = format!("{}\n\n", long());
+fn a_message_with_a_fence_in_it_reaches_the_screen_as_its_whole_fix() -> TestResult {
+    let fixture = Fixture::new("whole-fence")?;
+    let middles = [
+        "测试通过了,看这段:\n",
+        "\n```rust\nassert!(result.status.success());\n",
+        "let limits = EngineLimits { timeout, ..limits() };\n```\n",
+        "\n收尾(见上)。\n",
+    ];
+    let tail = "完毕(无尾换行)";
+    let text = format!("{}{tail}", middles.concat());
 
-    let first = fixture.hook(&batch(&fixture, &opening, 0, false, MESSAGE), &[])?;
-    let second = fixture.hook(&batch(&fixture, "", 1, true, MESSAGE), &[])?;
-    let answer = second.displayed()?;
+    let screen = streamed(&fixture, &middles, tail)?;
 
-    // The empty final batch still ends the message.
-    assert_eq!(first.stdout, "");
-    assert!(answer.starts_with(HEADING), "{answer:?}");
-    // What the reader ends up with is the batch the host painted plus this
-    // answer, and that is where the one blank line has to be.
-    assert_eq!(gap(&format!("{opening}{answer}"))?, BLOCK_GAP);
+    assert_eq!(screen, whole(&text)?);
+    assert!(screen.contains("status.success());\n"), "{screen}");
+    assert!(screen.contains("..limits() };\n"), "{screen}");
+    assert!(screen.contains("测试通过了，看这段："), "{screen}");
+    assert!(screen.contains("收尾 (见上)。"), "{screen}");
+    assert!(screen.ends_with("完毕 (无尾换行)"), "{screen}");
+    assert_eq!(fixture.steps()?, []);
     Ok(())
 }
 
-/// One blank line, whatever the message happens to end on. The gap used to be
-/// built by adding to whatever trailing newlines the delta happened to have,
-/// which only holds still while there is exactly one of them.
+/// A directive in one batch governs a line in a later one, because the batch
+/// is fixed with the directive in its prefix: `disable-next-line` over a batch
+/// boundary, and a `disable` … `enable` range that opens and closes in
+/// different batches.
 #[test]
-fn the_gap_above_the_block_is_one_blank_line_for_every_ending() -> TestResult {
-    let fixture = Fixture::new("batch-endings")?;
-    fixture.engine()?;
+fn a_directive_in_an_earlier_batch_governs_the_lines_after_it() -> TestResult {
+    let fixture = Fixture::new("whole-directive")?;
+    let middles = [
+        "<!-- limae-disable-next-line zh-typography-1 -->\n",
+        "第一行,不修。\n",
+        "<!-- limae-disable -->\n\n第二行,不修。\n",
+        "\n<!-- limae-enable -->\n",
+    ];
+    let tail = "第三行,修。";
+    let text = format!("{}{tail}", middles.concat());
 
-    for (number, ending) in ["", "\n", "\n\n", "\n\n\n"].iter().enumerate() {
-        let text = format!("{}{ending}", long());
-        let ran = fixture.hook(&batch(&fixture, &text, 0, true, &format!("m{number}")), &[])?;
-        assert_eq!(gap(&ran.displayed()?)?, BLOCK_GAP, "ending {number}");
-    }
+    let screen = streamed(&fixture, &middles, tail)?;
+
+    assert_eq!(screen, whole(&text)?);
+    assert!(screen.contains("第一行,不修。"), "{screen}");
+    assert!(screen.contains("第二行,不修。"), "{screen}");
+    assert!(screen.ends_with("第三行，修。"), "{screen}");
+    assert_eq!(fixture.steps()?, []);
     Ok(())
 }
 
-/// A batch index is a whole non-negative number and nothing else. JSON's
-/// booleans and its numbers are separate variants here, so the reference
-/// implementation's second guard — `True` is an `int` in Python — has nothing
-/// to translate into; what it excluded is excluded by the type.
+/// Middle batches keep their line feed and the final batch keeps its lack of
+/// one; a final batch that is empty — the message ended on a line feed — gets
+/// no answer at all.
 #[test]
-fn an_index_that_is_not_a_whole_number_is_not_an_index() -> TestResult {
-    let fixture = Fixture::new("batch-index")?;
-    fixture.engine()?;
+fn the_ending_of_every_answer_is_the_ending_of_its_batch() -> TestResult {
+    let fixture = Fixture::new("endings")?;
 
-    for refused in [json!(true), json!(-1), json!(1.5), json!("0")] {
-        let mut payload = whole(&fixture, &long());
-        payload["index"] = refused.clone();
-        let ran = fixture.hook(&payload, &[])?;
+    let middle = fixture.shown(LINE, 0, false)?;
+    let last = fixture.shown(LINE.trim_end(), 1, true)?;
 
-        assert_eq!(ran.stdout, "", "index {refused}");
-        assert_eq!(fixture.calls(), 0, "index {refused}");
-        assert!(!fixture.session().exists(), "index {refused}");
-    }
+    assert_eq!(middle, FIXED);
+    assert_eq!(last, FIXED.trim_end());
 
-    // The same payload with an index: the batch is cached and the message is
-    // polished, so the refusals above are the index and not the payload.
-    let ran = fixture.hook(&whole(&fixture, &long()), &[])?;
-    assert!(ran.displayed()?.contains(HEADING));
-    assert_eq!(fixture.calls(), 1);
+    // A message that ends on a line feed: its final batch is empty.
+    let other = "bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee";
+    let ran = fixture.hook(&batch_of(&fixture, LINE, 0, false, other, TURN), &[])?;
+    assert_eq!(ran.displayed()?, FIXED);
+    let ran = fixture.hook(&batch_of(&fixture, "", 1, true, other, TURN), &[])?;
+    assert_eq!((ran.code, ran.stdout.as_str()), (OK, ""));
+    assert_eq!(fixture.steps()?, []);
     Ok(())
 }
 
-/// The largest index there is, is not an index: the final batch's count is
-/// `index + 1`, and a number without a successor cannot say how many batches a
-/// message had.
-///
-/// What this asserts is the fail-open result itself — nothing on screen, no
-/// model call, and not so much as a state directory — and not "it did not
-/// panic". The two are different observations in the two build profiles, and
-/// only this one has any force in the profile we ship: `Cargo.toml` sets no
-/// `[profile]` table, so a release build inherits Cargo's
-/// `overflow-checks = false` and the addition wraps to a batch count of zero
-/// instead of panicking, which is the quieter half of the same bug.
+// -- the batches before this one -----------------------------------------
+
+/// A batch before this one that never lands: this one is shown as it came,
+/// and the session says so. Once the batch lands, the same one is answered.
 #[test]
-fn the_largest_index_there_is_cannot_say_how_many_batches_there_were() -> TestResult {
-    let fixture = Fixture::new("batch-successor")?;
-    fixture.engine()?;
-    let mut payload = whole(&fixture, &long());
-    payload["index"] = json!(u64::MAX);
+fn a_batch_waits_for_the_ones_before_it_and_gives_up_without_them() -> TestResult {
+    let fixture = Fixture::impatient("siblings-missing")?;
 
-    let ran = fixture.hook(&payload, &[])?;
+    let ran = fixture.hook(&batch(&fixture, LINE, 1, false), &[])?;
 
-    assert_eq!(ran.code, OK);
-    assert_eq!(ran.stdout, "");
-    assert_eq!(fixture.calls(), 0);
-    assert!(!fixture.session().exists());
+    assert_eq!((ran.code, ran.stdout.as_str()), (OK, ""));
+    assert!(ran.stderr.contains("0/1 earlier batches"), "{}", ran.stderr);
+    assert_eq!(
+        fixture.steps()?,
+        [("siblings".to_owned(), "incomplete".to_owned())]
+    );
+
+    // Batch 0 lands, and batch 1 comes round again — the host does not do
+    // this, but it is the arm that says the refusal was about the hole.
+    assert_eq!(fixture.shown("甲。\n", 0, false)?, "");
+    assert_eq!(fixture.shown(LINE, 1, false)?, FIXED);
+    assert_eq!(fixture.steps()?.len(), 1);
+    Ok(())
+}
+
+/// The turn is part of the key. A batch left behind under the same message id
+/// in another turn — ordinary prose at index 1, where this message has its
+/// fence opener — is not this message's, so index 2 finds a hole and waits,
+/// rather than reading the prose as its prefix and fixing its code.
+#[test]
+fn a_batch_from_another_turn_is_not_this_message_s_prefix() -> TestResult {
+    let fixture = Fixture::impatient("siblings-turn")?;
+    let old = "old-turn";
+    crate::hook::state::keep(&fixture.parts(MESSAGE, old), 1, "普通正文。\n")?;
+
+    assert_eq!(fixture.shown("开头。\n", 0, false)?, "");
+    let ran = fixture.hook(&batch(&fixture, "打印(x)\n", 2, false), &[])?;
+
+    assert_eq!((ran.code, ran.stdout.as_str()), (OK, ""));
+    assert_eq!(
+        fixture.steps()?,
+        [("siblings".to_owned(), "incomplete".to_owned())]
+    );
+    assert!(fixture.parts(MESSAGE, old).is_dir());
+    assert!(fixture.parts(MESSAGE, TURN).is_dir());
+    Ok(())
+}
+
+/// The same index sent twice with the same content changes nothing; with
+/// different content the instance is abandoned — this batch and every later
+/// one shown as they came, each saying so — and nothing is overwritten.
+#[test]
+fn a_batch_resent_the_same_is_idempotent_and_resent_different_abandons_the_message() -> TestResult {
+    let fixture = Fixture::new("siblings-resend")?;
+
+    assert_eq!(fixture.shown(LINE, 0, false)?, FIXED);
+    assert_eq!(fixture.shown(LINE, 0, false)?, FIXED);
+    assert_eq!(fixture.steps()?, []);
+
+    assert_eq!(fixture.shown("另一条,消息。\n", 0, false)?, "");
+    assert_eq!(fixture.shown(LINE, 1, false)?, "");
+    assert_eq!(fixture.shown(LINE, 2, true)?, "");
+
+    assert_eq!(
+        fixture.steps()?,
+        [
+            ("siblings".to_owned(), "incomplete".to_owned()),
+            ("siblings".to_owned(), "incomplete".to_owned()),
+            ("siblings".to_owned(), "incomplete".to_owned()),
+        ]
+    );
+    let parts = fixture.parts(MESSAGE, TURN);
+    assert!(parts.join(VOID_FILENAME).is_file());
+    assert_eq!(fs::read_to_string(part(&parts, 0))?, LINE);
+    Ok(())
+}
+
+/// The two size limits, each with a message that just fits and one that does
+/// not. Past a limit the instance is abandoned rather than the prefix cut
+/// short: the batch of code inside a fence that follows must come back as it
+/// came, which a replay over a truncated prefix would fix as prose.
+#[test]
+fn a_message_past_a_limit_is_left_alone_from_there_on_prefix_and_all() -> TestResult {
+    let opener = "```\n";
+    let code = "打印(x)\n";
+
+    // Batches: two fit, a third does not.
+    let mut fixture = Fixture::new("limits-batches")?;
+    fixture.limits.batches = 2;
+    assert_eq!(fixture.shown(LINE, 0, false)?, FIXED);
+    assert_eq!(fixture.shown(LINE, 1, false)?, FIXED);
+    assert_eq!(fixture.steps()?, []);
+    let mut over = Fixture::new("limits-batches-over")?;
+    over.limits.batches = 2;
+    assert_eq!(over.shown(opener, 0, false)?, "");
+    assert_eq!(over.shown(LINE, 1, false)?, "");
+    assert_eq!(over.shown(code, 2, false)?, "");
+    assert_eq!(over.shown(code, 3, true)?, "");
+    assert_eq!(
+        over.steps()?,
+        [
+            ("siblings".to_owned(), "incomplete".to_owned()),
+            ("siblings".to_owned(), "incomplete".to_owned()),
+        ]
+    );
+
+    // Bytes: the opener and one line fit exactly, a second line does not.
+    let mut fixture = Fixture::new("limits-bytes")?;
+    fixture.limits.bytes = opener.len() + LINE.len();
+    assert_eq!(fixture.shown(opener, 0, false)?, "");
+    assert_eq!(fixture.shown(LINE, 1, false)?, "");
+    assert_eq!(fixture.steps()?, []);
+    let mut over = Fixture::new("limits-bytes-over")?;
+    over.limits.bytes = opener.len() + LINE.len();
+    assert_eq!(over.shown(opener, 0, false)?, "");
+    assert_eq!(over.shown(LINE, 1, false)?, "");
+    assert_eq!(over.shown(code, 2, false)?, "");
+    assert_eq!(over.shown(code, 3, true)?, "");
+    assert_eq!(
+        over.steps()?,
+        [
+            ("siblings".to_owned(), "incomplete".to_owned()),
+            ("siblings".to_owned(), "incomplete".to_owned()),
+        ]
+    );
+    // The control for the "as it came": the same code with no fence and no
+    // limit is prose, and is fixed.
+    let plain = Fixture::new("limits-control")?;
+    assert_eq!(plain.shown(code, 0, false)?, "打印 (x)\n");
+    Ok(())
+}
+
+// -- the two fail-opens on one batch -------------------------------------
+
+/// A middle batch that ends mid-line, the batch that completes that line, and
+/// the batch after: the first two are shown as they came and say so, the third
+/// is fixed. The control arm puts the line feed back and all three are fixed.
+#[test]
+fn a_batch_boundary_inside_a_line_is_partial_for_that_line_and_no_further() -> TestResult {
+    let fixture = Fixture::new("partial")?;
+
+    assert_eq!(fixture.shown("ACME 的报告写得不好,", 0, false)?, "");
+    assert_eq!(fixture.shown("请把它改得像人话一些。\n", 1, false)?, "");
+    assert_eq!(fixture.shown(LINE, 2, false)?, FIXED);
+    assert_eq!(
+        fixture.steps()?,
+        [
+            ("siblings".to_owned(), "partial".to_owned()),
+            ("siblings".to_owned(), "partial".to_owned()),
+        ]
+    );
+
+    let control = Fixture::new("partial-control")?;
+    assert_eq!(
+        control.shown("ACME 的报告写得不好,\n", 0, false)?,
+        "ACME 的报告写得不好，\n"
+    );
+    assert_eq!(control.shown("请把它改得像人话一些。\n", 1, false)?, "");
+    assert_eq!(control.shown(LINE, 2, false)?, FIXED);
+    assert_eq!(control.steps()?, []);
+    Ok(())
+}
+
+/// `spec/fixtures/span-across-line-break` cut where the span crosses the line.
+/// The opening batch goes up as it came and says why; the closing batch keeps
+/// the code inside the span and fixes the prose after it. The control arm
+/// sends both lines in one batch, and nothing is declined.
+#[test]
+fn a_batch_that_may_be_inside_a_code_span_is_left_until_the_span_is_decided() -> TestResult {
+    let fixture = Fixture::new("unclosed")?;
+    let opening = "`你好,世界\n";
+    let closing = "函数(x)` 后文(y)";
+
+    assert_eq!(fixture.shown(opening, 0, false)?, "");
+    assert_eq!(fixture.shown(closing, 1, true)?, "函数(x)` 后文 (y)");
+    assert_eq!(
+        fixture.steps()?,
+        [("siblings".to_owned(), "unclosed".to_owned())]
+    );
+
+    let control = Fixture::new("unclosed-control")?;
+    assert_eq!(
+        control.shown(&format!("{opening}{closing}"), 0, true)?,
+        "`你好,世界\n函数(x)` 后文 (y)"
+    );
+    assert_eq!(control.steps()?, []);
+    Ok(())
+}
+
+// -- the configuration ---------------------------------------------------
+
+/// The host says which repository the session is in, and that is where the
+/// rule configuration is read from: a rule the repository has disabled stays
+/// disabled on screen, and a configuration that will not read leaves the batch
+/// alone and says so — rather than quietly fixing under the defaults, which
+/// would look the same as the configuration having taken.
+#[test]
+fn the_payload_says_which_directory_the_configuration_is_read_from() -> TestResult {
+    let fixture = Fixture::new("config")?;
+
+    assert_eq!(fixture.shown(LINE, 0, false)?, FIXED);
+
+    fixture.configure("disable = [\"zh-typography-1\"]\n")?;
+    assert_eq!(fixture.shown(LINE, 1, false)?, "");
+    assert_eq!(fixture.steps()?, []);
+
+    fixture.configure("disable = [\n")?;
+    assert_eq!(fixture.shown(LINE, 2, false)?, "");
+    assert_eq!(fixture.steps()?, [("fix".to_owned(), "config".to_owned())]);
+
+    // Written where the process runs instead: not where the payload points,
+    // so not read.
+    fs::remove_file(fixture.cwd.path().join("limae.toml"))?;
+    fs::write(
+        fixture.elsewhere.path().join("limae.toml"),
+        "disable = [\"zh-typography-1\"]\n",
+    )?;
+    assert_eq!(fixture.shown(LINE, 3, true)?, FIXED);
+    Ok(())
+}
+
+/// Nothing under the home directory: no user-level configuration is read,
+/// created or looked for (ADR-0016 section 三 leaves that open, and open means
+/// not done).
+#[test]
+fn a_batch_leaves_the_home_directory_untouched() -> TestResult {
+    let fixture = Fixture::new("home")?;
+
+    assert_eq!(fixture.shown(LINE, 0, true)?, FIXED);
+
+    assert_eq!(fs::read_dir(fixture.home.path())?.count(), 0);
+    Ok(())
+}
+
+// -- the state left behind -----------------------------------------------
+
+/// Every event sweeps the state nobody is coming back for: a session nobody
+/// has been in for a day, and inside a live session the batches of a message
+/// an hour old — whether it finished or was interrupted, since neither deletes
+/// its own batches. The message just streamed keeps its own.
+#[test]
+fn an_event_sweeps_the_sessions_and_the_messages_nobody_came_back_for() -> TestResult {
+    let fixture = Fixture::new("prune")?;
+    let old = fixture.root().join("22222222-3333-4444-5555-666666666666");
+    fs::create_dir_all(&old)?;
+    aged(&old, RETENTION + Duration::from_secs(60))?;
+    // An interrupted message: every batch `final: false`, then nothing.
+    fixture.hook(
+        &batch_of(&fixture, LINE, 0, false, "interrupted", TURN),
+        &[],
+    )?;
+    let interrupted = fixture.parts("interrupted", TURN);
+    assert!(interrupted.is_dir());
+    aged(&interrupted, ORPHAN_RETENTION + Duration::from_secs(60))?;
+
+    assert_eq!(fixture.shown(LINE, 0, true)?, FIXED);
+
+    assert!(!old.exists(), "a session nobody has been in for a day");
+    assert!(!interrupted.exists(), "a message an hour old");
+    assert!(
+        fixture.parts(MESSAGE, TURN).is_dir(),
+        "the one just streamed"
+    );
+    Ok(())
+}
+
+/// A finished message leaves its batches too: the final batch does not delete
+/// them, because a batch before it may still be reading them.
+#[test]
+fn the_final_batch_leaves_the_message_s_batches_for_the_sweep() -> TestResult {
+    let fixture = Fixture::new("final-leaves")?;
+
+    assert_eq!(fixture.shown(LINE, 0, false)?, FIXED);
+    assert_eq!(fixture.shown(LINE.trim_end(), 1, true)?, FIXED.trim_end());
+
+    let parts = fixture.parts(MESSAGE, TURN);
+    assert_eq!(fs::read_to_string(part(&parts, 0))?, LINE);
+    assert_eq!(fs::read_to_string(part(&parts, 1))?, LINE.trim_end());
     Ok(())
 }
 
 // -- the failures, which are all quiet on screen and none of them silent ---
-
-/// A message with a hole in it is not polished: there is no honest rewrite of
-/// one, so the turn ends the way every other failure does, and says which way
-/// it failed.
-#[test]
-fn a_batch_that_never_arrived_is_incomplete_and_shows_the_original() -> TestResult {
-    let fixture = Fixture::new("fail-incomplete")?;
-    fixture.engine()?;
-
-    let _ = fixture.hook(&batch(&fixture, &long(), 0, false, MESSAGE), &[])?;
-    // Index 2 says there were three batches; the middle one never lands.
-    let ran = fixture.hook(&batch(&fixture, &long(), 2, true, MESSAGE), &[])?;
-
-    assert_eq!(ran.code, OK);
-    assert_eq!(ran.stdout, "");
-    assert_eq!(fixture.calls(), 0);
-    assert_eq!(
-        fixture.steps()?,
-        [("assemble".to_owned(), "incomplete".to_owned())]
-    );
-    assert!(ran.stderr.contains("batches arrived"), "{:?}", ran.stderr);
-    Ok(())
-}
 
 /// The contract [`crate::hook::parts::assemble`] leaves to this module: a batch
 /// that is on disk and will not read back is a crash of this code, and a
@@ -681,42 +751,17 @@ fn a_batch_that_never_arrived_is_incomplete_and_shows_the_original() -> TestResu
 #[test]
 fn a_batch_that_will_not_read_back_is_a_crash_and_not_a_missing_batch() -> TestResult {
     let fixture = Fixture::new("fail-unreadable")?;
-    fixture.engine()?;
 
-    let _ = fixture.hook(&batch(&fixture, &long(), 0, false, MESSAGE), &[])?;
+    assert_eq!(fixture.shown(LINE, 0, false)?, FIXED);
     // On disk, present, and not text: the one failure that is neither a batch
     // that never came nor a batch that arrived.
-    fs::write(part(&fixture.parts(MESSAGE), 0), [0xff, 0xfe])?;
-    let ran = fixture.hook(&batch(&fixture, &long(), 1, true, MESSAGE), &[])?;
+    fs::write(part(&fixture.parts(MESSAGE, TURN), 0), [0xff, 0xfe])?;
+    let ran = fixture.hook(&batch(&fixture, LINE, 1, true), &[])?;
 
-    assert_eq!(ran.code, OK);
-    assert_eq!(ran.stdout, "");
-    assert_eq!(fixture.calls(), 0);
+    assert_eq!((ran.code, ran.stdout.as_str()), (OK, ""));
     assert_eq!(
         fixture.steps()?,
         [("display".to_owned(), "crashed".to_owned())]
-    );
-    Ok(())
-}
-
-/// Fail-open is not fail-silent: the user gets their own text back, and the
-/// session says which step failed and how.
-#[test]
-fn an_engine_that_fails_leaves_the_original_and_a_line_saying_how() -> TestResult {
-    let fixture = Fixture::new("fail-engine")?;
-    fixture.install("claude", "cat > /dev/null\nexit 1")?;
-    fixture.configure("[polish]\nengine = \"claude\"\n")?;
-
-    let ran = fixture.hook(&whole(&fixture, &long()), &[])?;
-
-    assert_eq!(ran.code, OK);
-    assert_eq!(ran.stdout, "");
-    assert_eq!(
-        fixture.steps()?,
-        [(
-            "single".to_owned(),
-            FailureReason::NonzeroExit.as_str().to_owned()
-        )]
     );
     Ok(())
 }
@@ -726,20 +771,56 @@ fn an_engine_that_fails_leaves_the_original_and_a_line_saying_how() -> TestResul
 #[test]
 fn a_payload_that_is_not_a_json_object_is_ignored() -> TestResult {
     let fixture = Fixture::new("fail-payload")?;
-    fixture.engine()?;
 
     for refused in ["", "not json", "[]", "\"a string\"", "null"] {
         let ran = fixture.raw(refused, &[])?;
-        assert_eq!(ran.code, OK, "{refused:?}");
-        assert_eq!(ran.stdout, "", "{refused:?}");
+        assert_eq!((ran.code, ran.stdout.as_str()), (OK, ""), "{refused:?}");
     }
-    assert_eq!(fixture.calls(), 0);
     assert!(!fixture.root().exists());
 
     // The same stdin as an object: answered. The refusals above are the shape
     // of the payload and not the fixture.
-    let ran = fixture.hook(&whole(&fixture, &long()), &[])?;
-    assert!(ran.displayed()?.contains(HEADING));
+    assert_eq!(fixture.shown(LINE, 0, true)?, FIXED);
+    Ok(())
+}
+
+/// A payload without what its event needs is left alone before any state is
+/// created: the session, the message and the turn are each half of a path,
+/// and the delta is the thing to fix.
+#[test]
+fn a_payload_missing_what_its_event_needs_is_left_alone() -> TestResult {
+    let fixture = Fixture::new("payload-incomplete")?;
+
+    for missing in ["session_id", "message_id", "turn_id", "delta", "index"] {
+        let mut payload = batch(&fixture, LINE, 0, true);
+        payload
+            .as_object_mut()
+            .ok_or("the payload builder makes objects")?
+            .remove(missing);
+        let ran = fixture.hook(&payload, &[])?;
+        assert_eq!((ran.code, ran.stdout.as_str()), (OK, ""), "{missing}");
+    }
+    assert!(!fixture.root().exists());
+
+    assert_eq!(fixture.shown(LINE, 0, true)?, FIXED);
+    Ok(())
+}
+
+/// A batch index is a whole non-negative number and nothing else. JSON's
+/// booleans and its numbers are separate variants here, so `true` is not `1`.
+#[test]
+fn an_index_that_is_not_a_whole_number_is_not_an_index() -> TestResult {
+    let fixture = Fixture::new("batch-index")?;
+
+    for refused in [json!(true), json!(-1), json!(1.5), json!("0")] {
+        let mut payload = batch(&fixture, LINE, 0, true);
+        payload["index"] = refused.clone();
+        let ran = fixture.hook(&payload, &[])?;
+        assert_eq!((ran.code, ran.stdout.as_str()), (OK, ""), "index {refused}");
+        assert!(!fixture.session().exists(), "index {refused}");
+    }
+
+    assert_eq!(fixture.shown(LINE, 0, true)?, FIXED);
     Ok(())
 }
 
@@ -747,37 +828,18 @@ fn a_payload_that_is_not_a_json_object_is_ignored() -> TestResult {
 
 /// Set, and the process does nothing at all — before stdin is read, so a
 /// session that has switched the hook off does not even get a state directory
-/// out of it.
+/// out of it. An empty variable is not a marker, the way an unset one is not.
 #[test]
 fn the_disable_variable_stops_the_hook_before_it_reads_stdin() -> TestResult {
     let fixture = Fixture::new("entry-disable")?;
-    fixture.engine()?;
-    let payload = whole(&fixture, &long());
+    let payload = batch(&fixture, LINE, 0, true);
 
     let off = fixture.hook(&payload, &[("LIMAE_HOOK_DISABLE", "1")])?;
-
-    assert_eq!(off.code, OK);
-    assert_eq!(off.stdout, "");
-    assert_eq!(fixture.calls(), 0);
+    assert_eq!((off.code, off.stdout.as_str()), (OK, ""));
     assert!(!fixture.root().exists());
 
-    // The same payload with the variable unset, which is what says the payload
-    // was answerable all along.
-    let on = fixture.hook(&payload, &[])?;
-    assert!(on.displayed()?.contains(HEADING));
-    assert!(fixture.root().is_dir());
-    Ok(())
-}
-
-/// An empty variable is not a marker, the way an unset one is not.
-#[test]
-fn an_empty_disable_variable_is_not_a_disable() -> TestResult {
-    let fixture = Fixture::new("entry-empty-disable")?;
-    fixture.engine()?;
-
-    let ran = fixture.hook(&whole(&fixture, &long()), &[("LIMAE_HOOK_DISABLE", "")])?;
-
-    assert!(ran.displayed()?.contains(HEADING));
+    let on = fixture.hook(&payload, &[("LIMAE_HOOK_DISABLE", "")])?;
+    assert_eq!(on.displayed()?, FIXED);
     Ok(())
 }
 
@@ -788,197 +850,22 @@ fn an_empty_disable_variable_is_not_a_disable() -> TestResult {
 fn running_the_subcommand_by_hand_says_what_it_wants() -> TestResult {
     let fixture = Fixture::new("entry-usage")?;
 
-    let ran = fixture.argv(&[MESSAGE_DISPLAY], "", &[])?;
+    let ran = fixture.argv(&["MessageDisplay"], "", &[])?;
 
-    assert_eq!(ran.code, BAD_USAGE);
-    assert_eq!(ran.stdout, "");
-    assert!(ran.stderr.contains("JSON on stdin"), "{:?}", ran.stderr);
-    Ok(())
-}
-
-// -- telling the two hosts' `Stop` apart ----------------------------------
-
-/// The judgement is a string `model` beside a `last_assistant_message`, and
-/// nothing else: Claude Code sends the reply too, so the reply alone cannot be
-/// the test.
-#[test]
-fn a_stop_without_a_string_model_is_claude_s_and_not_codex_s() -> TestResult {
-    let fixture = Fixture::new("host-stop")?;
-    let codex_payload = codex(&fixture, &long(), &[("turn_id", "turn")]);
-
-    assert!(is_codex_stop(&object(&codex_payload)?));
-    assert!(!is_codex_stop(&object(&claude_stop())?));
-
-    let mut numbered = codex_payload.clone();
-    numbered["model"] = json!(7);
-    assert!(!is_codex_stop(&object(&numbered)?));
-
-    let mut reply_less = codex_payload;
-    reply_less
-        .as_object_mut()
-        .ok_or("the payload builders make objects")?
-        .remove("last_assistant_message");
-    assert!(!is_codex_stop(&object(&reply_less)?));
-
-    // End to end: Claude Code's `Stop` takes the other branch, which is a
-    // different field of a different shape.
-    pending(&fixture, "山谷")?;
-    let ran = fixture.hook(&claude_stop(), &[])?;
-    let answer = ran.answer()?.ok_or("a turn with a trial is answered")?;
-    assert!(answer.get("systemMessage").is_none(), "{answer}");
-    Ok(())
-}
-
-/// Codex has only this one event, so the pending note is consumed here: the
-/// comparison and its code stay in the ledger and on screen, and the reader
-/// keeps the code without this claiming the model received it.
-///
-/// Announcing it once is load-bearing — a `Stop` hook that always answers
-/// re-triggers itself — so the second reply of the same session says nothing
-/// about the trial.
-#[test]
-fn codex_consumes_the_pending_note_so_it_is_announced_once() -> TestResult {
-    let fixture = Fixture::new("host-pending")?;
-    fixture.engine()?;
-    pending(&fixture, "河流")?;
-
-    let first = fixture.hook(&codex(&fixture, &long(), &[("turn_id", "one")]), &[])?;
-    let second = fixture.hook(&codex(&fixture, &long(), &[("turn_id", "two")]), &[])?;
-
-    let said = |ran: &Ran| -> Result<String, Box<dyn Error>> {
-        Ok(ran
-            .answer()?
-            .as_ref()
-            .and_then(|answer| answer.get("systemMessage"))
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned())
-    };
-    let (first, second) = (said(&first)?, said(&second)?);
-
-    let (block, note) = first
-        .split_once("\n\n")
-        .ok_or_else(|| format!("no code beside the block: {first:?}"))?;
-    assert!(block.contains(HEADING), "{first:?}");
-    assert!(!block.ends_with('\n'), "{first:?}");
-    assert!(note.contains("河流"), "{first:?}");
-    assert!(second.contains(HEADING), "{second:?}");
-    assert!(!second.contains("河流"), "{second:?}");
-    assert!(!fixture.session().join(PENDING_FILENAME).exists());
-    Ok(())
-}
-
-/// Codex names its reply by turn, so the per-message identifier falls back to
-/// the turn id: without the fallback there would be no id at all, and a Codex
-/// reply would never be polished.
-#[test]
-fn the_message_id_falls_back_to_the_turn_id() -> TestResult {
-    let fixture = Fixture::new("host-turn-id")?;
-    fixture.install("claude", "cat > /dev/null\nexit 1")?;
-    fixture.configure("[polish]\nengine = \"claude\"\n")?;
-
-    let both = codex(
-        &fixture,
-        &long(),
-        &[("turn_id", "turn-7"), ("message_id", MESSAGE)],
+    assert_eq!((ran.code, ran.stdout.as_str()), (BAD_USAGE, ""));
+    assert!(
+        ran.stderr.contains("reads one hook event as JSON on stdin"),
+        "{}",
+        ran.stderr
     );
-    assert_eq!(message(&object(&both)?), MESSAGE);
-
-    let ran = fixture.hook(&codex(&fixture, &long(), &[("turn_id", "turn-7")]), &[])?;
-
-    assert_eq!(ran.stdout, "");
-    assert_eq!(
-        fixture
-            .lines()?
-            .iter()
-            .map(|line| field(line, "message_id").to_owned())
-            .collect::<Vec<_>>(),
-        ["turn-7"]
-    );
-    Ok(())
-}
-
-// -- what the payload decides ---------------------------------------------
-
-/// The host says which repository the session is in, and that is where the rule
-/// configuration is read from — so a repository that has chosen an engine gets
-/// it, and one that has disabled a rule keeps it disabled in what reaches the
-/// screen.
-#[test]
-fn the_payload_says_which_directory_the_configuration_is_read_from() -> TestResult {
-    let named = Fixture::new("config-named")?;
-    named.install(
-        "claude",
-        &format!("cat > /dev/null\ncat <<'ANSWER'\n{REWRITE}\nANSWER"),
-    )?;
-    // Only where the payload points, and the process is running elsewhere.
-    named.configure("[polish]\nengine = \"claude\"\n")?;
-    let ran = named.hook(&whole(&named, &long()), &[])?;
-    assert!(ran.displayed()?.contains(HEADING));
-
-    // A payload that names no directory falls back to the process's own, which
-    // is where the reference implementation's `Path.cwd()` lands.
-    let fallback = Fixture::new("config-fallback")?;
-    fallback.install(
-        "claude",
-        &format!("cat > /dev/null\ncat <<'ANSWER'\n{REWRITE}\nANSWER"),
-    )?;
-    fallback.configure_process("[polish]\nengine = \"claude\"\n")?;
-    let mut payload = whole(&fallback, &long());
-    payload
-        .as_object_mut()
-        .ok_or("the payload builders make objects")?
-        .remove("cwd");
-    let ran = fallback.hook(&payload, &[])?;
-    assert!(ran.displayed()?.contains(HEADING));
-    Ok(())
-}
-
-/// Every event sweeps the state nobody is coming back for: it is scratch, and
-/// the hook is the only process that ever visits it.
-#[test]
-fn an_event_sweeps_the_sessions_nobody_came_back_for() -> TestResult {
-    let fixture = Fixture::new("prune")?;
-    fixture.engine()?;
-    let old = fixture.root().join("22222222-3333-4444-5555-666666666666");
-    fs::create_dir_all(&old)?;
-    aged(&old, RETENTION + Duration::from_secs(60))?;
-
-    let ran = fixture.hook(&whole(&fixture, &long()), &[])?;
-
-    assert!(ran.displayed()?.contains(HEADING));
-    assert!(!old.exists(), "a session nobody has been in for a day");
-    assert!(fixture.session().is_dir(), "the live one");
-    Ok(())
-}
-
-/// A payload without what its event needs is one more way to fail open, and
-/// this is where the reference implementation checks it: before any state is
-/// created and before any model is called.
-#[test]
-fn a_payload_missing_what_its_event_needs_is_left_alone() -> TestResult {
-    let fixture = Fixture::new("payload-incomplete")?;
-    fixture.engine()?;
-
-    let mut headless = whole(&fixture, &long());
-    headless
-        .as_object_mut()
-        .ok_or("the payload builders make objects")?
-        .remove("session_id");
-    let mut speechless = codex(&fixture, "", &[("turn_id", "turn")]);
-    let mut anonymous = codex(&fixture, &long(), &[]);
-    anonymous
-        .as_object_mut()
-        .ok_or("the payload builders make objects")?
-        .remove("turn_id");
-    speechless["session_id"] = Value::String(SESSION.to_owned());
-
-    for payload in [&headless, &speechless, &anonymous] {
-        let ran = fixture.hook(payload, &[])?;
-        assert_eq!(ran.code, OK, "{payload}");
-        assert_eq!(ran.stdout, "", "{payload}");
-    }
-    assert_eq!(fixture.calls(), 0);
     assert!(!fixture.root().exists());
     Ok(())
+}
+
+/// The real wait is what a hook event runs under, and the fixture's shortened
+/// one is a test's own: the two must not be confused, so the default is
+/// spelled out here beside the fixture that departs from it.
+#[test]
+fn a_hook_event_runs_under_the_default_limits() {
+    assert_eq!(Limits::DEFAULT.wait, SIBLING_WAIT);
 }

@@ -234,7 +234,7 @@ command = []       # engine = "custom" 时的完整命令
 
 `--engine` 与 `--model` 覆盖配置，`--engine` 也覆盖 `LIMAE_ENGINE`。失败一律非零退出并说清哪一步失败 (ADR-0008 §六)；诊断只说状态，不回显引擎的任何输出。
 
-**还没做的**：hook 形态与 A/B 采集、文件参数与 `--diff` / `--check`、改写前后的结构不变量核对 (ADR-0008 §七、§八、§十)。
+**还没做的**：文件参数与 `--diff` / `--check`、改写前后的结构不变量核对 (ADR-0008 §七、§八)、从同一份 prompt spec 生成供 agent 安装的 skill (ADR-0016 §七)。hook 形态与 A/B 采集已不在计划里：display hook 自 2026-09-11 起只做机械排版修复、不再调 polish，A/B 盲评整个停止 (ADR-0016)。
 
 ## 本地开发
 
