@@ -18,7 +18,15 @@
 
    完成判据：结尾一行 `Finished`，且 `ls target/debug/limae` 打印出这个路径。**改完 Rust 源码要重来这一步**，否则挂着的是上一次建出来的那个。
 
-2. **写入 hook 配置**。终端里执行 (会覆盖已有的 `.claude/settings.local.json`；已有其它内容的把 `hooks` 这一段并进去)：
+2. **看配置文件在不在**。终端里执行：
+
+   ```sh
+   test -e .claude/settings.local.json && echo exists || echo absent
+   ```
+
+   打出 `absent` 走第 3 步，打出 `exists` 走第 4 步。
+
+3. **不存在：整份创建**。终端里执行 (只在第 2 步打出 `absent` 时执行，它会新建整个文件)：
 
    ```sh
    mkdir -p .claude && cat > .claude/settings.local.json <<'EOF'
@@ -39,11 +47,21 @@
    EOF
    ```
 
-   完成判据：`cat .claude/settings.local.json` 打出上面这段。**只挂 `MessageDisplay`，不要 `timeout`**：一批的成本是整篇重修的十几毫秒 (release 构建，ADR-0016 读数 C) 加最多 2 秒的兄弟批等待，落在宿主给 `MessageDisplay` 的默认 10 秒之内；`Stop` 不用挂，进程收到它只是静默退出 0。**走 `target/debug/limae`，不要写 `cargo run`**：每批新行都要起一次进程且各批并发派发，`cargo run` 会让它们排在 Cargo 的 build 目录锁上一个一个来。
+   完成判据同第 4 步末尾那条命令。做完跳到第 5 步。
 
-3. **重开一个 Claude Code 会话**：退出当前会话 (输入 `/exit`)，在同一个目录再执行 `claude`。已开着的会话不会读新配置。完成判据：见第 4 步。
+4. **已存在：只合并 `MessageDisplay` 一段**。用你平时的编辑器打开 `.claude/settings.local.json` (终端里 `"${EDITOR:-vi}" .claude/settings.local.json`)，不删已有的 `env`、`permissions` 或其它 hook：文件里已有 `"hooks"` 表的，把第 3 步花括号里 `"MessageDisplay": [ … ]` 那一项加进这张表 (与已有的 `"Stop"` 之类并列，前一项末尾补逗号)；没有 `"hooks"` 表的，把第 3 步的 `"hooks": { … }` 整项加到顶层对象里。保存后在终端里核 JSON：
 
-4. **验收，两臂**。在新会话里让 agent 原样输出一行带半角逗号的中文，例如让它回复 `你好,世界`。完成判据：屏幕上显示的是 `你好，世界` (逗号已是全角)。对照臂：把第 2 步的文件删掉、再重开一个会话、同样的请求，屏幕上是 `你好,世界` (半角逗号原样)。两臂不同，hook 才算真的挂上了；两臂相同 (都是半角) 就回到第 1 步核 binary、第 3 步核会话有没有重开。
+   ```sh
+   python3 -m json.tool .claude/settings.local.json > /dev/null && grep -c '"MessageDisplay"' .claude/settings.local.json
+   ```
+
+   完成判据：打出 `1` (JSON 合法且恰有一处 `MessageDisplay`)。打出报错是 JSON 写坏了，回编辑器改；打出 `2` 以上是重复加了。
+
+   两条不能省：**只挂 `MessageDisplay`，不要 `timeout`** —— 一批的成本是整篇重修的十几毫秒 (release 构建，ADR-0016 读数 C) 加最多 2 秒的兄弟批等待，落在宿主给 `MessageDisplay` 的默认 10 秒之内；`Stop` 不用挂，进程收到它只是静默退出 0。**走 `target/debug/limae`，不要写 `cargo run`** —— 每批新行都要起一次进程且各批并发派发，`cargo run` 会让它们排在 Cargo 的 build 目录锁上一个一个来。
+
+5. **重开一个 Claude Code 会话**：退出当前会话 (输入 `/exit`)，在同一个目录再执行 `claude`。已开着的会话不会读新配置。完成判据：见第 6 步。
+
+6. **验收，两臂，做完是开着的**。正臂：在新会话里让 agent 原样输出一行带半角逗号的中文，例如让它回复 `你好,世界`。完成判据：屏幕上显示 `你好，世界` (逗号已是全角)。对照臂**不动配置文件**：`/exit` 退出，用 `LIMAE_HOOK_DISABLE=1 claude` 再开一个会话，同样的请求，屏幕上是 `你好,世界` (半角逗号原样)；再 `/exit`，用不带变量的 `claude` 开回正常会话，重复正臂一次，看到全角逗号即完成 —— 此时 hook 是开着的。两臂相同 (都是半角) 就回到第 1 步核 binary、第 5 步核会话有没有重开。
 
 ## 二、怎么关
 
@@ -63,7 +81,7 @@
    rm .claude/settings.local.json
    ```
 
-   然后按第一节第 3 步重开会话。完成判据：同上 (半角逗号原样)。文件里若有 `hooks` 之外的内容，改为只删掉 `hooks` 那一段。
+   然后按第一节第 5 步重开会话。完成判据：同上 (半角逗号原样)。文件里若有 `hooks` 之外的内容，改为用编辑器只删掉 `"MessageDisplay": [ … ]` 那一项，保存后用第一节第 4 步那条命令核：打出 `0`。
 
 3. **彻底**：与第 2 种相同，本仓没有别的开关。
 
