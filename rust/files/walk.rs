@@ -37,7 +37,9 @@ pub struct WalkError(#[from] pub ignore::Error);
 /// is excluded by name rather than by being hidden, so that the exclusion says
 /// what it means. A symbolic link to a file is checked through the link; a
 /// symbolic link to a directory is not descended, which is what keeps the walk
-/// finite without a loop detector.
+/// finite without a loop detector. A link that cannot be resolved at all is
+/// selected rather than dropped, and fails when it is read, the way the same
+/// path does when it is named on the command line.
 ///
 /// What remains is ignored on purpose: `.gitignore` (inside a repository),
 /// `.git/info/exclude`, the global excludes file, `.ignore`, and every parent
@@ -59,9 +61,21 @@ pub fn walk_markdown(cwd: &Path) -> Result<Vec<PathBuf>, WalkError> {
     for entry in walk {
         let entry = entry.map_err(WalkError)?;
         let path = entry.path();
-        // `is_file` follows the link, which is what admits a linked Markdown
-        // file; `file_type` here reports the link itself and would drop it.
-        if path.extension() == Some(OsStr::new("md")) && path.is_file() {
+        if path.extension() != Some(OsStr::new("md")) {
+            continue;
+        }
+        // A directory is the only thing dropped here. `file_type` describes the
+        // link rather than its target, so a link is resolved to find out which
+        // it is -- and a link that will not resolve is still selected, so that
+        // reading names it. Deciding with a boolean that reports "no" for both
+        // "not a file" and "cannot tell" would put that file back exactly where
+        // this selection change took it out of: unchecked and unmentioned.
+        let directory = match entry.file_type() {
+            Some(kind) if kind.is_symlink() => path.metadata().is_ok_and(|meta| meta.is_dir()),
+            Some(kind) => kind.is_dir(),
+            None => false,
+        };
+        if !directory {
             paths.push(path.strip_prefix(cwd).unwrap_or(path).to_owned());
         }
     }

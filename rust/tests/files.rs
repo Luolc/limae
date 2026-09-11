@@ -295,8 +295,12 @@ fn the_walk_sorts_relative_markdown_and_refuses_a_directory_it_cannot_read() -> 
     for name in ["z.md", "a space.md", "docs/b.md", "docs/sub/a.md", "x.txt"] {
         fs::write(root.path().join(name), "ACME")?;
     }
-    // A directory whose own name ends in `.md` is not a file to check.
+    // A directory whose own name ends in `.md` is not a file to check, and
+    // neither is a link to one: "cannot tell what this is" is the only reason
+    // to keep a link, and here we can tell.
     fs::create_dir(root.path().join("dir.md"))?;
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("docs", root.path().join("linked.md"))?;
     assert_eq!(
         walk_markdown(root.path())?,
         paths(&["a space.md", "docs/b.md", "docs/sub/a.md", "z.md"])

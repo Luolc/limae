@@ -294,6 +294,37 @@ fn all_checks_unindexed_files_but_still_honours_every_ignore_source() -> TestRes
     Ok(())
 }
 
+/// A Markdown link that will not resolve is an error, not an absence.
+///
+/// `--all` and an explicit input name the same file, so they have to end the
+/// same way. The clean sibling is the arm that matters: without it the tree has
+/// nothing else to report, and "selected it and failed to read it" would be
+/// indistinguishable from "never selected it" by the exit code alone.
+#[cfg(unix)]
+#[test]
+fn an_unresolvable_markdown_link_is_read_and_reported_not_skipped() -> TestResult {
+    let root = TempDir::new()?;
+    std::os::unix::fs::symlink("absent.md", root.path().join("broken.md"))?;
+
+    let (code, stdout, stderr) = output_text(run(root.path(), &["--all"])?)?;
+    assert_eq!((code, stdout.as_str()), (1, ""));
+    assert!(stderr.contains("cannot read broken.md"), "{stderr}");
+    assert!(!stderr.contains("no files given"), "{stderr}");
+
+    // Same file, named directly: the two entry points must not disagree.
+    let (explicit_code, _, explicit_stderr) = output_text(run(root.path(), &["broken.md"])?)?;
+    assert_eq!((explicit_code, explicit_stderr), (code, stderr));
+
+    // With something else to report, the failure still is not swallowed into a
+    // clean run over the remainder.
+    fs::write(root.path().join("ok.md"), "clean\n")?;
+    let (code, stdout, stderr) = output_text(run(root.path(), &["--all"])?)?;
+    assert_eq!((code, stdout.as_str()), (1, ""));
+    assert!(stderr.contains("cannot read broken.md"), "{stderr}");
+    assert!(!stdout.contains("clean"), "{stdout}");
+    Ok(())
+}
+
 /// Control C: `--all` outside a repository.
 ///
 /// Before this change the same tree ended in `git ls-files ... failed`, so the
