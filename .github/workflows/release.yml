@@ -444,9 +444,22 @@ jobs:
           # Re-runnable (`gh run rerun --failed`): a tag that already points at
           # the commit we would tag is this job having run before. A tag
           # pointing anywhere else is someone else's, and is not moved.
+          #
+          # The comparison has to be against the *commit*. An annotated tag's
+          # own line carries the tag object's sha, not the commit's, and
+          # `ls-remote <pattern>` filters the `^{}` line out — so a pattern
+          # query would compare a tag object against a commit and fail a
+          # re-run that should be green. This job pushes lightweight tags, but
+          # a tag cut by hand or through the GitHub UI is annotated, and those
+          # two have to be told apart rather than assumed away. So: list every
+          # tag, and prefer the peeled line when there is one.
           head="$(git rev-parse HEAD)"
-          if existing="$(git ls-remote --tags origin "refs/tags/$TAG" | cut -f1)" && [ -n "$existing" ]; then
-            echo "tag: $TAG already exists at $existing"
+          refs="$(git ls-remote --tags origin)"
+          peeled="$(printf '%s\n' "$refs" | awk -v t="refs/tags/$TAG^{}" '$2 == t { print $1 }')"
+          direct="$(printf '%s\n' "$refs" | awk -v t="refs/tags/$TAG" '$2 == t { print $1 }')"
+          existing="${peeled:-$direct}"
+          if [ -n "$existing" ]; then
+            echo "tag: $TAG already exists at commit $existing"
             [ "$existing" = "$head" ]
           else
             git tag "$TAG" "$head"

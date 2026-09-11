@@ -233,6 +233,10 @@ job 做四件事，每件都留正向判据：
 3. **提交**：pin 没变就不提交 (重跑时的常态)，变了才 commit 并推 `main`。
 4. **打 tag** `v<version>`：tag 已存在且指向本次要打的那个 commit，就是这个 job 跑过一次，绿；指向别处则退非零，**不移动别人的 tag**。`gh run rerun --failed` 因此可以续。
 
+   这一步的比较对象必须是 **commit**，不是 tag ref 本身指向的对象。annotated tag 那一行 `ls-remote` 给的是 **tag object** 的 sha，而不是它指向的 commit；且 `git ls-remote --tags origin "refs/tags/<tag>"` 这种带 pattern 的查询**会把 `^{}` 那行滤掉**，于是拿一个 tag object 去比一个 commit，本该绿的重跑会红。所以这里列出全部 tag、优先取 `refs/tags/<tag>^{}` 那行的 sha，没有才退回直接那行。这个 job 自己打的是 lightweight tag，但手工或从 GitHub 界面切出来的是 annotated，两者要分得开而不是假定不会出现。
+
+   四臂读数 (2026-09-10 本机，隔离的 bare remote，同一段代码只换 `$TAG`)：annotated tag 指向 `HEAD` → 退 0；lightweight tag 指向 `HEAD` → 退 0；**annotated tag 指向另一个 commit → 退 1** (对照臂：一个恒判相等的「修法」在这一臂上会绿)；tag 不存在 → 走创建分支。改回带 pattern 的写法时，第一臂给出的是 tag object 的 sha、比较不等 (审查方 2026-09-10 在 PR #169 以 P1 提出，本机独立复现)。
+
 **凭证**：仓库 secret `MIRROR_TOKEN`，一枚能写 `Luolc/limae-pre-commit` 的 token，由用户创建并存入。job 的 `permissions: {}` —— 它不碰本仓，`GITHUB_TOKEN` 一项权限都不需要。
 
 ### 镜像仓里哪些是生成的
