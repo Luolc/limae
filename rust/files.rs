@@ -1,4 +1,4 @@
-//! File selection shared by explicit inputs and Git's tracked Markdown list.
+//! File selection shared by explicit inputs and the `--all` filesystem walk.
 
 use std::fs;
 use std::io as std_io;
@@ -8,10 +8,10 @@ use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use soft_canonicalize::soft_canonicalize;
 use thiserror::Error;
 
-mod git;
-pub use git::{GitError, tracked_markdown, untracked_markdown};
 mod io;
 pub use io::{FileError, FileText, FixStatus, fix_file};
+mod walk;
+pub use walk::{WalkError, walk_markdown};
 
 /// A discovery, reading, resolution, or pattern error in file filtering.
 #[derive(Debug, Error)]
@@ -69,7 +69,7 @@ pub fn find_ignore(start: &Path) -> Result<Option<PathBuf>, IgnoreError> {
 }
 
 /// Filter inputs relative to an explicit working directory, retaining spelling,
-/// duplicates, and order. Use this for both explicit inputs and `tracked_markdown`.
+/// duplicates, and order. Use this for both explicit inputs and [`walk_markdown`].
 ///
 /// The nearest ignore file replaces all parents. Matching resolves symlinks and
 /// permits missing suffixes; paths outside the resolved ignore root stay in the
