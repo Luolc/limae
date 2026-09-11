@@ -49,13 +49,28 @@
 
    完成判据同第 4 步末尾那条命令。做完跳到第 5 步。
 
-4. **已存在：只合并 `MessageDisplay` 一段**。用你平时的编辑器打开 `.claude/settings.local.json` (终端里 `"${EDITOR:-vi}" .claude/settings.local.json`)，不删已有的 `env`、`permissions` 或其它 hook：文件里已有 `"hooks"` 表的，把第 3 步花括号里 `"MessageDisplay": [ … ]` 那一项加进这张表 (与已有的 `"Stop"` 之类并列，前一项末尾补逗号)；没有 `"hooks"` 表的，把第 3 步的 `"hooks": { … }` 整项加到顶层对象里。保存后在终端里核 JSON：
+4. **已存在：只追加 limae 这一个 matcher**。先记下文件里已有多少条 hook 命令：
 
    ```sh
-   python3 -m json.tool .claude/settings.local.json > /dev/null && grep -c '"MessageDisplay"' .claude/settings.local.json
+   grep -o '"type": "command"' .claude/settings.local.json | wc -l
    ```
 
-   完成判据：打出 `1` (JSON 合法且恰有一处 `MessageDisplay`)。打出报错是 JSON 写坏了，回编辑器改；打出 `2` 以上是重复加了。
+   记住这个数 (下面叫 N；打出 `0` 也是一个数)。这里和下面的判据都是**数出现次数**，不是数行 —— `grep -c` 数的是行，两个键挤在一行就漏数。再用你平时的编辑器打开文件 (终端里 `"${EDITOR:-vi}" .claude/settings.local.json`)，不删已有的任何东西，按文件现状三选一：
+
+   - 已有 `"MessageDisplay": [ … ]` 数组的：在这个数组末尾追加第 3 步里 `"MessageDisplay": [` 与 `]` 之间那**一个** `{ "hooks": [ { "type": "command", "command": … } ] }` 对象 (前一个对象末尾补逗号)，不要新开第二个 `"MessageDisplay"` 键 —— JSON 允许重复键、`json.tool` 也不报，但宿主只会读到其中一个。
+   - 有 `"hooks"` 表、没有 `"MessageDisplay"` 的：把第 3 步花括号里 `"MessageDisplay": [ … ]` 整项加进 `"hooks"` 表 (与已有的 `"Stop"` 之类并列，前一项末尾补逗号)。
+   - 没有 `"hooks"` 表的：把第 3 步的 `"hooks": { … }` 整项加到顶层对象里。
+
+   保存后在终端里核：
+
+   ```sh
+   python3 -m json.tool .claude/settings.local.json > /dev/null && echo valid
+   grep -o 'target/debug/limae\\" hook"' .claude/settings.local.json | wc -l
+   grep -o '"MessageDisplay"' .claude/settings.local.json | wc -l
+   grep -o '"type": "command"' .claude/settings.local.json | wc -l
+   ```
+
+   完成判据：第一条打出 `valid`，后三个数依次是 `1`、`1`、`N + 1` —— limae 的命令恰有一处、`MessageDisplay` 键恰有一个、既有的 hook 命令一条没少。报错是 JSON 写坏了，回编辑器改；第一个数是 `0` 是没加上、`2` 是加了两次；第二个数是 `2` 是开了重复键；第三个数比 `N + 1` 小是误删了别人的。
 
    两条不能省：**只挂 `MessageDisplay`，不要 `timeout`** —— 一批的成本是整篇重修的十几毫秒 (release 构建，ADR-0016 读数 C) 加最多 2 秒的兄弟批等待，落在宿主给 `MessageDisplay` 的默认 10 秒之内；`Stop` 不用挂，进程收到它只是静默退出 0。**走 `target/debug/limae`，不要写 `cargo run`** —— 每批新行都要起一次进程且各批并发派发，`cargo run` 会让它们排在 Cargo 的 build 目录锁上一个一个来。
 
@@ -75,13 +90,27 @@
 
    进程一进来就退出，连 stdin 都不读。完成判据：让 agent 回复 `你好,世界`，屏幕上是半角逗号原样。
 
-2. **关掉这台机器上的本仓**：
+2. **关掉这台机器上的本仓**。先看文件里除了 limae 还有没有别的：
+
+   ```sh
+   grep -o '"type": "command"' .claude/settings.local.json | wc -l
+   ```
+
+   打出 `1` (只有 limae 这一条) 就整个删掉：
 
    ```sh
    rm .claude/settings.local.json
    ```
 
-   然后按第一节第 5 步重开会话。完成判据：同上 (半角逗号原样)。文件里若有 `hooks` 之外的内容，改为用编辑器只删掉 `"MessageDisplay": [ … ]` 那一项，保存后用第一节第 4 步那条命令核：打出 `0`。
+   打出 `2` 以上，用编辑器打开文件，只删掉 `command` 是 `… target/debug/limae" hook` 的那**一个** `{ "hooks": [ { … } ] }` 对象 (它是 `"MessageDisplay"` 数组里的一项；删完若数组空了，连 `"MessageDisplay": []` 这一项一起删)，别的 hook 与 `env` 一概不动。保存后核：
+
+   ```sh
+   python3 -m json.tool .claude/settings.local.json > /dev/null && echo valid
+   grep -o 'target/debug/limae\\" hook"' .claude/settings.local.json | wc -l
+   grep -o '"type": "command"' .claude/settings.local.json | wc -l
+   ```
+
+   完成判据：`valid`，然后 `0` (limae 已不在)，然后等于删之前那个数减 1 (只少了它一条)。然后按第一节第 5 步重开会话，让 agent 回复 `你好,世界`，屏幕上是半角逗号原样。
 
 3. **彻底**：与第 2 种相同，本仓没有别的开关。
 
