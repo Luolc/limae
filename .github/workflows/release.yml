@@ -210,14 +210,14 @@ jobs:
         with:
           packages-dir: dist/pypi
 
-  # A long-lived token for now: npm's Trusted Publishing can only be set up
-  # once the package exists. All five packages exist now, so the switch to
-  # OIDC is unblocked, but it is not free to sequence: npm's trusted
-  # publishers are configured per package, by hand, on npmjs.com, and a
-  # workflow that has dropped the token before that is done simply cannot
-  # publish. So the token stays until those five are configured — see the
-  # npm credentials section of docs/knowledge/release.md, which carries the
-  # steps and the two traps. The platform packages go first,
+  # Trusted Publishing, like `publish` and `publish-pypi`: no long-lived
+  # token in CI. npm's trusted publishers are per package and are entered by
+  # hand on npmjs.com; all five were configured on 2026-09-11, which is what
+  # unblocked this job losing `NPM_TOKEN`. npm needs no auth action here —
+  # the CLI does the exchange itself inside `npm publish`, given
+  # `id-token: write`. No `--provenance` either: with OIDC, a public
+  # repository and public packages, npm turns it on by itself (see the npm
+  # credentials section of docs/knowledge/release.md). The platform packages go first,
   # so the launcher's `optionalDependencies` resolve the moment it lands.
   # `@limae/<platform>` is scoped, and a scoped package publishes as
   # restricted unless told otherwise; `publishConfig.access` in each
@@ -226,9 +226,11 @@ jobs:
     if: github.event_name == 'push'
     needs: [launchers, publish-pypi]
     runs-on: ubuntu-latest
-    # `contents: read` for the checkout that brings tools/; `npm publish`
-    # needs nothing from GitHub's token.
+    # `id-token: write` is what npm exchanges for a short-lived registry
+    # token; `contents: read` is for the checkout that brings tools/, not
+    # something npm asks for.
     permissions:
+      id-token: write
       contents: read
     steps:
       - uses: actions/checkout@v7
@@ -238,16 +240,41 @@ jobs:
         with:
           name: launchers
           path: dist
+      # `registry-url` is kept, which is what npm's own Trusted Publishing
+      # example does. It writes `_authToken=${NODE_AUTH_TOKEN}` into .npmrc
+      # with nothing to fill it in, and that is fine on v7: the placeholder
+      # token v6 exported (`XXXXX-XXXXX-XXXXX-XXXXX`) is gone — v7 exports
+      # NODE_AUTH_TOKEN only when the caller provided one (actions/setup-node
+      # PR #1558; two-arm reading, 2026-09-11: that string appears once in
+      # v6's dist/setup/index.js and not at all in v7's). `npm publish`
+      # attempts the exchange regardless of what is in .npmrc and overwrites
+      # the entry on success, so the leftover line is inert; if the exchange
+      # fails, the publish fails loudly rather than falling back to anything.
       - uses: actions/setup-node@v7
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
+      # npm's OIDC exchange needs npm >= 11.5.1 and Node >= 22.14.0 (npm's
+      # Trusted Publishing documentation). `node-version: 24` settles the Node
+      # half by construction, but the npm half rides on whatever the runner
+      # image ships, so both are read and asserted rather than assumed — an
+      # npm too old to exchange would otherwise fail further down as a plain
+      # auth error. `sort -V` puts the lower version first, so "the required
+      # version sorts first" is the assertion, and an empty reading fails it.
+      - name: Assert the toolchain is new enough for OIDC
+        run: |
+          set -euo pipefail
+          node_have="$(node --version)"
+          npm_have="$(npm --version)"
+          echo "node=$node_have npm=$npm_have (need node >= 22.14.0, npm >= 11.5.1)"
+          [ "$(printf '%s\n%s\n' 22.14.0 "${node_have#v}" | sort -V | head -1)" = 22.14.0 ]
+          [ "$(printf '%s\n%s\n' 11.5.1 "$npm_have" | sort -V | head -1)" = 11.5.1 ]
       # The script publishes the platform packages first and the launcher
       # last, and compares each tarball with what npm already holds before
-      # publishing it (see the note above `publish-pypi`).
+      # publishing it (see the note above `publish-pypi`). `npm publish`
+      # reads no credential from the environment now: it asks GitHub for an
+      # OIDC token and the registry for a short-lived one in exchange.
       - name: Publish the platform packages, then the launcher
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: tools/npm_publish_set.sh dist/npm
 
   # Trusted Publishing: no long-lived token in CI. The auth action swaps
@@ -323,23 +350,53 @@ jobs:
             exit 1
           fi
 
-  # The npm half of the credential rehearsal: `NPM_TOKEN` is a token with an
-  # expiry, and `npm whoami` is the cheapest call that fails when it has
-  # expired or was pasted wrong. It prints the account name, which is not a
-  # secret; the token itself never reaches the log.
+  # The npm half of the credential rehearsal, and the counterpart of
+  # `auth-check` above: it authenticates and stops, spending no version
+  # number. Unlike crates.io, npm offers no action and no CLI command for
+  # this — the exchange lives inside `npm publish` alone, and
+  # `npm publish --dry-run` cannot stand in for it because npm's `oidc()` is
+  # written never to throw, so a dry run exits 0 whether the exchange worked
+  # or not. tools/npm_oidc_check.sh therefore makes the same two requests
+  # the CLI makes, per package; what that does and does not prove is in its
+  # header and in docs/knowledge/release.md.
+  #
+  # Like `auth-check`, this job has to live in release.yml: the workflow
+  # filename is part of every trusted publisher configuration, so the same
+  # job elsewhere would fail against a perfectly correct one.
   npm-auth-check:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    permissions: {}
+    # `id-token: write` for the exchange; `contents: read` for the checkout
+    # that brings tools/ and the launcher manifest the package set is read
+    # from.
+    permissions:
+      id-token: write
+      contents: read
     steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # No `registry-url`: nothing in this job talks to the registry through
+      # npm, so there is no .npmrc to write. Node is here for the version
+      # assertion, which is the other thing this rehearsal is for — catching
+      # a runner image whose npm cannot do OIDC before a tag push does.
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
-      - name: Assert the npm token authenticates
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm whoami
+      # The same assertion `publish-npm` makes, made here a tag push earlier.
+      # Nothing in this job needs npm — it is the publish job's environment
+      # that is being rehearsed, and this and that job take their npm from
+      # the same runner image.
+      - name: Assert the toolchain is new enough for OIDC
+        run: |
+          set -euo pipefail
+          node_have="$(node --version)"
+          npm_have="$(npm --version)"
+          echo "node=$node_have npm=$npm_have (need node >= 22.14.0, npm >= 11.5.1)"
+          [ "$(printf '%s\n%s\n' 22.14.0 "${node_have#v}" | sort -V | head -1)" = 22.14.0 ]
+          [ "$(printf '%s\n%s\n' 11.5.1 "$npm_have" | sort -V | head -1)" = 11.5.1 ]
+      - name: Assert every package has a working trusted publisher
+        run: tools/npm_oidc_check.sh launchers/npm/cli/package.json
 
   # The pre-commit mirror, Luolc/limae-pre-commit. It exists so that
   # `pre-commit` can install limae from a prebuilt PyPI wheel instead of

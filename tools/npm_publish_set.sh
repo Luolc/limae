@@ -23,8 +23,10 @@
 # script never managed to look at. `--dry-run` goes to `npm publish`
 # verbatim; the registry lookups still run.
 #
-# Credentials: `npm publish` reads them from the npm configuration
-# (`NODE_AUTH_TOKEN` via actions/setup-node); nothing here touches them.
+# Credentials: nothing here touches them. `npm publish` authenticates
+# itself — in CI it exchanges the job's OIDC identity for a short-lived
+# registry token (`id-token: write`, see .github/workflows/release.yml);
+# elsewhere it reads whatever the npm configuration holds.
 
 set -euo pipefail
 shopt -s nullglob
