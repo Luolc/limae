@@ -77,7 +77,7 @@ impl Limits {
 /// What caching one batch found already under its index.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Stored {
-    /// Nothing; the batch is now on disk.
+    /// Nothing; the batch is now on disk, and it is the one under this index.
     Kept,
     /// The same batch, already there: the host sent it twice, which changes
     /// nothing.
@@ -100,22 +100,26 @@ pub enum Outcome {
 
 /// Cache one batch, unless the same index is already taken.
 ///
+/// Publishing is what decides who was first: [`state::keep`] refuses, across
+/// processes and in one step, when a batch is already under this index, and
+/// only then is that batch read and compared. Reading first and writing after
+/// would let two processes both find nothing and both write.
+///
 /// # Errors
-/// The existing batch would not read back, or the new one would not write.
+/// The new batch would not write, or the existing one would not read back.
 pub fn store(parts: &Path, index: usize, delta: &str) -> io::Result<Stored> {
-    match fs::read(state::part(parts, index)) {
-        Ok(existing) => {
-            return Ok(if existing == delta.as_bytes() {
+    match state::keep(parts, index, delta) {
+        Ok(()) => Ok(Stored::Kept),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            let existing = fs::read(state::part(parts, index))?;
+            Ok(if existing == delta.as_bytes() {
                 Stored::Repeated
             } else {
                 Stored::Conflict
-            });
+            })
         }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error),
+        Err(error) => Err(error),
     }
-    state::keep(parts, index, delta)?;
-    Ok(Stored::Kept)
 }
 
 /// Put the prefix of a message back together from its cached batches.

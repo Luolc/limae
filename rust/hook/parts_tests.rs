@@ -784,3 +784,28 @@ fn the_default_limits_are_the_values_the_cost_analysis_calls_for() {
         }
     );
 }
+
+/// Two batches for the same index at once, over and over: exactly one is
+/// kept and the other is a conflict, every time. A `store` that read first
+/// and wrote after would have both find nothing and both keep, and the pair
+/// would come back `(Kept, Kept)` some of the time (2026-09-11, review of
+/// PR #180: 59 of 500 pairs of real processes).
+#[test]
+fn two_batches_for_one_index_at_once_are_one_kept_and_one_conflict() -> TestResult {
+    let session = TempDir::new("store-race")?;
+    for round in 0..200 {
+        let parts = session.path().join(format!("parts/message-{round}"));
+        let (first, second) = (parts.clone(), parts.clone());
+        let a = std::thread::spawn(move || store(&first, 0, "甲\n"));
+        let b = std::thread::spawn(move || store(&second, 0, "乙\n"));
+        let mut outcomes = [
+            a.join().map_err(|_| "thread a panicked")??,
+            b.join().map_err(|_| "thread b panicked")??,
+        ];
+        outcomes.sort_by_key(|outcome| *outcome == Stored::Conflict);
+        assert_eq!(outcomes, [Stored::Kept, Stored::Conflict], "round {round}");
+        let kept = fs::read_to_string(state::part(&parts, 0))?;
+        assert!(kept == "甲\n" || kept == "乙\n", "round {round}: {kept:?}");
+    }
+    Ok(())
+}

@@ -39,6 +39,7 @@ use std::ffi::OsString;
 use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[cfg(unix)]
@@ -95,8 +96,9 @@ pub const RETENTION: Duration = Duration::from_secs(24 * 3600);
 /// message still arriving.
 pub const ORPHAN_RETENTION: Duration = Duration::from_secs(3600);
 
-/// The longest a sanitised id may be.
-const NAME_LIMIT: usize = 64;
+/// The longest an encoded id may be: two of them and a dot make an instance
+/// name, and a file name is 255 bytes on the filesystems this runs on.
+const NAME_LIMIT: usize = 120;
 
 /// Which step of a batch failed open.
 ///
@@ -159,30 +161,41 @@ impl Kind {
     }
 }
 
-/// Turn one id from the payload into a safe path segment.
+/// Turn one id from the payload into a safe path segment, keeping it unique.
 ///
-/// Session, message and turn ids are UUIDs, but they arrive from outside and
-/// become path segments here, so everything that is not a plain name is folded
-/// away rather than trusted. A dot is folded too: `..` is a perfectly
-/// ordinary-looking name that would leave the directory.
+/// Ids arrive from outside and become path segments here, so they are encoded
+/// rather than trusted: an ASCII letter, digit or hyphen stands for itself,
+/// and every other byte becomes `_` and its two hex digits — the underscore
+/// included, so that no two ids share an encoding. A UUID passes through
+/// unchanged; `..`, `/` and anything else that could leave the directory
+/// cannot come out. Nothing here presumes the host's ids are UUIDs: the
+/// encoding is one-to-one on any input, which is what a key has to be
+/// (ADR-0016 section 二「消息实例身份」).
 ///
-/// The result is empty when there was no usable id, which is how a caller knows
-/// there is nothing to do.
+/// The result is empty when there was no usable id — none, empty, or one so
+/// long its encoding could not be a file name — which is how a caller knows
+/// there is nothing to do. Cutting a long id short would make two ids one.
 #[must_use]
 pub fn identifier(value: Option<&str>) -> String {
-    value
-        .unwrap_or_default()
-        .chars()
-        .take(NAME_LIMIT)
-        .map(|character| if plain(character) { character } else { '_' })
-        .collect()
+    let mut encoded = String::new();
+    for byte in value.unwrap_or_default().bytes() {
+        if byte.is_ascii_alphanumeric() || byte == b'-' {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push_str(&format!("_{byte:02X}"));
+        }
+        if encoded.len() > NAME_LIMIT {
+            return String::new();
+        }
+    }
+    encoded
 }
 
 /// Return the directory name of one message instance.
 ///
 /// `message` and `turn` are expected to have been through [`identifier`]
-/// already. The two are joined on a dot, which [`identifier`] never lets
-/// through, so no two pairs of ids share a name. The turn is part of the key
+/// already. The two are joined on a dot, which [`identifier`] never produces,
+/// so no two pairs of ids share a name. The turn is part of the key
 /// so that the batches of one message never serve as the prefix of another
 /// that the host sends under the same message id in a later turn: an ordinary
 /// text batch left behind at index 1 would stand in for the missing fence
@@ -238,25 +251,44 @@ pub fn part(parts: &Path, index: usize) -> PathBuf {
     parts.join(format!("{index:06}{PART_SUFFIX}"))
 }
 
-/// Cache one batch of an unfinished message.
+/// Cache one batch of a message, unless one is already there.
 ///
-/// The batch is written under a temporary name and renamed into place in one
-/// step, because another batch of the same message may be reading this
-/// directory right now: the host starts one process per batch and does not wait
-/// for it before starting the next (2026-09-01, Claude Code 2.1.257: the
-/// dispatcher only serialises what the answers do to the screen, not the runs).
-/// The temporary name carries this process's id so that the exclusive create
-/// stays exclusive without a leftover from a dead sibling blocking it.
+/// The batch is written under a temporary name and then linked into place in
+/// one step, because another batch of the same message may be reading this
+/// directory right now: the host starts one process per batch and does not
+/// wait for it before starting the next (2026-09-01, Claude Code 2.1.257: the
+/// dispatcher only serialises what the answers do to the screen, not the
+/// runs). A hard link, not a rename: a rename replaces whatever is there, and
+/// two processes given the same index at once would each replace the other's,
+/// leaving no trace that they disagreed (2026-09-11, review of PR #180: 59 of
+/// 500 concurrent pairs). A link refuses when the name is taken, atomically
+/// and across processes, so exactly one batch is published under an index and
+/// the other process is told.
+///
+/// The temporary name carries this process's id and a counter, so that the
+/// exclusive create stays exclusive without a leftover from a dead sibling
+/// blocking it, and without two threads of one process meeting on it.
+///
+/// # Errors
+/// [`io::ErrorKind::AlreadyExists`] when a batch is already published under
+/// this index — this one was not written, and the caller decides what the
+/// disagreement means. Anything else is the state directory refusing.
 pub fn keep(parts: &Path, index: usize, delta: &str) -> io::Result<()> {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
     create_directory(parts)?;
     let writing = parts.join(format!(
-        "{index:06}.{}{TEMPORARY_SUFFIX}",
-        std::process::id()
+        "{index:06}.{}.{}{TEMPORARY_SUFFIX}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
     ));
     let mut file = create(&writing)?;
     file.write_all(delta.as_bytes())?;
     drop(file);
-    fs::rename(&writing, part(parts, index))
+    let published = fs::hard_link(&writing, part(parts, index));
+    // The temporary file has served either way; a leftover would only be a
+    // name the next sweep has to step over.
+    let _ = fs::remove_file(&writing);
+    published
 }
 
 /// Mark one message instance as abandoned.
@@ -340,11 +372,6 @@ pub fn prune(root: &Path, now: SystemTime) {
             }
         }
     }
-}
-
-/// Return whether a character may stand for itself in a path segment.
-fn plain(character: char) -> bool {
-    character.is_ascii_alphanumeric() || character == '_' || character == '-'
 }
 
 /// Append one line to the session's diagnostics file, creating what is missing.

@@ -6,8 +6,8 @@ use super::{
 
 use std::error::Error;
 use std::ffi::OsString;
-use std::fs::{self, OpenOptions};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -96,26 +96,40 @@ fn environment(pairs: &[(&str, &str)]) -> Vec<(OsString, OsString)> {
 
 // -- ids becoming path segments ------------------------------------------
 
-/// A well-formed id has to survive, or the folding below is just renaming
-/// everything and no arm here can tell the two apart.
+/// A UUID has to survive, or the encoding below is just renaming everything
+/// and no arm here can tell the two apart.
 #[test]
 fn a_well_formed_id_is_left_exactly_as_it_arrived() {
-    assert_eq!(identifier(Some("Sess-01_ab")), "Sess-01_ab");
+    assert_eq!(
+        identifier(Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")),
+        "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    );
 }
 
+/// Everything that is not a letter, a digit or a hyphen is spelled out as
+/// bytes, the underscore included, so that no two ids share a name: the
+/// pairs below would collide under a fold-to-underscore.
 #[test]
-fn an_id_that_names_a_parent_directory_is_folded_into_one_segment() {
-    assert_eq!(identifier(Some("../../escape")), "______escape");
-    assert_eq!(identifier(Some("a/b")), "a_b");
-    assert_eq!(identifier(Some("..")), "__");
+fn an_id_that_names_a_parent_directory_is_encoded_into_one_segment() {
+    assert_eq!(identifier(Some("../../escape")), "_2E_2E_2F_2E_2E_2Fescape");
+    assert_eq!(identifier(Some("a/b")), "a_2Fb");
+    assert_eq!(identifier(Some("a?b")), "a_3Fb");
+    assert_eq!(identifier(Some("a_b")), "a_5Fb");
+    assert_eq!(identifier(Some("..")), "_2E_2E");
+    assert_eq!(identifier(Some("甲")), "_E7_94_B2");
+    assert_ne!(identifier(Some("a/b")), identifier(Some("a?b")));
+    assert_ne!(identifier(Some("a_2Fb")), identifier(Some("a/b")));
 }
 
+/// An id too long to be a file name is no id at all, rather than the first
+/// part of one — cutting it short would make two ids one. The length is
+/// spelled out rather than read back from `NAME_LIMIT`: an assertion against
+/// the constant it is checking holds for every value of it.
 #[test]
-fn an_id_is_cut_to_the_name_limit_and_a_missing_one_is_empty() {
-    // The length is spelled out rather than read back from `NAME_LIMIT`: an
-    // assertion against the constant it is checking holds for every value of
-    // it.
-    assert_eq!(identifier(Some(&"x".repeat(200))), "x".repeat(64));
+fn an_id_too_long_to_name_a_file_is_empty_and_so_is_a_missing_one() {
+    assert_eq!(identifier(Some(&"x".repeat(120))), "x".repeat(120));
+    assert_eq!(identifier(Some(&"x".repeat(121))), "");
+    assert_eq!(identifier(Some(&"甲".repeat(41))), "");
     assert_eq!(identifier(None), "");
     assert_eq!(identifier(Some("")), "");
 }
@@ -133,7 +147,7 @@ fn a_session_id_cannot_name_a_directory_outside_the_state_root() -> TestResult {
     let directory = session(&root, &identifier(Some("../../escape")))?;
 
     assert_eq!(directory.parent(), Some(root.as_path()));
-    assert_eq!(names(&root)?, vec!["______escape".to_owned()]);
+    assert_eq!(names(&root)?, vec!["_2E_2E_2F_2E_2E_2Fescape".to_owned()]);
     assert_eq!(names(&nested)?, vec![STATE_DIRECTORY.to_owned()]);
     assert_eq!(names(scratch.path())?, vec!["nested".to_owned()]);
     Ok(())
@@ -279,39 +293,35 @@ fn a_batch_lands_under_its_index_and_leaves_nothing_half_written() -> TestResult
     Ok(())
 }
 
-/// The batch is written under a temporary name and renamed into place, so a
-/// target that this process may not write to is still replaced.
-///
-/// An implementation that opened the target directly would fail here with
-/// `EACCES`. It is the owner's own permissions that do the work, so this arm
-/// says nothing when the tests run as root — every other arm still holds.
+/// A batch already under an index is never replaced: the second `keep` is
+/// refused, says so by kind, and the first batch is what stays. This is the
+/// whole of what keeps two processes given the same index from silently
+/// writing over each other.
 #[test]
-fn a_batch_is_renamed_into_place_rather_than_written_over_the_target() -> TestResult {
-    let scratch = TempDir::new("atomic")?;
+fn a_batch_already_under_an_index_is_never_written_over() -> TestResult {
+    let scratch = TempDir::new("noreplace")?;
     let parts = scratch.path().join("parts/message");
-    fs::create_dir_all(&parts)?;
-    let target = part(&parts, 0);
-    let _ = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o400)
-        .open(&target)?;
+    keep(&parts, 0, "甲")?;
 
-    keep(&parts, 0, "乙")?;
-    assert_eq!(fs::read_to_string(&target)?, "乙");
+    let refused = keep(&parts, 0, "乙")
+        .err()
+        .ok_or("a second batch under the index must be refused")?;
+
+    assert_eq!(refused.kind(), std::io::ErrorKind::AlreadyExists);
+    assert_eq!(fs::read_to_string(part(&parts, 0))?, "甲");
     assert_eq!(names(&parts)?, vec![format!("000000{PART_SUFFIX}")]);
     Ok(())
 }
 
-/// The temporary name carries this process's id, so a leftover from a sibling
-/// that died mid-write does not stop the exclusive create.
+/// The temporary name carries this process's id and a counter, so a leftover
+/// from a sibling that died mid-write does not stop the exclusive create.
 #[test]
 fn a_leftover_temporary_file_from_another_process_does_not_block_a_batch() -> TestResult {
     let scratch = TempDir::new("leftover")?;
     let parts = scratch.path().join("parts/message");
     fs::create_dir_all(&parts)?;
     fs::write(
-        parts.join(format!("000000.4294967295{TEMPORARY_SUFFIX}")),
+        parts.join(format!("000000.4294967295.0{TEMPORARY_SUFFIX}")),
         "半",
     )?;
 

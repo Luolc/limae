@@ -8,39 +8,64 @@
 
 ## 一、怎么开
 
-hook 配置写进 `.claude/settings.local.json`。这个文件不入库 (见 `.gitignore`)，只影响在本仓开的会话。
+全部在**运行 Claude Code 的那台开发机**上做，一个终端，`cd` 到本仓 checkout。hook 配置写进 `.claude/settings.local.json`，这个文件不入库 (见 `.gitignore`)，只影响在本仓开的会话。
 
-```json
-{
-  "hooks": {
-    "MessageDisplay": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR/target/debug/limae\" hook"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
+1. **建出 binary**。终端里执行：
 
-两处要注意：
+   ```sh
+   cargo build
+   ```
 
-- **只挂 `MessageDisplay`，不要 `timeout`**：一批的成本是整篇重修的十几毫秒 (release 构建，ADR-0016 读数 C) 加最多 2 秒的兄弟批等待，落在宿主给 `MessageDisplay` 的默认 10 秒之内。`Stop` 不用挂：进程收到它只是静默退出 0，挂着是白起一次进程。
-- **走 `target/debug/limae` 这个已建好的 binary，不要写 `cargo run`**：这条命令每批新行都要起一次进程 (一条回复十几次到上百次)，而且各批是并发派发的 —— `cargo run` 会让它们排在 Cargo 的 build 目录锁上，一个一个来。没有 `target/debug/limae` 就先 `cargo build`；**改完 Rust 源码要重建**，否则挂着的是上一次建出来的那个。
+   完成判据：结尾一行 `Finished`，且 `ls target/debug/limae` 打印出这个路径。**改完 Rust 源码要重来这一步**，否则挂着的是上一次建出来的那个。
 
-改完**重开一个 Claude Code 会话**才生效。
+2. **写入 hook 配置**。终端里执行 (会覆盖已有的 `.claude/settings.local.json`；已有其它内容的把 `hooks` 这一段并进去)：
+
+   ```sh
+   mkdir -p .claude && cat > .claude/settings.local.json <<'EOF'
+   {
+     "hooks": {
+       "MessageDisplay": [
+         {
+           "hooks": [
+             {
+               "type": "command",
+               "command": "\"$CLAUDE_PROJECT_DIR/target/debug/limae\" hook"
+             }
+           ]
+         }
+       ]
+     }
+   }
+   EOF
+   ```
+
+   完成判据：`cat .claude/settings.local.json` 打出上面这段。**只挂 `MessageDisplay`，不要 `timeout`**：一批的成本是整篇重修的十几毫秒 (release 构建，ADR-0016 读数 C) 加最多 2 秒的兄弟批等待，落在宿主给 `MessageDisplay` 的默认 10 秒之内；`Stop` 不用挂，进程收到它只是静默退出 0。**走 `target/debug/limae`，不要写 `cargo run`**：每批新行都要起一次进程且各批并发派发，`cargo run` 会让它们排在 Cargo 的 build 目录锁上一个一个来。
+
+3. **重开一个 Claude Code 会话**：退出当前会话 (输入 `/exit`)，在同一个目录再执行 `claude`。已开着的会话不会读新配置。完成判据：见第 4 步。
+
+4. **验收，两臂**。在新会话里让 agent 原样输出一行带半角逗号的中文，例如让它回复 `你好,世界`。完成判据：屏幕上显示的是 `你好，世界` (逗号已是全角)。对照臂：把第 2 步的文件删掉、再重开一个会话、同样的请求，屏幕上是 `你好,世界` (半角逗号原样)。两臂不同，hook 才算真的挂上了；两臂相同 (都是半角) 就回到第 1 步核 binary、第 3 步核会话有没有重开。
 
 ## 二、怎么关
 
-按影响面从小到大：
+同一台开发机、同一个终端，按影响面从小到大三种，选一种：
 
-1. **只关本次**：把 `LIMAE_HOOK_DISABLE=1` 加进 `.claude/settings.local.json` 的 `env` 表 (或在启动 agent 的环境里设)，进程一进来就退出，连 stdin 都不读。
-2. **关掉这台机器上的本仓**：删掉上面那段 `hooks`，重开会话。
-3. **彻底**：删掉 `.claude/settings.local.json`。
+1. **只关本次会话**：启动时带环境变量：
+
+   ```sh
+   LIMAE_HOOK_DISABLE=1 claude
+   ```
+
+   进程一进来就退出，连 stdin 都不读。完成判据：让 agent 回复 `你好,世界`，屏幕上是半角逗号原样。
+
+2. **关掉这台机器上的本仓**：
+
+   ```sh
+   rm .claude/settings.local.json
+   ```
+
+   然后按第一节第 3 步重开会话。完成判据：同上 (半角逗号原样)。文件里若有 `hooks` 之外的内容，改为只删掉 `hooks` 那一段。
+
+3. **彻底**：与第 2 种相同，本仓没有别的开关。
 
 ## 三、旋钮与配置
 
@@ -101,17 +126,18 @@ tail "${TMPDIR:-/tmp}"/limae-hook/*/diagnostics.jsonl
 
 **这个文件里不会有正文** —— 只有上面四个字段。保留期跟分片一样，随会话目录一起在 24 小时后被清掉。
 
-看完痕迹再复现：
+看完痕迹再复现 (同一台开发机，本仓 checkout 里的终端)：
 
 ```sh
-# 手工喂一个中间批进去，看它输不输出 displayContent。
+probe=$(mktemp -d)
 printf '%s' '{"session_id":"probe","cwd":"'"$PWD"'",
 "hook_event_name":"MessageDisplay","turn_id":"t","message_id":"m","index":0,
 "final":false,"delta":"你好,世界\n"}' \
-  | TMPDIR=$(mktemp -d) ./target/debug/limae hook
+  | TMPDIR=$probe ./target/debug/limae hook
+cat "$probe"/limae-hook/probe/diagnostics.jsonl
 ```
 
-- 应输出 `{"hookSpecificOutput":{"hookEventName":"MessageDisplay","displayContent":"你好，世界\n"}}`。什么都不输出：先看 `cwd` 所在仓库的配置有没有关掉 zh-typography-1，再看 `$TMPDIR` 里的 `diagnostics.jsonl`。
+- 第一条命令应输出 `{"hookSpecificOutput":{"displayContent":"你好，世界\n","hookEventName":"MessageDisplay"}}`，第二条应报 `No such file` (没失败就没有这个文件)。第一条什么都不输出：先看 `cwd` 所在仓库的配置有没有关掉 zh-typography-1，再看第二条打出的诊断行。
 - 输出了但会话里没效果：多半是会话没重开，或挂着的 binary 是旧的。
 - stderr 出现 `limae hook: m/n earlier batches arrived`：宿主是并发派发每一批的，这条说明前面有一批没在 2 秒内落盘。这一批按原文显示，不会拿残缺的前缀去修 —— 只记片数，不记内容。同一件事在 `diagnostics.jsonl` 里是一行 `siblings` / `incomplete`。
 - **消息被打断** (esc、Ctrl-C，或 `--resume` 重启)：宿主不再发后续批次，已经上屏的各批都已经各自修过了，什么都不用做。它留下的分片目录会在一小时后被扫掉。
