@@ -209,3 +209,48 @@ tag 推上去后三家按「越不可撤销越先」发，且互相串着：`pub
 **中途失败后可以 `gh run rerun --failed` 续，靠的是两个发布 job 各自先问 registry**：PyPI 与 npm 都不允许同名文件 / 同 name@version 上传两次，所以「从头再传一遍」会撞上已经落地的那几个，而 PyPI action 的 `skip-existing` 分不开「同一份已传」与「别的东西占了这个名字」。`tools/pypi_upload_set.sh <project> <version> <dir>` 用 PyPI 的 JSON API 拿到该版本已有文件的 sha256，与本次成品逐个比：不在 → 留着上传，同 sha256 → 从目录删掉，不同 → 退出 1 什么都不传 (PyPI 答 404 即全传，其它状态码一律退出 1)；`tools/npm_publish_set.sh <dir> [--dry-run]` 对每个 tgz 用 `npm view <name@version> dist.integrity --json` 比本地 tarball 的 sha512，先比完全部再发第一个，任一不同即停；只有 registry 明确答 E404 才算「不在」，连不上、5xx 之类一律退出 1 (查不到不等于没有)。三臂读数 (2026-09-10 本机)：PyPI 侧对 `six 1.17.0` 的真 wheel 报 dropped、假文件名报 to be uploaded、改一字节的同名文件退出 1；npm 侧对 `npm pack` 下来的两个真包报 skipped、重新打包内容不同的那份退出 1、我们自己那 5 个未发布的包全部 to be published、registry 指到不可达地址时退出 1 且零次 publish；PyPI 侧另有一臂：全部 wheel 都已在 PyPI 时 `publish-pypi` 那步数出 `count=0`、上传 action 被跳过 (计数前开 `nullglob`，否则空目录数出的是模式自己那一个)。
 
 npm 首发用的是仓库 secret `NPM_TOKEN` (npm 的 Trusted Publishing 要求包已存在才能配)，有效期 7 天 (2026-09-10 存入)。首发之后换 OIDC、删 token，是后续任务。npm 上五个包全部带 `@limae` scope，scoped 包默认 restricted，所以 `publishConfig.access = "public"` 写在每个 `package.json` 里跟着包走，不依赖发布命令怎么写。
+
+## 五、pre-commit 镜像仓
+
+同一个 tag 还会写第三处：[`Luolc/limae-pre-commit`](https://github.com/Luolc/limae-pre-commit)。它是一个只有五个文件的仓 (`.pre-commit-hooks.yaml`、`pyproject.toml`、`README.md`、`AGENTS.md`、`LICENSE`)，**仓库语言英文** (与 `Luolc/homebrew-tap` 同一个理由：读者是任何生态的 pre-commit 用户)。
+
+**它解决的是什么**：pre-commit 一共 21 种 language，**没有一种是「下载预编译 binary」**。`language: python` 之所以等价于零额外依赖，是因为 pre-commit 自己就是 Python 写的 —— 能跑 pre-commit 就一定有 Python，ruff 钻的也是这个空子。于是消费方 `pip install` 的是我们已经在发的那个 wheel，里面是预构建二进制 (那个 wheel **没有一行 Python 代码**：只有 `limae-<version>.data/scripts/limae` 加 dist-info，`Root-Is-Purelib: false`)。
+
+**为什么是独立一个仓，不放本仓**：这条合同要求 pre-commit 能在克隆下来的 hook 仓根上 `pip install .`，也就是仓根要有 `pyproject.toml`。放本仓等于把 `pyproject.toml` 放回一个刚刚整体删除 Python 的仓 (ADR-0015 补记)，与那次改动的目的直接冲突。
+
+**两条 hook 并存，不是替换**：Release 只有四个 target、没有 Windows 产物，所以 Windows 上 `pip install limae` 找不到 wheel、镜像仓那条装不上，而本仓的 `language: rust` 从源码编译、在 Windows 上能用。取舍表在 [README](../../README.md)「接 pre-commit」，本仓的 `.pre-commit-hooks.yaml` 因此保留。
+
+### `mirror` job：推，不轮询
+
+ruff 用一个 `mirror.py` 轮询 PyPI，是因为它的镜像仓与主仓解耦。我们不解耦：`release.yml` 的 `mirror` job 在 `publish-pypi` 之后直接写过去，版本号自己就知道，不必让机器人去猜。
+
+`needs: publish-pypi` 是这里唯一的顺序要求，理由是**故障会挪地方**：镜像仓上一个 tag 若把 `limae==` 钉到 PyPI 还没有的版本，报错不在这次 run 里，而在几天后某个消费者的仓库里、`pip install` 的时候。
+
+job 做四件事，每件都留正向判据：
+
+1. **先断言 PyPI 真的服务这个版本，再写任何东西**：`uvx --from "limae==<version>" limae --help`。`needs` 只证明上传那一步返回了成功，不证明索引已经答得出来 —— 两者之差正是上一段说的那种故障。这一步同时也真跑了一次 wheel 里的二进制。
+2. **改 pin**：`sed` 改 `pyproject.toml` 的 `dependencies` 那一行，随后 `grep -Fxq` 断言改完的文件里**确实**有那一行。判据在 grep 上，不在 sed 上 —— `sed` 的模式一个都没匹配上时它照样退出 0。
+3. **提交**：pin 没变就不提交 (重跑时的常态)，变了才 commit 并推 `main`。
+4. **打 tag** `v<version>`：tag 已存在且指向本次要打的那个 commit，就是这个 job 跑过一次，绿；指向别处则退非零，**不移动别人的 tag**。`gh run rerun --failed` 因此可以续。
+
+   这一步的比较对象必须是 **commit**，不是 tag ref 本身指向的对象。annotated tag 那一行 `ls-remote` 给的是 **tag object** 的 sha，而不是它指向的 commit；且 `git ls-remote --tags origin "refs/tags/<tag>"` 这种带 pattern 的查询**会把 `^{}` 那行滤掉**，于是拿一个 tag object 去比一个 commit，本该绿的重跑会红。所以这里列出全部 tag、优先取 `refs/tags/<tag>^{}` 那行的 sha，没有才退回直接那行。这个 job 自己打的是 lightweight tag，但手工或从 GitHub 界面切出来的是 annotated，两者要分得开而不是假定不会出现。
+
+   四臂读数 (2026-09-10 本机，隔离的 bare remote，同一段代码只换 `$TAG`)：annotated tag 指向 `HEAD` → 退 0；lightweight tag 指向 `HEAD` → 退 0；**annotated tag 指向另一个 commit → 退 1** (对照臂：一个恒判相等的「修法」在这一臂上会绿)；tag 不存在 → 走创建分支。改回带 pattern 的写法时，第一臂给出的是 tag object 的 sha、比较不等 (审查方 2026-09-10 在 PR #169 以 P1 提出，本机独立复现)。
+
+**凭证**：仓库 secret `MIRROR_TOKEN`，一枚能写 `Luolc/limae-pre-commit` 的 token，由用户创建并存入。job 的 `permissions: {}` —— 它不碰本仓，`GITHUB_TOKEN` 一项权限都不需要。
+
+### 镜像仓里哪些是生成的
+
+只有 `pyproject.toml` 里 `limae==` 那一行，和 `v<version>` 那些 tag。`.pre-commit-hooks.yaml`、`README.md`、`AGENTS.md`、`LICENSE` 都是手写的，workflow 一个字都不碰 —— 改 hook 定义 (`entry`、`files`、加一个 id) 是对那个仓的普通改动。这条写在那个仓的 `AGENTS.md` 里。
+
+### `args:` 里不放规则开关
+
+`--disable` / `--enable` 是**替换**配置文件而不是叠加 (`rust/config.rs` 的 `resolve`：`if cli.is_present() { return resolve_cli(cli); }`)，命令行上一旦出现其中任何一个，`limae.toml` 与 `pyproject.toml` 的 `[tool.limae]` 根本不会被读，**且不报错、不警告**。所以镜像仓的 hook 定义里没有 `args:`，README 两边都写明规则一律进配置文件。
+
+可执行证据 (2026-09-10 本机，`uvx --from limae==0.13.2 limae`，消费仓根放 `disable = ["zh-typography-4"]` 的 `limae.toml`、一份含 `中A` 的 `.md`)：不带 flag 时退出 0、报 `OK: 1 file(s) clean`；带一个**无关的** `--disable zh-typography-3` 时退出 1 并报出 `zh-typography-4`，摘要行是 `1 error(s), 0 warning(s)` —— 配置被整个忽略了，而输出里没有任何一句提到这件事。
+
+### 验收：真消费一次，分辨力在失败探针上
+
+形状照 `tools/check_precommit_consumer.sh`：全新空仓 + 隔离的 `PRE_COMMIT_HOME`，`.pre-commit-config.yaml` 指向镜像仓，`PATH` 最前面放一个同名的失败探针 (`limae` 退 97)。**没有这一臂，整个验收在「镜像仓工作了」与「这台机器上本来就有 limae」两种情况上给出相同输出。**
+
+2026-09-10 本机读数 (`rev` 取镜像仓首个 commit `1605d4da`)：`install-hooks` 退 0，缓存里正好一个 `py_env-*/bin/limae` 且它跑得起来、**没有任何 `rustenv-*`** (装的是 wheel 不是编译产物)；违规退 1 且报 `zh-typography-4`、文件未被改写；`--fix` 那一臂退 1 且写回 `中 A`；修后复查退 0；放 `limae.toml` 关掉 `zh-typography-4` 后同一份违规文件退 0 (配置被尊重)；把 `--disable zh-typography-3` 写进 `args:` 后退 1 并报 `zh-typography-4` (配置被忽略)。
