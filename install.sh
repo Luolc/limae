@@ -260,7 +260,13 @@ main() {
   # the "already on PATH" test below would miss and an extra, equivalent
   # entry would be written to the rc file.
   bin_dir="${LIMAE_INSTALL_DIR:-$HOME/.local/bin}"
-  bin_dir="${bin_dir%/}"
+  case "$bin_dir" in
+    # The root directory is spelled with its slash and has nothing to strip;
+    # taking it off leaves the empty string, and every path built from it
+    # afterwards is wrong.
+    /) ;;
+    */) bin_dir="${bin_dir%/}" ;;
+  esac
   target="$(detect_target)"
   version="${LIMAE_VERSION:-$(resolve_version)}"
   tarball="$BIN_NAME-$target.tar.gz"
