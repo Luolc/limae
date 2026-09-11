@@ -8,94 +8,68 @@
 
 ## 一、怎么开
 
-全部在**运行 Claude Code 的那台开发机**上做，一个终端，`cd` 到本仓 checkout。hook 配置写进 `.claude/settings.local.json`，这个文件不入库 (见 `.gitignore`)，只影响在本仓开的会话。
+### Codex
 
-1. **建出 binary**。终端里执行：
+本仓已经把 hook 写进 `.codex/config.toml`，不会改 `~/.codex/config.toml`，也不会影响其它仓库；所有安装了 limae 并信任 limae checkout 的 clone 都会启用。试用配置把 A/B 采样率固定为 0，所以每条回复最多追加一份润色版。
 
-   ```sh
-   cargo build
-   ```
+1. 在运行 Codex 的开发机终端进入 limae checkout，执行 `cargo build`。看到结尾一行 `Finished`，且 `target/debug/limae` 存在，即为完成。
+2. 在同一终端从这个 checkout 启动一个新的 Codex 会话。若出现 hook trust 界面，先确认正文列出的命令来自本仓 `.codex/config.toml`，再选择信任；进入输入框即为完成。
+3. 在 Codex 输入一段超过 200 个非空白字符的合成中文正文。原回复下方出现 `── 润色 ──` warning 块，或会话态诊断记录了失败原因，即为 hook 已触发。
 
-   完成判据：结尾一行 `Finished`，且 `ls target/debug/limae` 打印出这个路径。**改完 Rust 源码要重来这一步**，否则挂着的是上一次建出来的那个。
+Codex 的 `Stop` 一次给出完整的 `last_assistant_message`，所以不走下面的分批缓存。hook 只返回 `systemMessage`，不返回官方明定会续跑的 `decision: "block"` 或 `reason`。原回复字段没有被 hook 改写；Codex 是否另存 warning 事件不由这件事推出。Codex 没有 Claude Code 的 `additionalContext` 回注通道，不能把 `systemMessage` 上的 A/B 编号当成模型已经收到的上下文；本仓配置因此关闭 A/B。
 
-2. **读一遍配置文件的现状**。下面这条命令贯穿本节与下一节，它解析 JSON 后按结构计数、不看空格排版，文件不在或不是合法 JSON 时以非零退出并打印 traceback；终端里执行：
+`codex-cli 0.153.0` 在 2026-09-05 的 linked-worktree 实测没有加载该 worktree 自己的 hook。需要在合入前的 linked worktree 试验时，把 `.codex/config.toml` 的 `hooks.Stop` 作为会话级配置传入；正常安装与最终试用应在主 checkout 或普通 clone 中验收。已有 Codex 会话是否热加载合入后的配置也要单独确认，没确认前就按「新开或 resume 一次会话」处理。
 
-   ```sh
-   python3 - .claude/settings.local.json <<'EOF'
-   import json, sys
-   duplicates = 0
-   def pairs(items):
-       global duplicates
-       keys = [key for key, _ in items]
-       duplicates += len(keys) - len(set(keys))
-       return dict(items)
-   with open(sys.argv[1]) as file:
-       settings = json.load(file, object_pairs_hook=pairs)
-   hooks = settings.get("hooks", {})
-   commands = [hook.get("command", "") for matchers in hooks.values() for matcher in matchers for hook in matcher.get("hooks", [])]
-   limae = sum(command.endswith('target/debug/limae" hook') for command in commands)
-   print(f"limae={limae} commands={len(commands)} duplicate_keys={duplicates} top={','.join(sorted(settings))}")
-   EOF
-   ```
+### Claude Code
 
-   读数三种：打印 `No such file or directory` 的 traceback → 文件不在，走第 3 步；打印其它 traceback → 文件在但不是合法 JSON，先用编辑器修好再来；打印一行 `limae=… commands=… duplicate_keys=… top=…` → 文件在，记住 `commands=` 后那个数 (下面叫 N)，走第 4 步。
+hook 配置写进 `.claude/settings.local.json`。这个文件不入库 (见 `.gitignore`)，只影响在本仓开的会话。
 
-3. **不存在：整份创建**。终端里执行 (只在第 2 步读到「文件不在」时执行，它会新建整个文件)：
+```json
+{
+  "hooks": {
+    "MessageDisplay": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/target/debug/limae\" hook",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/target/debug/limae\" hook",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
+```
 
-   ```sh
-   mkdir -p .claude && cat > .claude/settings.local.json <<'EOF'
-   {
-     "hooks": {
-       "MessageDisplay": [
-         {
-           "hooks": [
-             {
-               "type": "command",
-               "command": "\"$CLAUDE_PROJECT_DIR/target/debug/limae\" hook"
-             }
-           ]
-         }
-       ]
-     }
-   }
-   EOF
-   ```
+三处不能省：
 
-   完成判据：再跑一次第 2 步的命令，打印 `limae=1 commands=1 duplicate_keys=0 top=hooks`。做完跳到第 5 步。
+- **`timeout` 必须给，而且要大于模型一次调用的时间**。`MessageDisplay` 事件在宿主里的默认超时是 10 秒 (2026-09-01 在 Claude Code `2.1.257` 的二进制里核到：每个 hook 取 `timeout * 1000`，没写才用事件的默认值，`MessageDisplay` 那个默认值是 `1e4`)。不给 `timeout`，模型永远赶不上，每条回复都白跑一次。
+- **两个事件用同一条命令**：进程按 stdin 里的 `hook_event_name` 自己分流，不需要参数。
+- **走 `target/debug/limae` 这个已建好的 binary，不要写 `cargo run`**：这条命令每批新行都要起一次进程 (一条回复约十次)，而且 `MessageDisplay` 的各批是并发派发的 —— `cargo run` 会让它们排在 Cargo 的 build 目录锁上，一个一个来。没有 `target/debug/limae` 就先 `cargo build`；**改完 Rust 源码要重建**，否则挂着的是上一次建出来的那个。本机 2026-09-07 实测 (10 次)：Rust binary 约 2 ms 一次。
 
-4. **已存在：只追加 limae 这一个 matcher**。用你平时的编辑器打开文件 (终端里 `"${EDITOR:-vi}" .claude/settings.local.json`)，不删已有的任何东西，按文件现状三选一：
-
-   - 已有 `"MessageDisplay": [ … ]` 数组的：在这个数组末尾追加第 3 步里 `"MessageDisplay": [` 与 `]` 之间那**一个** `{ "hooks": [ { "type": "command", "command": … } ] }` 对象 (前一个对象末尾补逗号)，不要新开第二个 `"MessageDisplay"` 键 —— JSON 允许重复键、宿主只会读到其中一个。
-   - 有 `"hooks"` 表、没有 `"MessageDisplay"` 的：把第 3 步花括号里 `"MessageDisplay": [ … ]` 整项加进 `"hooks"` 表 (与已有的 `"Stop"` 之类并列，前一项末尾补逗号)。
-   - 没有 `"hooks"` 表的：把第 3 步的 `"hooks": { … }` 整项加到顶层对象里。
-
-   完成判据：保存后再跑一次第 2 步的命令，打印 `limae=1 commands=<N + 1> duplicate_keys=0 top=…`，且 `top=` 后的键与改前一样多、只可能多出 `hooks` —— limae 的命令恰有一处、既有的 hook 命令一条没少、没有重复键。`limae=0` 是没加上，`limae=2` 是加了两次，`commands` 比 `N + 1` 小是误删了别人的，`duplicate_keys` 非 0 是开了重复键；traceback 是 JSON 写坏了，回编辑器改。
-
-5. **重开一个 Claude Code 会话**：退出当前会话 (输入 `/exit`)，在同一个目录再执行 `claude`。已开着的会话不会读新配置。完成判据：见第 6 步。
-
-6. **验收，两臂，做完是开着的**。正臂：在新会话里让 agent 原样输出一行带半角逗号的中文，例如让它回复 `你好,世界`。完成判据：屏幕上显示 `你好，世界` (逗号已是全角)。对照臂**不动配置文件**：`/exit` 退出，用 `LIMAE_HOOK_DISABLE=1 claude` 再开一个会话，同样的请求，屏幕上是 `你好,世界` (半角逗号原样)；再 `/exit`，用不带变量的 `claude` 开回正常会话，重复正臂一次，看到全角逗号即完成 —— 此时 hook 是开着的。两臂相同 (都是半角) 就回到第 1 步核 binary、第 5 步核会话有没有重开。
+改完**重开一个 Claude Code 会话**才生效。
 
 ## 二、怎么关
 
-同一台开发机、同一个终端，按影响面从小到大三种，选一种：
+Codex 只关本次时，在启动 Codex 前给进程环境设置 `LIMAE_HOOK_DISABLE=1`；完成判据是长回复下方不再出现 `── 润色 ──`。要关掉本仓 Codex 试用，须另提 PR 删除 `.codex/config.toml`，不直接改 main。
 
-1. **只关本次会话**：启动时带环境变量：
+Claude Code 按影响面从小到大：
 
-   ```sh
-   LIMAE_HOOK_DISABLE=1 claude
-   ```
-
-   进程一进来就退出，连 stdin 都不读。完成判据：让 agent 回复 `你好,世界`，屏幕上是半角逗号原样。
-
-2. **关掉这台机器上的本仓**。先跑第一节第 2 步那条命令读现状。打印 `limae=1 commands=1 duplicate_keys=0 top=hooks` (整份文件只有 limae 这一条 hook、没有别的顶层键) 就整个删掉：
-
-   ```sh
-   rm .claude/settings.local.json
-   ```
-
-   否则 (有别的 hook，或有 `env`、`permissions` 等别的顶层键) 用编辑器打开文件，只删掉 `command` 是 `… target/debug/limae" hook` 的那**一个** `{ "hooks": [ { … } ] }` 对象；删完若 `"MessageDisplay"` 数组空了，连这一项一起删，`"hooks"` 表随之空了也一起删；别的 hook 与别的顶层键一概不动。完成判据：再跑一次第一节第 2 步的命令，打印 `limae=0 commands=<N − 1> …`，`top=` 后除了可能少掉 `hooks` 之外与删前一样 —— limae 已不在，只少了它一条。然后按第一节第 5 步重开会话，让 agent 回复 `你好,世界`，屏幕上是半角逗号原样。
-
-3. **彻底**：与第 2 种相同，本仓没有别的开关。
+1. **只关本次**：把 `LIMAE_HOOK_DISABLE=1` 加进 `.claude/settings.local.json` 的 `env` 表 (或在启动 agent 的环境里设)，进程一进来就退出，一个模型都不调。
+2. **关掉这台机器上的本仓**：删掉上面那段 `hooks`，重开会话。
+3. **彻底**：删掉 `.claude/settings.local.json`。
 
 ## 三、旋钮与配置
 
