@@ -94,7 +94,7 @@ hook 读的规则配置**一个字不改**：从事件的 `cwd` 起按今天的 
 ### 四、退役的旋钮与状态
 
 - 环境变量：`LIMAE_HOOK_MIN_CHARS`、`LIMAE_HOOK_AB_RATE`、`LIMAE_HOOK_TIMEOUT` 退役；`LIMAE_HOOK_DISABLE` 保留。`LIMAE_ENGINE` 与 `[polish]` 表继续只归 `limae polish` 管。
-- 会话态目录下的 `ab/` (A/B 台账) 与 `polish/` (单路记录) 不再写入；`pending.json` 不再产生。它们的边界规则由 §二 接过，用来守剩下的整数文件与诊断行。
+- 会话态目录下的 `ab/` (A/B 台账) 与 `polish/` (单路记录) 不再写入；`pending.json` 不再产生。它们的边界规则由 §二 接过，用来守留下的原文分片与诊断行。
 - 中文双字编号词表 (`rust/hook/ab.rs` 的 `CODE_NAMES`)、候选池 (`CANDIDATES`)、`Stop` 回注 (`ab::context`) 全部失去对象，随下一个任务删除。
 
 ### 五、diagnostics 仍记，只记失败，Step 与 Kind 重定
@@ -104,7 +104,7 @@ hook 读的规则配置**一个字不改**：从事件的 `cwd` 起按今天的 
 | | 处置 | 理由 |
 | --- | --- | --- |
 | Step `single` / `ab` / `record` | 删 | 没有引擎调用、没有 A/B、没有记录，三步都不存在了 |
-| Step `assemble` → `siblings` | 改名 | 它不再拼整篇，只等兄弟批次的围栏计数；名字要说它做的事 |
+| Step `assemble` → `siblings` | 改名 | 它等的是兄弟批次的原文分片、拼的是到这一批为止的前缀，不再是「整篇」；名字要说它做的事 |
 | Step `fix`、`display` | 留 | 跑规则、顶层崩溃，都还在 |
 | Kind `Engine(…)` 九种 | 删 | 没有引擎；`FailureReason` 本身留在 `rust/polish/` 给 CLI 用 |
 | Kind `repaired` | 删 | 它记「规则改动了模型的重写」，是选型信号；现在改动就是 hook 的本职 (读数 D：一半的批次会改)，记它只是噪音 |
@@ -137,7 +137,7 @@ polish 从此有**两条并列的消费路径、一个正本**：
 
 - **ADR-0009**：§二 (按批缓存、末批整段改写、短消息阈值)、§三 (A/B 双模型对照)、§四 (中文双字编号)、§五 (`Stop` 回注)、§八 (引擎隐私边界与台账风险面) 由本 ADR 取代。§一 (挂 `MessageDisplay`、display-only 的推论)、§六 (fail-open)、§七 (先本仓自试再交 machine-setup) 的内容由本 ADR §一 接过并成为正本 —— 被取代的 ADR 不能再当正本，指回去只会把读者弹到一份大半作废的文件。§七 那条路径本身仍然成立：`.claude/settings.local.json` 先在本仓试，稳定后经 `machine-setup` 分发到用户级，本 ADR 不排期。
 - **ADR-0011**：整份取代。它的对象 (A/B 回注) 没有了。它「后果」里那条「已采到的两轮判词不是盲评结果、不能当型号证据」仍是事实记录，不因取代而改变。
-- **ADR-0012**：整份取代。brief 预判它是「部分修订而非取代，因为 `limae polish` 仍产出记录」，读代码后推翻：`record_run` 与 `RUN_DIRECTORY` 的唯一调用方是 `rust/hook/block.rs`，`limae polish` 子命令从不写会话态记录，所以 ADR-0012 的对象随 hook 的引擎调用一起消失。它对 ADR-0008 §十「不写盘」的澄清 (指不动用户文件、不产生旁路产物，不指不许有会话态临时状态) 仍然正确，本 ADR §二 的整数文件正是按这个理解存在的。
+- **ADR-0012**：整份取代。brief 预判它是「部分修订而非取代，因为 `limae polish` 仍产出记录」，读代码后推翻：`record_run` 与 `RUN_DIRECTORY` 的唯一调用方是 `rust/hook/block.rs`，`limae polish` 子命令从不写会话态记录，所以 ADR-0012 的对象随 hook 的引擎调用一起消失。它对 ADR-0008 §十「不写盘」的澄清 (指不动用户文件、不产生旁路产物，不指不许有会话态临时状态) 仍然正确，本 ADR §二 的原文分片正是按这个理解存在的。
 - **ADR-0014**：整份取代 (§六)。
 - **ADR-0008**：§十 P0 (hook 里的一次输出润色、A/B 挂在这里、§五 的判据靠它采集) 由本 ADR 取代；§二 (三个子命令) 与 §六 (hook 失败就用原文) 不变。**§五 (模型默认由 A/B 决定) 的证据路径不复存在**，处置写在「后果」第一条。
 - **ADR-0015**：不改。阶段 D 的表记录的是当时交付了什么，本 ADR 改造的就是那份交付物。
