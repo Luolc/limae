@@ -18,6 +18,10 @@
 # publisher that does not exist, or whose organization / repository /
 # workflow filename does not match this run, cannot answer with one.
 #
+# The token coming back is the verdict, not the status code that carries
+# it: npm answers a successful exchange with 201 Created, and an answer
+# with no token in it is a failure at any status.
+#
 # The endpoint is npm's own, read out of the CLI rather than out of the
 # documentation, so it is not a published API and can move. It moving
 # fails this check while publishing still works — a false negative, which
@@ -100,19 +104,20 @@ for name in "${names[@]}"; do
     -H @"$work/npm.header" \
     "https://${registry_host}/-/npm/v1/oidc/token/exchange/package/${escaped}")
   keys=$(jq -r 'if type == "object" then (keys | join(",")) else type end' "$work/exchange.json" 2>/dev/null || echo 'unparseable')
-  if [[ $status != 200 ]]; then
-    message=$(jq -r '.message // empty' "$work/exchange.json" 2>/dev/null | head -c 200 || true)
-    printf '%s: exchange failed, HTTP %s, keys [%s]%s\n' \
-      "$name" "$status" "$keys" "${message:+, message: $message}" >&2
-    failed+=("$name")
-    continue
-  fi
-  # HTTP 200 is not the check: the answer has to carry a token. Values
-  # never leave this line — `jq -e` reports the shape through its exit code.
-  if jq -e '(.token | type) == "string" and (.token | length) > 0' "$work/exchange.json" >/dev/null; then
-    printf '%s: exchange ok, HTTP 200, token issued, keys [%s]\n' "$name" "$keys"
+  # The status code is reported, not judged: npm answers this endpoint with
+  # 201 Created (run 34568232100, 2026-09-11, all five packages), and a check
+  # spelled `== 200` turned that into a red run while a token was sitting in
+  # the response. Which 2xx the registry picks is its business; what this
+  # script asked for is a token, so having one is the whole judgement — an
+  # answer without one fails whatever its status, 404 and 401 included.
+  # Values never leave this line: `jq -e` reports the shape through its exit
+  # code.
+  if jq -e '(.token | type) == "string" and (.token | length) > 0' "$work/exchange.json" >/dev/null 2>&1; then
+    printf '%s: exchange ok, HTTP %s, token issued, keys [%s]\n' "$name" "$status" "$keys"
   else
-    printf '%s: HTTP 200 but no token in the response, keys [%s]\n' "$name" "$keys" >&2
+    message=$(jq -r '.message // empty' "$work/exchange.json" 2>/dev/null | head -c 200 || true)
+    printf '%s: no token in the response, HTTP %s, keys [%s]%s\n' \
+      "$name" "$status" "$keys" "${message:+, message: $message}" >&2
     failed+=("$name")
   fi
 done
