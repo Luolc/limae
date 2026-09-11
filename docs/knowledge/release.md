@@ -269,7 +269,15 @@ npm 的 Trusted Publishing **是逐包配的，没有 scope 级或 org 级入口
 记在这里是为了到时候不必重新查一遍，**这些今天都还没做**：
 
 - `publish-npm` 加 `id-token: write` (`contents: read` 保留，`actions/checkout` 要读仓库)。
-- **`actions/setup-node` 那一步去掉 `registry-url`，而不是只删 `NODE_AUTH_TOKEN`。** 带 `registry-url` 时它会往 `.npmrc` 写一行 `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`；`NODE_AUTH_TOKEN` 不存在时它展开成空串，npm 认为「auth 已经配好了」，于是**根本不发起 OIDC 交换**，报 `ENEEDAUTH` 或 404。(来源：[actions/setup-node#1551](https://github.com/actions/setup-node/issues/1551)、[npm/documentation#1960](https://github.com/npm/documentation/issues/1960)，2026-09-10 读，两个 issue 都还开着。**这一条是从 issue 读来的，本仓没有在 runner 上亲验过。**)
+- **`registry-url` 与 OIDC 的那件事：按现在的读数，本仓多半不必动它 —— 但这要在迁移 PR 里用两臂在 runner 上定，不在这里定。**
+
+  曾经有一个真实的坑：`actions/setup-node` 会往 `.npmrc` 写一行 `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`，并且**导出一个占位符 `NODE_AUTH_TOKEN: XXXXX-XXXXX-XXXXX-XXXXX`**，npm 据此认为 auth 已配置，于是不发起 OIDC 交换，报 `ENEEDAUTH` 或 404。
+
+  **它已经修了，而且修在我们用的那条线上。** [actions/setup-node#1440](https://github.com/actions/setup-node/issues/1440) 由 PR #1558 修复，**只进了 v7 线**；[#1551](https://github.com/actions/setup-node/issues/1551) 作为它的重复被关闭，关闭评论里 maintainer 报告用同一份配置 (带 `registry-url`、占位符在场) 成功用 OIDC 发布过。两个 issue **都已 CLOSED** (2026-09-10 `gh issue view` 读：#1551 closed 2026-05-18、#1440 closed 2026-05-29)；仍然开着的只有 [npm/documentation#1960](https://github.com/npm/documentation/issues/1960)。
+
+  **本仓两处 `setup-node` 都已经钉在 `@v7`** (`release.yml` 的 `publish-npm` 与 `npm-auth-check`)。两臂读数 (2026-09-10 本机，抓 action 自己的 `dist/setup/index.js` grep 那个占位符串)：**`v6` 命中 1 次，`v7` 命中 0 次** —— 修复确实在 v7 里，不在 v6 里。npm 官方 Trusted Publishers 文档给的 GitHub Actions 完整示例**也仍然带着 `registry-url`**。
+
+  **所以「去掉 `registry-url`」是一个候选 workaround，不是硬要求。** 上面那个 grep 只证明占位符不在 v7 的包里，**不证明 OIDC 在我们这条流水线上真能换到 token** —— 两者不是一回事。迁移 PR 里按这个顺序做：**先照官方示例原样跑** (保留 `registry-url`、不设 `NODE_AUTH_TOKEN`)，通了就到此为止；**不通再上 workaround**，并且两臂都留读数 (`sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG"`，或干脆去掉 `registry-url`)。**不要在没跑之前就把 workaround 写成步骤。**
 - npm CLI **>= 11.5.1**、Node **>= 22.14.0** (官方文档)。`node-version: 24` 今天满足 Node 那一半，npm 那一半随 runner 镜像走 —— 改 CI 时加一条正向断言把版本打进日志，别假定。
 - **不要加 `--provenance`。** OIDC + 公开仓 + 公开包三条同时成立时 npm 自动生成 provenance，官方原文：「This happens by default—you don't need to add the `--provenance` flag to your publish command.」三条我们都成立。
 - `npm-auth-check` 一并删掉：它验的是 `NPM_TOKEN` (`npm whoami`)，token 没了它就没有对象。**npm 侧没有 crates.io `auth-check` 那样的等价物** —— npm 的 OIDC 交换只挂在 `npm publish` 上，没有一条「只认证不发布」的命令。所以这一步换来的是**预演里少一条 npm 凭证臂**，OIDC 通不通只有下一次真发布才知道；这是这次迁移的已知代价，不要拿一个看起来像检查的东西补上它。
