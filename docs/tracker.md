@@ -233,6 +233,8 @@ backlog 的正本，由实现方在改动所属的 PR 里记账，`limae-orchest
   **留下的开放问题**：ADR-0008 §五 的默认型号证据路径 (hook 的 A/B) 没有了，而它从未产出过合格证据 (ADR-0011 记的两轮不是盲评，随后 A/B 一直关着)。处置是冻结暂定默认 (terra / sonnet / grok-4.6)、判据不动、证据来源转为开放 —— 要动默认型号得另建离线对照。polish 走 skill 的那条路径没有型号可选，只有 CLI 那条还需要默认，问题变轻但没消失。下面「claudish 调研产出」里「`polish` 默认模型由 A/B 决定」与「A/B 单侧失败时降级」两条据此改写。
   **下一个任务要撞的门，ADR 已点名**：`tools/check_repo_contracts.sh` 承诺 1 (Codex Stop 钩子) 随 `.codex/config.toml` 删除、两臂验收；承诺 2 (手册 `kind` 表) 会在 `hook-kinds` 改后红一次，是设计好的红；`docs/knowledge/polish-hook-self-trial.md` 整份改写、README polish 一节末尾那句过期。
 
+- **两份裁决报告入库** (2026-09-11，本 PR)：Astra ([`hook-batch-fence-debate-astra.md`](research/hook-batch-fence-debate-astra.md)) 与 Fable ([`hook-batch-fence-debate-fable.md`](research/hook-batch-fence-debate-fable.md)) 的独立裁决报告照原样归档进 `docs/research/`，正文一字未改；ADR-0016 那句「届时补仓内链接」在本 PR 补上。**唯一的编辑**是把 Astra 报告「六、复跑与交接」引用的 7 个绝对路径旁支文件 (`.rs` / `.py` / `.jsonl` / `.json`) 内联成文末附录，并把该节路径换成指向附录锚点的仓内链接 —— 只归档 `.md` 会留下 7 条注定失效的引用，且不能把 `.py` / `.rs` 单独入库 (Python 参考实现已按 ADR-0015 补记整体删除，不能从研究文档这个后门溜回来)。Fable 报告经 grep 确认没有同类绝对路径引用，无需内联。`~/scratch/limae/` 下原始的 2 份报告与 7 个旁支文件已删除。
+
 ## 愿景 (正本 `docs/adr/0005-agent-native-positioning.md`，这里只记条目)
 
 - **LLM 语义润色**：agent 调用的语义层润色特性，与确定性 lint 互补。
