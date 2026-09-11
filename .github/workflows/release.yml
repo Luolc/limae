@@ -31,9 +31,8 @@ on:
   # the default branch, so the jobs it runs have to live in this file (see
   # the note on `auth-check`). One dispatch is the whole rehearsal:
   # `auth-check` and `npm-auth-check` verify credentials, `launchers`
-  # repackages an existing Release as a dry run, `homebrew` renders that
-  # Release's formula and installs it, and `pypi-auth-check` runs only when
-  # asked for, because it is not free (see the job).
+  # repackages an existing Release as a dry run, and `homebrew` renders that
+  # Release's formula and installs it.
   workflow_dispatch:
     inputs:
       tag:
@@ -42,11 +41,6 @@ on:
         description: "Existing Release tag (v<major>.<minor>.<patch>) the launcher and Homebrew dry runs work from"
         required: true
         type: string
-      pypi_auth_check:
-        description: "Also mint a PyPI Trusted Publishing token (creates the PyPI project if it does not exist yet)"
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -55,7 +49,7 @@ jobs:
   # `on:` has exactly two triggers, so `github.event_name == 'push'` is the
   # tag push and nothing else. The four publishing jobs (`create-release`,
   # `publish`, `publish-pypi`, `publish-npm`) belong to it; `launchers`
-  # runs on both; the three `*auth-check` jobs belong to the dispatch.
+  # runs on both; the two `*auth-check` jobs belong to the dispatch.
   # `upload-assets` needs this job and is skipped with it.
   create-release:
     if: github.event_name == 'push'
@@ -217,8 +211,13 @@ jobs:
           packages-dir: dist/pypi
 
   # A long-lived token for now: npm's Trusted Publishing can only be set up
-  # once the package exists. Switching to OIDC and deleting `NPM_TOKEN` is
-  # the follow-up after the first release. The platform packages go first,
+  # once the package exists. All five packages exist now, so the switch to
+  # OIDC is unblocked, but it is not free to sequence: npm's trusted
+  # publishers are configured per package, by hand, on npmjs.com, and a
+  # workflow that has dropped the token before that is done simply cannot
+  # publish. So the token stays until those five are configured — see the
+  # npm credentials section of docs/knowledge/release.md, which carries the
+  # steps and the two traps. The platform packages go first,
   # so the launcher's `optionalDependencies` resolve the moment it lands.
   # `@limae/<platform>` is scoped, and a scoped package publishes as
   # restricted unless told otherwise; `publishConfig.access` in each
@@ -341,56 +340,6 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm whoami
-
-  # SCAFFOLDING — delete this job once v0.13.1 has been published to PyPI.
-  #
-  # The PyPI counterpart of `auth-check`, with one difference that makes it
-  # opt-in rather than part of every dispatch: it is not free. PyPI's
-  # mint-token endpoint, when the trusted publisher it matches is a *pending*
-  # one (the project does not exist yet), creates the project and converts
-  # the pending publisher into a regular one at mint time, before any upload
-  # (warehouse, `warehouse/oidc/views.py`, `mint_token`, read 2026-09-10).
-  # So one run of this job leaves an empty `limae` project on PyPI. No
-  # version is spent, but it is visible, and it is a one-way step.
-  #
-  # After the first release has gone through `publish-pypi`, the project
-  # exists and the publisher is regular, and this job can no longer verify
-  # anything that the release did not already verify: it becomes a switch
-  # that is always green. That is why it is scaffolding.
-  #
-  # Same rule as `auth-check`: the workflow filename is part of the trusted
-  # publisher configuration, so this job has to live here (and, as in
-  # `publish-pypi`, no `environment:`). The GitHub OIDC token and the minted
-  # PyPI token are both credentials; they go through files on the ephemeral
-  # runner and never through the log — the check is `success`.
-  pypi-auth-check:
-    if: github.event_name == 'workflow_dispatch' && inputs.pypi_auth_check
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-    steps:
-      - name: Mint a Trusted Publishing token and stop
-        run: |
-          set -euo pipefail
-          umask 077
-          audience="$(curl -fsS https://pypi.org/_/oidc/audience | jq -er '.audience')"
-          # The request token is a bearer credential; it reaches curl through
-          # a header file (`-H @file`), never through argv, where any process
-          # listing on the runner would show it.
-          printf 'Authorization: bearer %s\n' "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" >headers.txt
-          curl -fsS -H @headers.txt \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" -o github-token.json
-          jq -c '{token: .value}' github-token.json >mint-request.json
-          curl -sS -X POST https://pypi.org/_/oidc/mint-token \
-            -H 'Content-Type: application/json' --data @mint-request.json \
-            -o mint-response.json
-          if [ "$(jq -r '.success' mint-response.json)" = "true" ]; then
-            echo "auth: token issued"
-          else
-            echo "auth: no token issued" >&2
-            jq '{message, errors}' mint-response.json >&2
-            exit 1
-          fi
 
   # The pre-commit mirror, Luolc/limae-pre-commit. It exists so that
   # `pre-commit` can install limae from a prebuilt PyPI wheel instead of
