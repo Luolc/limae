@@ -10,8 +10,7 @@ use thiserror::Error;
 
 use crate::config::{CliOverrides, ConfigError, Severity, resolve};
 use crate::files::{
-    FileError, FileText, FixStatus, GitError, IgnoreError, fix_file, not_ignored, tracked_markdown,
-    untracked_markdown,
+    FileError, FileText, FixStatus, IgnoreError, WalkError, fix_file, not_ignored, walk_markdown,
 };
 use crate::pipeline::{InitError, Pipeline};
 
@@ -109,7 +108,7 @@ pub fn run_from(
             .unwrap_or_default(),
     };
 
-    match execute(&options, cwd, stdout, stderr) {
+    match execute(&options, cwd, stdout) {
         Ok(code) => code,
         Err(RunError::NoFiles) => write_clap_error(
             command.error(
@@ -129,7 +128,7 @@ fn command() -> Command {
             Arg::new("all")
                 .long("all")
                 .action(ArgAction::SetTrue)
-                .help("check all Git-tracked Markdown files"),
+                .help("check every Markdown file below the current directory"),
         )
         .arg(
             Arg::new("fix")
@@ -172,12 +171,7 @@ struct Options {
     files: Vec<PathBuf>,
 }
 
-fn execute(
-    options: &Options,
-    cwd: &Path,
-    stdout: &mut dyn Write,
-    stderr: &mut dyn Write,
-) -> Result<u8, RunError> {
+fn execute(options: &Options, cwd: &Path, stdout: &mut dyn Write) -> Result<u8, RunError> {
     let config = resolve(
         cwd,
         CliOverrides {
@@ -186,26 +180,7 @@ fn execute(
         },
     )?;
     let selected = if options.all {
-        // Tracked selection cannot see a new file until it is indexed, so a
-        // clean result would otherwise be indistinguishable from an unchecked
-        // one. The count goes to stderr because stdout is the parsed result.
-        //
-        // A diagnostic must not decide the run: when the untracked list or its
-        // ignore rules cannot be read, the note is dropped rather than raised.
-        // Nothing is hidden by that, because a fault which bears on what this
-        // run checks reaches the same two calls again on the selection below.
-        let unseen = untracked_markdown(cwd)
-            .ok()
-            .and_then(|paths| not_ignored(&paths, cwd).ok())
-            .unwrap_or_default();
-        if !unseen.is_empty() {
-            writeln!(
-                stderr,
-                "note: {} untracked *.md not checked (git add them to include)",
-                unseen.len(),
-            )?;
-        }
-        tracked_markdown(cwd)?
+        walk_markdown(cwd)?
     } else {
         options.files.clone()
     };
@@ -308,7 +283,7 @@ enum RunError {
     #[error(transparent)]
     Config(#[from] ConfigError),
     #[error(transparent)]
-    Git(#[from] GitError),
+    Walk(#[from] WalkError),
     #[error(transparent)]
     Ignore(#[from] IgnoreError),
     #[error(transparent)]
@@ -324,7 +299,7 @@ impl RunError {
         match self {
             Self::NoFiles | Self::Config(_) => USAGE,
             Self::File(FileError::Directive { .. }) => USAGE,
-            Self::Git(_) | Self::Ignore(_) | Self::Init(_) | Self::File(_) | Self::Output(_) => {
+            Self::Walk(_) | Self::Ignore(_) | Self::Init(_) | Self::File(_) | Self::Output(_) => {
                 FINDINGS
             }
         }
@@ -335,7 +310,7 @@ impl RunError {
             Self::Config(_) => "config error",
             Self::File(FileError::Directive { .. }) => "directive error",
             Self::NoFiles
-            | Self::Git(_)
+            | Self::Walk(_)
             | Self::Ignore(_)
             | Self::Init(_)
             | Self::File(_)
