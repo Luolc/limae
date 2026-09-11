@@ -226,6 +226,13 @@ backlog 的正本，由实现方在改动所属的 PR 里记账，`limae-orchest
 - **`npm-auth-check` 红在自己的判据上，不是配置错** (2026-09-11，本 PR)：run 34568232100 (`tag=v0.13.2`) 里五个包的 OIDC 交换**全部成功** —— HTTP **201 Created**、`keys [created,expires,token,token_type]`，token 真发出来了，这是「五个包的 trusted publisher 都配好了」第一次拿到独立读数 (此前只有口头说法)。红在 `tools/npm_oidc_check.sh` 那句 `[[ $status != 200 ]]`：它要求恰好 200。脚本自己的注释「HTTP 200 is not the check: the answer has to carry a token」写对了，实现没照着做，状态码成了一道比 token 断言更窄的独立门。修法是状态码只进日志、判决全交给 token 形状断言，并把日志里写死的 `HTTP 200` 换成真实状态码。读数与两侧对照记在 [发版手册](knowledge/release.md)。
   **对照臂不是论证，是读数**：PATH 上放一个按 `STUB_STATUS` / `STUB_BODY` 作答的假 `curl`，跑真脚本六臂 —— 201 带 token / 200 带 token 退 0；201 不带 token、404、401、2xx 但响应不是 JSON 各退 1。**分辨力的证据是同一组臂在旧脚本上的读数**：第一臂在旧脚本上退 1 并逐字复现了那次 run 的四行，两个版本对同一输入给出不同结论。**假 `curl` 证不了真 registry**，201 那个读数来自真跑；合入后由 orchestra 再触发一次 dispatch 才是这条的验收。
 
+- **ADR-0016：hook 缩成只做机械排版修复** (2026-09-11，本 PR)：用户决定 hook 不再调模型、A/B 盲评连同证据用途一起停、Codex 侧 hook 放弃、polish 保留、配置沿用现状。本 PR 只写 [ADR-0016](adr/0016-hook-mechanical-only.md)，一行 Rust 不改；代码改造是下一个任务，拿它当规范，验收判据在 ADR「验收判据」一节。ADR-0009 §二–§五、§八、ADR-0011、ADR-0012、ADR-0014 整份、ADR-0008 §十 P0 各在自己的「状态」节记了一行指向 0016。
+  **设计的支点是 orchestra 亲测的读数 B**：250 篇回复逐行修与整篇修 248 篇逐字节一致，2 篇分歧全在围栏代码块里 (逐行时规则不知道自己在围栏里，把「英文与括号之间加空格」套到了 Rust 代码上)。所以按批就地修可行，但要带「过去决定现在」的状态。**机制经两轮审查改成 orchestra 提出的前缀重放**：每批把原文按 index 存进会话态目录，第 k 批拼出前缀 P、整篇 fix(P + delta)、只取属于这一批的最后几行上屏；hook 里不写任何解析器，围栏 / 指令 / 段落状态全部由 canonical pipeline 免费算对。两道当批 fail-open：行边界不完整 (`partial`)；尾部可能还在一个跨行的行内代码 span 里 (`unclosed`，信号由 `rust/markdown.rs` 暴露，审查方用 `span-across-line-break` fixture 抓出这条「未来决定过去」的语法)。代价是回复原文留在磁盘上，边界全部继承 ADR-0009 §八 / ADR-0012。两个独立裁决方 (Astra / Fable，orchestra 组织) 从不同路径得到同一推荐；orchestra 那条「crate 已有完整块解析器」的论据被证伪并从 ADR 里改成「单一真相来源是耦合性质、不是正确性保证」；Astra 抓出的「编号齐全 ≠ 同一次消息」以「`message_id` 加 `turn_id` 分目录、同 index 内容冲突即作废」处理，前提留给实现任务验。
+  **推翻了 brief 的三条预判**，理由都在 ADR §五、§八：Kind `incomplete` 留 (兄弟批到期未齐从「只在末批」变成「每一批」)；Kind `config` 留、换来源 (旧来源 `[polish]` 表，新来源两层规则配置读不了；并进 `crashed` 会把用户的 toml 笔误报成「请报 bug」)；ADR-0012 整份取代而非部分修订 (`record_run` 唯一调用方是 `rust/hook/block.rs`，`limae polish` 从不写记录)。另新增 Kind `partial` (行边界不完整，读数 A 那条前提的哨兵：52/52 中间批以 `\n` 结尾、6/6 末批不以 `\n` 结尾) 与 `unclosed` (尾部可能还在 span 里)。
+  **配置沿用现状，用户级配置本期不做**：用户先提出用户级 `~/.config/limae/limae.toml` (仓级覆盖、不读仓级的开关、存在就读永不创建)，随后自己收回 —— 大部分用户都用默认配置。讨论里的判据 (只读永不创建、「不存在」与「读不了」必须是两种行为、整份覆盖不逐键合并、只有 hook 读用户级) 留在 ADR §三 的开放项里，明写不在本次决定范围、实现任务不得当待办做。这两次都是用户口头说的，经 orchestra 转述。
+  **留下的开放问题**：ADR-0008 §五 的默认型号证据路径 (hook 的 A/B) 没有了，而它从未产出过合格证据 (ADR-0011 记的两轮不是盲评，随后 A/B 一直关着)。处置是冻结暂定默认 (terra / sonnet / grok-4.6)、判据不动、证据来源转为开放 —— 要动默认型号得另建离线对照。polish 走 skill 的那条路径没有型号可选，只有 CLI 那条还需要默认，问题变轻但没消失。下面「claudish 调研产出」里「`polish` 默认模型由 A/B 决定」与「A/B 单侧失败时降级」两条据此改写。
+  **下一个任务要撞的门，ADR 已点名**：`tools/check_repo_contracts.sh` 承诺 1 (Codex Stop 钩子) 随 `.codex/config.toml` 删除、两臂验收；承诺 2 (手册 `kind` 表) 会在 `hook-kinds` 改后红一次，是设计好的红；`docs/knowledge/polish-hook-self-trial.md` 整份改写、README polish 一节末尾那句过期。
+
 ## 愿景 (正本 `docs/adr/0005-agent-native-positioning.md`，这里只记条目)
 
 - **LLM 语义润色**：agent 调用的语义层润色特性，与确定性 lint 互补。
@@ -237,14 +244,14 @@ backlog 的正本，由实现方在改动所属的 PR 里记账，`limae-orchest
 
 - **文档级密度规则**：破折号 / 粗体 / 列表化行文的密度判定是文档级的，`.findings` 的「行号 + 规则 id」形制装不下；要先给规范加文档级 finding 的形制，再收这批 (ADR-0007 §三)。
 - **英文 tells 词表**：English-to-English 的实验规则 (`load-bearing` 过量、否定平行的英文形态等)，沿用 tell 家族 (`zh-tell` / `en-tell`) 与 `spec/wordlists/` 形制；规则不分语言，出现在哪管到哪 (ADR-0006 §五)。
-- **A/B 单侧失败时降级**：两个候选只回来一个时，现在整轮不显示；应改成降级成单路并把失败记进诊断，而不是整轮消失。根在 `ab.run` 要改成逐候选返回。A/B 关着时不发作。
+- **A/B 单侧失败时降级**：**已由 [ADR-0016](adr/0016-hook-mechanical-only.md) 关闭 (2026-09-11)** —— A/B 整个停止，`ab.rs` 随实现任务删除，没有可以降级的东西了。原条目：两个候选只回来一个时整轮不显示，应改成降级成单路并记诊断，根在 `ab.run` 要改成逐候选返回。
 - **型号准入清单**：`ab.py` 里一份可执行的合格型号表，默认空；证据在 `docs/research/polish-engine-cli-behavior.md`。判据必须是该文档 §六 第 2 步的实测，**不能是裸 PONG** —— haiku 与 sonnet 裸 PONG 都通过，而它们正是 #46 里把正文当对话的那两个 (ADR-0008 §四)。
-- **润色的方差**：同一段输入连跑四次，输出从「逐字完全相同、一字未改」跨到「删光全部行内强调并引入一个 `zh-typography-1`」(2026-09-01 实测)。两端都不是润色。`spec/polish/general.md` 的「If the text needs no change, output it unchanged」给了「什么都不做」一条合法出路。先按 ADR-0012 的单路记录攒真实分布，再决定改法 —— 单次采样证明不了任何事。
-- **ADR-0008 §七 的澄清缺指向**：§七「不做旁路目录」被 ADR-0009 §五 澄清过，但 `0008-limae-polish-cli.md` 状态节没有指向；§十 已由 ADR-0012 补上同类的一句。将来有任务碰这份 ADR 时顺手补齐，不单独开 PR。
-- **`polish` prompt 的 evolve**：两份 spec 已落地 (PR #37)，但还是起步版；按 ADR-0008 §九 走 alpha-evolve (演化式迭代)，靠 P0 那个 hook 的反馈驱动，并带上 §五 记的那条社区证据对 prompt 措辞的影响。在方差那条解决之前谈不上调「够不够狠 / 像不像作者 / 有没有改错地方」 —— 那三种病要在输出稳定之后才分得出来。
+- **润色的方差**：同一段输入连跑四次，输出从「逐字完全相同、一字未改」跨到「删光全部行内强调并引入一个 `zh-typography-1`」(2026-09-01 实测)。两端都不是润色。`spec/polish/general.md` 的「If the text needs no change, output it unchanged」给了「什么都不做」一条合法出路。要攒真实分布再决定改法 —— 单次采样证明不了任何事；**采集手段已换** (2026-09-11，[ADR-0016](adr/0016-hook-mechanical-only.md))：hook 不再调 polish、ADR-0012 的单路记录已停，分布只能用 `limae polish -` 对同一批语料离线跑、自己落盘到仓外 (含回复原文，不进仓库)。
+- **ADR-0008 §七 的澄清缺指向**：**已结账** (2026-09-11，ADR-0016 那个 PR 触碰了这份 ADR，按本条自己的触发条件补上了状态节指向 ADR-0009 §五 的一句)。原条目：§七「不做旁路目录」被 ADR-0009 §五 澄清过，但状态节没有指向。
+- **`polish` prompt 的 evolve**：两份 spec 已落地 (PR #37)，但还是起步版；按 ADR-0008 §九 走 alpha-evolve (演化式迭代)，反馈来源改为 `limae polish -` 的离线跑与将来 skill 的试用 (P0 hook 已随 [ADR-0016](adr/0016-hook-mechanical-only.md) 不再调 polish，2026-09-11)，并带上 §五 记的那条社区证据对 prompt 措辞的影响。在方差那条解决之前谈不上调「够不够狠 / 像不像作者 / 有没有改错地方」 —— 那三种病要在输出稳定之后才分得出来。
 - **引擎实测随版本复核**：`docs/research/polish-engine-cli-behavior.md` 记的三家 CLI (command-line interface) 实测行为带实测日期，CLI 升级或换型号时按该文档的人工验收步骤重跑，通过才进预设表 (ADR-0008 §四)。
-- **结构不变量保护器**：改写前后逐字比对围栏、行内代码、链接目标与锚点、标题行、表格结构，变了就判不合格；另配语义层的模型裁判 smoke test，永不进 CI (ADR-0008 §八)。§八 写的是「**至少**要包括」，所以还要补上**行内强调标记** —— 实测模型会把整段 `**` 吃掉，而清单里今天没有这一项，也就是说它并未违规。同时把这一级从 §十 排的 P1 提前到 hook，理由是 hook 才是每条消息都在走的活路径。另有旁证说明清单本身不够：#46 里 haiku 删掉一整段，违反的是**已经写在清单里**的块结构那条 —— 请模型别删要做，我们自己数才是兜底。
-- **`polish` 默认模型由 A/B 决定**：ADR-0008 §五只记候选与判据，暂定 terra / sonnet / grok-4.6；用自家语料做 10–20 条盲对照后再定，降到便宜档必须有自家证据。
+- **结构不变量保护器**：改写前后逐字比对围栏、行内代码、链接目标与锚点、标题行、表格结构，变了就判不合格；另配语义层的模型裁判 smoke test，永不进 CI (ADR-0008 §八)。§八 写的是「**至少**要包括」，所以还要补上**行内强调标记** —— 实测模型会把整段 `**` 吃掉，而清单里今天没有这一项，也就是说它并未违规。它只属于 `limae polish` 那条路径 (§十 的 P1)：此前想把它提前到 hook，理由是 hook 才是每条消息都在走的活路径，而 [ADR-0016](adr/0016-hook-mechanical-only.md) 之后 hook 不再改写任何文本，没有可保护的对象 (2026-09-11 改写)。另有旁证说明清单本身不够：#46 里 haiku 删掉一整段，违反的是**已经写在清单里**的块结构那条 —— 请模型别删要做，我们自己数才是兜底。
+- **`polish` 默认模型的证据来源转为开放** (原「由 A/B 决定」，[ADR-0016](adr/0016-hook-mechanical-only.md) 改写，2026-09-11)：ADR-0008 §五只记候选与判据，暂定 terra / sonnet / grok-4.6 冻结；采集手段原是 hook 的 A/B，已随 ADR-0016 停止且从未产出合格证据。判据不动 —— 降到便宜档必须有自家证据 —— 但要动默认型号得另建离线对照 (同一批语料跑两次 `limae polish` 再人评)，没人排期。
 - **`limae` 三个子命令的实现**：`check` / `format` / `polish` 的命令行分层 (ADR-0008 §二)，今天的 `limae [--fix]` 在过渡期继续可用。
 - **P1 `polish` 的文件形态**：单文件改写，以及按 git 变更集 (dirty 或最近一个 commit 碰过的 Markdown) 批量；P2 再做跨文件协调改写 (ADR-0008 §十)。
 - **zh-tell-5 补「零 + 拉丁 / 混合名词」**：现判定只取「零」右侧的连续汉字串，漏掉「零 SA 需要读它」「零 service account 需要读它」这类「零 + 拉丁或中英混合名词 + 谓语」的形态 (`machine-setup` 2026-08-31 用 v0.9.0 跑改写前语料时发现，当次靠人工改写)。匹配单位要扩到拉丁词与混合串，边界与白名单语义随之定案。
