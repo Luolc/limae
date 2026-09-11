@@ -46,9 +46,9 @@ npm i -D @limae/cli     # 之后 npx limae
 
 预构建二进制只有四个平台：Linux x86_64 / aarch64 (静态 musl，glibc 系统照跑)、macOS x86_64 / arm64。没有 Windows；Windows 上用上面的 `cargo install`。
 
-`--all` 走的是**文件系统**而不是 git 索引 (index)：从当前目录往下递归收所有 `*.md`，刚写出来、还没 `git add` 的文件照查 —— 这是抄 [ruff](https://github.com/astral-sh/ruff) 的做法。被 `.gitignore` (在 git 仓里才生效)、`.git/info/exclude`、全局 gitignore、`.ignore` 或 `.limae-ignore` 忽略的不查；隐藏 (hidden) 文件与目录不进，`.git/` 自身因此天然在外；符号链接 (symlink) 不跟。不在 git 仓里也能用。
+`--all` 走的是**文件系统**而不是 git 索引 (index)：从当前目录往下递归收所有 `*.md`，刚写出来、还没 `git add` 的文件照查 —— 这是抄 [ruff](https://github.com/astral-sh/ruff) 的做法。**「所有」就是所有**：点开头的文件、点开头的目录 (`.github/`、`.agents/` 这类真放着文档的地方) 都在内，指向 Markdown 文件的符号链接 (symlink) 顺着链接查，指向目录的符号链接不进去 (所以不会绕圈)；唯一按名字排除的是 `.git`。被 `.gitignore` (在 git 仓里才生效)、`.git/info/exclude`、全局 gitignore、`.ignore` 或 `.limae-ignore` 忽略的不查。不在 git 仓里也能用。
 
-没有内置的默认排除表 (ruff 有一张写死的目录名单)：`node_modules`、`target` 这类靠 `.gitignore` 排除，真实项目基本都写了。已知边界是**既不在 git 仓、又没有任何 ignore 文件**的目录 —— 这种目录里它会走进构建产物。
+没有内置的默认排除表 (ruff 有一张写死的目录名单)：`node_modules`、`target`、`.venv` 这类靠 `.gitignore` 排除，真实项目基本都写了。已知边界是**既不在 git 仓、又没有任何 ignore 文件**的目录 —— 这种目录里它会走进构建产物与虚拟环境。
 
 ### 开关某条规则
 

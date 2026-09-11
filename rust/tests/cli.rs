@@ -230,12 +230,15 @@ fn all_overrides_explicit_files_and_all_ignored_is_clean() -> TestResult {
     Ok(())
 }
 
-/// The one arm this change exists for, plus the three that bound it.
+/// The one arm this change exists for, plus the ones that bound it.
 ///
 /// The positive arm was green before the change for the wrong reason: the file
 /// was never opened, so it had no findings. That is why each control arm below
 /// has to name a file that must *not* be checked; a selection that simply took
-/// everything would pass the positive arm just as well.
+/// everything would pass the positive arm just as well. The dotted and linked
+/// arms are the other half of that: a selection that took only what is plainly
+/// visible would pass every control arm instead.
+#[cfg(unix)]
 #[test]
 fn all_checks_unindexed_files_but_still_honours_every_ignore_source() -> TestResult {
     let root = TempDir::new()?;
@@ -253,14 +256,35 @@ fn all_checks_unindexed_files_but_still_honours_every_ignore_source() -> TestRes
     fs::create_dir(root.path().join("vendor"))?;
     fs::write(root.path().join("vendor/v.md"), "你好,世界\n")?;
     fs::write(root.path().join(".limae-ignore"), "vendor/\n")?;
-    // Control D: inside the repository's own metadata directory.
+    // Control D: inside the repository's own metadata directory. `.git` is
+    // excluded by name, not for being hidden, so this arm still means something
+    // now that hidden entries are selected.
     fs::write(root.path().join(".git/inside.md"), "你好,世界\n")?;
+    // Dotted names and dotted directories are prose too: `.github/` and
+    // `.agents/` are where a project actually keeps some of it.
+    fs::write(root.path().join(".dotted.md"), "你好,世界\n")?;
+    fs::create_dir(root.path().join(".agents"))?;
+    fs::write(root.path().join(".agents/brief.md"), "你好,世界\n")?;
+    // A link to a Markdown file is checked through the link, the way the index
+    // listed it before; a link to a directory is not descended.
+    std::os::unix::fs::symlink("new.md", root.path().join("link.md"))?;
+    fs::create_dir(root.path().join("real"))?;
+    fs::write(root.path().join("real/deep.md"), "你好,世界\n")?;
+    std::os::unix::fs::symlink("real", root.path().join("loop"))?;
 
     let (code, stdout, stderr) = output_text(run(root.path(), &["--all"])?)?;
     assert_eq!((code, stderr.as_str()), (1, ""));
-    assert!(stdout.starts_with("new.md:1: error:"), "{stdout}");
-    assert!(stdout.contains("1 error(s), 0 warning(s)"), "{stdout}");
-    for unchecked in ["out.md", "v.md", "inside.md"] {
+    for checked in [
+        ".agents/brief.md:1: error:",
+        ".dotted.md:1: error:",
+        "link.md:1: error:",
+        "new.md:1: error:",
+        "real/deep.md:1: error:",
+    ] {
+        assert!(stdout.contains(checked), "missing {checked} in {stdout}");
+    }
+    assert!(stdout.contains("5 error(s), 0 warning(s)"), "{stdout}");
+    for unchecked in ["out.md", "v.md", "inside.md", "loop/"] {
         assert!(!stdout.contains(unchecked), "{unchecked} in {stdout}");
     }
 

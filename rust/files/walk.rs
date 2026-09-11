@@ -30,23 +30,38 @@ pub struct WalkError(#[from] pub ignore::Error);
 /// Discovery is the filesystem, not the Git index, so a file that has never
 /// been `git add`ed is checked like any other. `cwd` need not be a repository.
 ///
-/// [`WalkBuilder`]'s defaults do the filtering: `.gitignore` (inside a
-/// repository), `.git/info/exclude`, the global excludes file, `.ignore`, and
-/// every parent directory's copies of those; hidden entries are skipped, which
-/// is what keeps `.git` itself out. Symbolic links are not followed. The
-/// `.limae-ignore` file is applied afterwards by
-/// [`not_ignored`](super::not_ignored), the same way as for explicit inputs.
+/// Every Markdown file means every one: a dotted name and a file under a dotted
+/// directory are both checked, because a project keeps real prose in `.github/`
+/// and `.agents/`, and a rule the checker silently skips is the blind spot this
+/// selection exists to close. `.git` is the one name excluded outright, and it
+/// is excluded by name rather than by being hidden, so that the exclusion says
+/// what it means. A symbolic link to a file is checked through the link; a
+/// symbolic link to a directory is not descended, which is what keeps the walk
+/// finite without a loop detector.
+///
+/// What remains is ignored on purpose: `.gitignore` (inside a repository),
+/// `.git/info/exclude`, the global excludes file, `.ignore`, and every parent
+/// directory's copies of those, all supplied by [`WalkBuilder`]. `.limae-ignore`
+/// is applied afterwards by [`not_ignored`](super::not_ignored), the same way
+/// as for explicit inputs.
 ///
 /// Sorting makes the order deterministic; the walk itself reports directory
 /// entries in whatever order the filesystem gives them.
 pub fn walk_markdown(cwd: &Path) -> Result<Vec<PathBuf>, WalkError> {
     let mut paths = Vec::new();
-    for entry in WalkBuilder::new(cwd).build() {
+    let walk = WalkBuilder::new(cwd)
+        .hidden(false)
+        // Depth 0 is `cwd` itself. Exempting it keeps a run whose working
+        // directory happens to be named `.git` from filtering away its own root
+        // and reporting an empty tree.
+        .filter_entry(|entry| entry.depth() == 0 || entry.file_name() != ".git")
+        .build();
+    for entry in walk {
         let entry = entry.map_err(WalkError)?;
         let path = entry.path();
-        if entry.file_type().is_some_and(|kind| kind.is_file())
-            && path.extension() == Some(OsStr::new("md"))
-        {
+        // `is_file` follows the link, which is what admits a linked Markdown
+        // file; `file_type` here reports the link itself and would drop it.
+        if path.extension() == Some(OsStr::new("md")) && path.is_file() {
             paths.push(path.strip_prefix(cwd).unwrap_or(path).to_owned());
         }
     }
