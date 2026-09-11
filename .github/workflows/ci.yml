@@ -1,7 +1,7 @@
 # Two things live here. `check` is the quality bar that also runs locally
 # (see AGENTS.md); it keeps main always-green and is the required check for
-# branch protection. `build` and `deploy` publish the lexicon page to GitHub
-# Pages, which is release, not a gate — `deploy` is deliberately outside
+# branch protection. `build` and `deploy` publish the lexicon page and the
+# installer to GitHub Pages, which is release, not a gate — `deploy` is deliberately outside
 # `check`, so a failed publish never blocks a merge.
 name: CI
 
@@ -148,6 +148,16 @@ jobs:
 
       - name: Render the lexicon page
         run: cargo run --locked --example render-lexicon
+
+      # The installer is served from the same Pages site, so that
+      # https://limae.luolc.com/install.sh is this repository's install.sh by
+      # construction rather than by a promise someone has to remember to keep.
+      # deno publishes a SHA256SUM for its install.sh that covers the copy in
+      # the repository and not the bytes deno.land actually serves, and the
+      # two have since drifted apart; copying the file at publish time is how
+      # that stops being possible.
+      - name: Copy the installer into the site
+        run: cp install.sh site/install.sh
 
       - uses: actions/upload-pages-artifact@v5
         with:

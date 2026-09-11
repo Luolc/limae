@@ -16,8 +16,11 @@
 # tools/check_launchers.sh asserts that what went into every package is the
 # Release binary, byte for byte.
 #
-# And it writes the pre-commit mirror, Luolc/limae-pre-commit (`mirror`),
-# which lets pre-commit install that PyPI wheel instead of compiling limae.
+# And it writes two repositories of its own: the pre-commit mirror,
+# Luolc/limae-pre-commit (`mirror`), which lets pre-commit install that PyPI
+# wheel instead of compiling limae; and the Homebrew tap, Luolc/homebrew-tap
+# (`homebrew`), which carries a formula pointing back at these same Release
+# tarballs.
 name: release
 
 on:
@@ -28,14 +31,15 @@ on:
   # the default branch, so the jobs it runs have to live in this file (see
   # the note on `auth-check`). One dispatch is the whole rehearsal:
   # `auth-check` and `npm-auth-check` verify credentials, `launchers`
-  # repackages an existing Release as a dry run, and `pypi-auth-check` runs
-  # only when asked for, because it is not free (see the job).
+  # repackages an existing Release as a dry run, `homebrew` renders that
+  # Release's formula and installs it, and `pypi-auth-check` runs only when
+  # asked for, because it is not free (see the job).
   workflow_dispatch:
     inputs:
       tag:
         # No default: a default tag goes stale silently, and then "forgot to
         # fill it in" and "meant that one" look the same.
-        description: "Existing Release tag (v<major>.<minor>.<patch>) whose assets the launcher dry run repackages"
+        description: "Existing Release tag (v<major>.<minor>.<patch>) the launcher and Homebrew dry runs work from"
         required: true
         type: string
       pypi_auth_check:
@@ -404,7 +408,7 @@ jobs:
     needs: publish-pypi
     runs-on: ubuntu-latest
     # Nothing here touches this repository; the mirror is written with
-    # `MIRROR_TOKEN`, and job-level permissions zero out the rest.
+    # `PRECOMMIT_MIRROR_TOKEN`, and job-level permissions zero out the rest.
     permissions: {}
     env:
       TAG: ${{ github.ref_name }}
@@ -412,7 +416,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: Luolc/limae-pre-commit
-          token: ${{ secrets.MIRROR_TOKEN }}
+          token: ${{ secrets.PRECOMMIT_MIRROR_TOKEN }}
       - uses: astral-sh/setup-uv@v9.0.0
       # Positive assertion before anything is written: PyPI has to actually
       # serve this version, and the wheel it serves has to run. `needs` proves
@@ -465,4 +469,93 @@ jobs:
             git tag "$TAG" "$head"
             git push origin "refs/tags/$TAG"
             echo "tag: pushed $TAG at $head"
+          fi
+
+  # The Homebrew tap, Luolc/homebrew-tap, so that `brew install
+  # luolc/tap/limae` works. The formula is rendered here from the template in
+  # tools/render_homebrew_formula.sh and points Homebrew at the Release
+  # tarballs with their published digests; nothing is compiled, here or in the
+  # tap, and the tap holds no bytes of its own.
+  #
+  # Like `launchers`, this job runs on both triggers and for the same reason,
+  # except that here it matters more than anywhere else in this file: the
+  # development machine is Linux with no Homebrew on it, so `brew audit`,
+  # `brew install` and `brew test` cannot be run there at all. A
+  # `workflow_dispatch` against an existing tag is where they run — every step
+  # below except the last one, which is the only step gated on the tag push.
+  #
+  # macos-latest rather than ubuntu-latest: the macOS runner image ships
+  # Homebrew, and macOS is what the tap is for. This run exercises one of the
+  # four platforms in the formula; the other three are covered by their
+  # digests, which came from the same Release assets `launchers` repackages.
+  homebrew:
+    needs: upload-assets
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.upload-assets.result == 'success') }}
+    runs-on: macos-latest
+    # The tap is written with HOMEBREW_TAP_TOKEN in the last step, which
+    # brings its own checkout; nothing here needs write access to this
+    # repository.
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # Only the sidecars: the formula carries URLs and digests, so the
+      # tarballs themselves are Homebrew's to fetch.
+      - name: Download the Release checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "$TAG" --pattern 'limae-*.sha256' --dir assets
+      - name: Render the formula
+        run: tools/render_homebrew_formula.sh "$TAG" assets limae.rb
+      # Through a local tap rather than as a bare file path: a formula handed
+      # to brew as a path is a different code path from the one a user takes,
+      # and taking the user's is the whole point of the two steps after this.
+      - name: Put the formula in a local tap
+        run: |
+          set -euo pipefail
+          brew tap-new --no-git luolc/local
+          cp limae.rb "$(brew --repository luolc/local)/Formula/limae.rb"
+      - name: brew audit
+        run: brew audit --strict luolc/local/limae
+      # The arm that cannot be run anywhere else. `brew test` runs the
+      # formula's own test block, which lints a clean file and a dirty one —
+      # so a limae that starts but lints nothing fails here rather than
+      # passing as "it installed".
+      - name: brew install and brew test
+        run: |
+          set -euo pipefail
+          brew install luolc/local/limae
+          brew test luolc/local/limae
+      # Only now, and only for a tag: a dispatch has proved everything above
+      # and stops. The tap checkout keeps its credentials — it is the one that
+      # pushes.
+      - uses: actions/checkout@v7
+        if: github.event_name == 'push'
+        with:
+          repository: Luolc/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+      - name: Commit the formula to the tap
+        if: github.event_name == 'push'
+        working-directory: tap
+        run: |
+          set -euo pipefail
+          mkdir -p Formula
+          cp ../limae.rb Formula/limae.rb
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Formula/limae.rb
+          # Re-runnable (`gh run rerun --failed`): the formula this run would
+          # write being the formula already there is this job having run
+          # before, and there is nothing to commit.
+          if git diff --cached --quiet; then
+            echo "formula: already at $TAG, nothing to commit"
+          else
+            git commit -q -m "limae $TAG"
+            git push origin HEAD:main
+            echo "formula: pushed limae $TAG"
           fi
