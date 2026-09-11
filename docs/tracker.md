@@ -235,6 +235,11 @@ backlog 的正本，由实现方在改动所属的 PR 里记账，`limae-orchest
 
 - **两份裁决报告入库** (2026-09-11，本 PR)：Astra ([`hook-batch-fence-debate-astra.md`](research/hook-batch-fence-debate-astra.md)) 与 Fable ([`hook-batch-fence-debate-fable.md`](research/hook-batch-fence-debate-fable.md)) 的独立裁决报告照原样归档进 `docs/research/`，正文一字未改；ADR-0016 那句「届时补仓内链接」在本 PR 补上。**唯一的编辑**是把 Astra 报告「六、复跑与交接」引用的 7 个绝对路径旁支文件 (`.rs` / `.py` / `.jsonl` / `.json`) 内联成文末附录，并把该节路径换成指向附录锚点的仓内链接 —— 只归档 `.md` 会留下 7 条注定失效的引用，且不能把 `.py` / `.rs` 单独入库 (Python 参考实现已按 ADR-0015 补记整体删除，不能从研究文档这个后门溜回来)。Fable 报告经 grep 确认没有同类绝对路径引用，无需内联。`~/scratch/limae/` 下原始的 2 份报告与 7 个旁支文件已删除。
 
+- **ADR-0016 补记：实现期澄清、分叉计数的读法、上限的来源、被接受的残余风险** (2026-09-11，本 PR)：只改 [ADR-0016](adr/0016-hook-mechanical-only.md) 一个文件，加一节补记，正文不就地改写 (体例照 [ADR-0015](adr/0015-rust-migration.md) 的两条补记)。本 PR 是 [#180](https://github.com/Luolc/limae/pull/180) 的**前置**而不是后续：#180 的审查方要求残余风险若被接受必须先落进 canonical ADR，两边原本互等，拆成两个 PR 解开。
+  **五条内容**：① 三条实现期澄清 (末批不做 `unclosed` 判断、行内指令点名不存在的规则 id 归 `config` 不归 `crashed`、缺 `turn_id` 无输出)，都不是偏离，是 ADR 没写到而实现必须回答的契约。② **分叉计数依赖切法，写成通则** —— ADR 引的 Fable「前缀重放 3 条」与 #180 自己 sweep 的「触发 `unclosed` 10 条、拼回不等 6 条」不矛盾，差的是切批方式；耐久的是**形状** (被拒的中间批里既有未配对反引号、又有 span 之外可修的正文)，不是数字。同一个坑这一轮栽了三次 (「唯一分歧来自围栏」被 Fable 指出过度推广、Astra 主动把结论钉在 `b20bc03`、#180 的 sweep)，所以引用任何计数都要连切法与 head 一起写。③ 三个资源上限 (256 KiB / 1000 批 / 2 s) **是拍的不是量出来的**，别让后人以为有测量支撑。④ 中断实测：被打断的消息永远收不到 `final=true` 批，**孤儿分片是常态不是异常**，按年龄 prune 是那条路径上唯一的清理者；同次实测把 ADR §二 的前提 ① 验到了 (`turn_id` 各批共有、随重发而变)，未覆盖的一臂照实写 (测的是中断后发新 prompt，不是同一条消息被宿主重投)。
+  **⑤ 残余风险：用户 2026-09-11 裁决接受**，理由是概率低加爆炸半径有限 —— 失效要三个条件同时成立、`displayContent` 只改屏幕不落盘 (677 条回复原文取自 transcript 而当时 hook 正开着、52% 需要修，说明 transcript 存的是未经改动的原文)、二进制里**能确立**两个 message id 空间与重试记账、**不能确立**重投时 client 侧 `message_id` 换不换。**不是「已排除」也不是「已验证安全」**，这个「能 / 不能」的划分在 ADR 里原样保留，不压缩成「大概率会换」。
+  **本 PR 不碰 `AGENTS.md`**：「质量标准」里 `check_repo_contracts.sh` 那条描述仍写着已删除的 Codex Stop 承诺，按本仓规矩 `AGENTS.md` 单独成任务，留给 #180 合入之后的那一个。
+
 ## 愿景 (正本 `docs/adr/0005-agent-native-positioning.md`，这里只记条目)
 
 - **LLM 语义润色**：agent 调用的语义层润色特性，与确定性 lint 互补。
