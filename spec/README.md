@@ -36,7 +36,7 @@
 - **`.in` 与 `.fixed` 逐行对齐**：修复不增删行 (见 `rules.md`「处理单位」)，两个文件的行数永远相同。
 - **只用合成假数据**：`ACME`、`$1,000`、`Foo` 这类；不得出现任何真实的个人或业务信息 (`AGENTS.md`「隐私边界」)。
 - **行内指令是 `.in` 的普通内容**：`rules.md`「行内指令」的注释行由被测实现自己解析，runner 不做任何特殊处理 —— 指令行既不出现在 `.findings` 里，也不被 `.fixed` 改写。
-- **后缀不是 `.md`**：fixture 的 `.in` 故意含违规，若用 `.md` 后缀就会被本仓自己的 dogfooding 钩子与 `limae --all` (它按 `git ls-files '*.md'` 取文件) 扫到并报红。换后缀比在钩子里加 `exclude` 更省事，也让 fixture 不被当成文档。
+- **后缀不是 `.md`**：fixture 的 `.in` 故意含违规，若用 `.md` 后缀就会被本仓自己的 dogfooding 钩子与 `limae --all` (它递归扫当前目录下所有 `*.md`) 扫到并报红。换后缀比在钩子里加 `exclude` 更省事，也让 fixture 不被当成文档。
 
 ## case 的粒度
 

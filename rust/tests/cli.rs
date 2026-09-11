@@ -203,21 +203,18 @@ fn invalid_ignore_is_execution_error_and_unclosed_class_is_a_noop() -> TestResul
 #[test]
 fn all_overrides_explicit_files_and_all_ignored_is_clean() -> TestResult {
     let selected = TempDir::new()?;
-    git(selected.path(), &["init", "-q"])?;
-    fs::write(selected.path().join("tracked.md"), "你好,世界")?;
-    fs::write(selected.path().join("explicit.md"), "clean")?;
-    git(selected.path(), &["add", "tracked.md"])?;
-    let (code, stdout, stderr) = output_text(run(selected.path(), &["explicit.md", "--all"])?)?;
-    // `explicit.md` stays unchecked and untracked, so the note reports it.
-    assert_eq!(
-        (code, stderr.as_str()),
-        (
-            1,
-            "note: 1 untracked *.md not checked (git add them to include)\n"
-        )
-    );
-    assert!(stdout.contains("tracked.md:1: error:"));
-    assert!(!stdout.contains("explicit.md"));
+    fs::write(selected.path().join("t.md"), "你好,世界")?;
+    // Walking picks Markdown only, so a non-Markdown explicit input is what
+    // still tells "`--all` replaces the list" from "`--all` adds to it".
+    fs::write(selected.path().join("notes.txt"), "你好,世界")?;
+    let (code, stdout, stderr) = output_text(run(selected.path(), &["notes.txt", "--all"])?)?;
+    assert_eq!((code, stderr.as_str()), (1, ""));
+    assert!(stdout.starts_with("t.md:1: error:"), "{stdout}");
+    assert!(!stdout.contains("notes.txt"), "{stdout}");
+
+    let (code, stdout, stderr) = output_text(run(selected.path(), &["notes.txt"])?)?;
+    assert_eq!((code, stderr.as_str()), (1, ""));
+    assert!(stdout.starts_with("notes.txt:1: error:"), "{stdout}");
 
     let ignored = TempDir::new()?;
     git(ignored.path(), &["init", "-q"])?;
@@ -233,112 +230,70 @@ fn all_overrides_explicit_files_and_all_ignored_is_clean() -> TestResult {
     Ok(())
 }
 
+/// The one arm this change exists for, plus the three that bound it.
+///
+/// The positive arm was green before the change for the wrong reason: the file
+/// was never opened, so it had no findings. That is why each control arm below
+/// has to name a file that must *not* be checked; a selection that simply took
+/// everything would pass the positive arm just as well.
 #[test]
-fn all_notes_untracked_markdown_without_changing_the_result() -> TestResult {
+fn all_checks_unindexed_files_but_still_honours_every_ignore_source() -> TestResult {
     let root = TempDir::new()?;
     git(root.path(), &["init", "-q"])?;
     fs::write(root.path().join("tracked.md"), "clean\n")?;
-
-    // Nothing is indexed yet, so selection is empty and the usage error is the
-    // whole result. The note is what explains why the tree looks empty, so it
-    // has to come before that error rather than after it.
-    let (code, stdout, stderr) = output_text(run(root.path(), &["--all"])?)?;
-    assert_eq!((code, stdout.as_str()), (2, ""));
-    assert!(stderr.starts_with("note: 1 untracked *.md not checked (git add them to include)\n"));
-
     git(root.path(), &["add", "tracked.md"])?;
+
+    // Positive arm: never `git add`ed, checked all the same.
     fs::write(root.path().join("new.md"), "你好,世界\n")?;
-    fs::write(root.path().join("also new.md"), "你好,世界\n")?;
-
-    // A clean tracked result now says how much it could not see, and says so
-    // on stderr without turning a warning into a failing exit code.
-    let (code, stdout, stderr) = output_text(run(root.path(), &["--all"])?)?;
-    assert_eq!(
-        (code, stdout.as_str(), stderr.as_str()),
-        (
-            0,
-            "OK: 1 file(s) clean\n",
-            "note: 2 untracked *.md not checked (git add them to include)\n"
-        )
-    );
-
-    // Explicit selection has no blind spot, so it stays silent.
-    let (code, stdout, stderr) = output_text(run(root.path(), &["tracked.md"])?)?;
-    assert_eq!(
-        (code, stdout.as_str(), stderr.as_str()),
-        (0, "OK: 1 file(s) clean\n", "")
-    );
-
-    // Control arm: with nothing untracked left, the note must be absent.
-    git(root.path(), &["add", "new.md", "also new.md"])?;
-    let (code, stdout, stderr) = output_text(run(root.path(), &["--all"])?)?;
-    assert_eq!((code, stderr.as_str()), (1, ""));
-    assert!(stdout.contains("new.md:1: error:"));
-    Ok(())
-}
-
-#[test]
-fn untracked_note_omits_ignored_markdown() -> TestResult {
-    let root = TempDir::new()?;
-    git(root.path(), &["init", "-q"])?;
-    fs::write(root.path().join("tracked.md"), "clean\n")?;
-    fs::write(root.path().join(".gitignore"), "build/\n")?;
-    git(root.path(), &["add", "tracked.md", ".gitignore"])?;
+    // Control A: excluded by `.gitignore`.
     fs::create_dir(root.path().join("build"))?;
     fs::write(root.path().join("build/out.md"), "你好,世界\n")?;
+    fs::write(root.path().join(".gitignore"), "build/\n")?;
+    // Control B: excluded by `.limae-ignore`.
     fs::create_dir(root.path().join("vendor"))?;
-    fs::write(root.path().join("vendor/t.md"), "你好,世界\n")?;
+    fs::write(root.path().join("vendor/v.md"), "你好,世界\n")?;
+    fs::write(root.path().join(".limae-ignore"), "vendor/\n")?;
+    // Control D: inside the repository's own metadata directory.
+    fs::write(root.path().join(".git/inside.md"), "你好,世界\n")?;
+
+    let (code, stdout, stderr) = output_text(run(root.path(), &["--all"])?)?;
+    assert_eq!((code, stderr.as_str()), (1, ""));
+    assert!(stdout.starts_with("new.md:1: error:"), "{stdout}");
+    assert!(stdout.contains("1 error(s), 0 warning(s)"), "{stdout}");
+    for unchecked in ["out.md", "v.md", "inside.md"] {
+        assert!(!stdout.contains(unchecked), "{unchecked} in {stdout}");
+    }
+
+    // The removed note has no successor: a selection with no blind spot has
+    // nothing to warn about, and a note that never fires is worse than silence.
+    assert!(!stderr.contains("note:"));
+    Ok(())
+}
+
+/// Control C: `--all` outside a repository.
+///
+/// Before this change the same tree ended in `git ls-files ... failed`, so the
+/// ability is new rather than pre-existing. Running the previous binary is what
+/// establishes that, and lives in the PR description; what a test can pin is
+/// that today's binary needs no repository and that the sibling ignore sources
+/// still apply where Git is not the one supplying them.
+#[test]
+fn all_works_outside_a_repository() -> TestResult {
+    let root = TempDir::new()?;
+    fs::write(root.path().join("a.md"), "你好,世界\n")?;
+    fs::create_dir(root.path().join("vendor"))?;
+    fs::write(root.path().join("vendor/v.md"), "你好,世界\n")?;
     fs::write(root.path().join(".limae-ignore"), "vendor/\n")?;
 
-    // Neither the Git-ignored nor the limae-ignored file is worth shouting
-    // about: a note that always fires is the same silence it replaces.
     let (code, stdout, stderr) = output_text(run(root.path(), &["--all"])?)?;
-    assert_eq!(
-        (code, stdout.as_str(), stderr.as_str()),
-        (0, "OK: 1 file(s) clean\n", "")
-    );
-
-    // Same tree, same file, only the ignore rules removed: now it counts.
-    fs::remove_file(root.path().join(".limae-ignore"))?;
-    fs::write(root.path().join(".gitignore"), "\n")?;
-    let (code, stdout, stderr) = output_text(run(root.path(), &["--all"])?)?;
-    assert_eq!(
-        (code, stdout.as_str(), stderr.as_str()),
-        (
-            0,
-            "OK: 1 file(s) clean\n",
-            "note: 2 untracked *.md not checked (git add them to include)\n"
-        )
-    );
+    assert_eq!((code, stderr.as_str()), (1, ""));
+    assert!(stdout.starts_with("a.md:1: error:"), "{stdout}");
+    assert!(stdout.contains("1 error(s), 0 warning(s)"), "{stdout}");
     Ok(())
 }
 
 #[test]
-fn an_unreadable_untracked_list_never_decides_the_exit_code() -> TestResult {
-    let root = TempDir::new()?;
-    git(root.path(), &["init", "-q"])?;
-    fs::write(root.path().join("new.md"), "你好,世界\n")?;
-    fs::write(root.path().join(".limae-ignore"), "!\n")?;
-
-    // Nothing is tracked, so the usage error is the whole contract and the
-    // ignore file is never this run's business. Reaching it for the note's
-    // sake must not turn that 2 into the 1 a real ignore fault would give.
-    let (code, stdout, stderr) = output_text(run(root.path(), &["--all"])?)?;
-    assert_eq!((code, stdout.as_str()), (2, ""));
-    assert!(stderr.contains("no files given (use --all or list files)"));
-    assert!(!stderr.contains("note:"));
-
-    // The same broken file is still a real error once it governs a selection,
-    // so the dropped diagnostic hides nothing that bears on the result.
-    git(root.path(), &["add", "new.md"])?;
-    let (code, stdout, stderr) = output_text(run(root.path(), &["--all"])?)?;
-    assert_eq!((code, stdout.as_str()), (1, ""));
-    assert!(stderr.contains("invalid ignore pattern"));
-    Ok(())
-}
-
-#[test]
-fn empty_selection_is_usage_but_git_failure_is_execution_error() -> TestResult {
+fn an_empty_tree_is_a_usage_error_with_or_without_a_repository() -> TestResult {
     let root = TempDir::new()?;
     let (code, stdout, stderr) = output_text(run(root.path(), &[] as &[&str])?)?;
     assert_eq!(code, 2);
@@ -352,11 +307,12 @@ fn empty_selection_is_usage_but_git_failure_is_execution_error() -> TestResult {
     assert_eq!((code, stdout.as_str()), (2, ""));
     assert!(stderr.contains("no files given (use --all or list files)"));
 
+    // Outside a repository too: an empty tree is the same usage error, not the
+    // execution error that a Git-backed selection used to give here.
     let (code, stdout, stderr) = output_text(run(root.path(), &["--all"])?)?;
-    assert_eq!((code, stdout.as_str()), (1, ""));
-    assert!(stderr.contains("git ls-files in"));
-    assert!(!stderr.contains("fatal:"));
-    assert!(!stderr.contains("clean"));
+    assert_eq!((code, stdout.as_str()), (2, ""));
+    assert!(stderr.contains("no files given (use --all or list files)"));
+    assert!(!stderr.contains("git ls-files in"));
     Ok(())
 }
 

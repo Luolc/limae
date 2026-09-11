@@ -1,10 +1,9 @@
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use limae::files::{GitError, IgnoreError, find_ignore, not_ignored, tracked_markdown};
+use limae::files::{IgnoreError, find_ignore, not_ignored, walk_markdown};
 
 type TestResult = Result<(), Box<dyn Error>>;
 
@@ -30,100 +29,39 @@ impl Drop for TempDir {
     }
 }
 
-fn git(cwd: &Path, args: &[&str]) -> TestResult {
-    let output = Command::new("git")
-        .current_dir(cwd)
-        .env_clear()
-        .env("PATH", std::env::var_os("PATH").ok_or("missing PATH")?)
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .args(args)
-        .output()?;
-    assert!(output.status.success(), "git {args:?}: {:?}", output.status);
-    Ok(())
-}
-
 fn paths(names: &[&str]) -> Vec<PathBuf> {
     names.iter().map(PathBuf::from).collect()
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-fn isolated_git_test(name: &str) -> Result<bool, Box<dyn Error>> {
-    if std::env::var_os("LIMAE_TEST_GIT_ISOLATED").is_some() {
-        return Ok(false);
-    }
-    let output = Command::new(std::env::current_exe()?)
-        .args(["--exact", &format!("files::{name}"), "--nocapture"])
-        .env_clear()
-        .env("PATH", std::env::var_os("PATH").ok_or("missing PATH")?)
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("LIMAE_TEST_GIT_ISOLATED", "1")
-        .output()?;
-    assert!(
-        output.status.success(),
-        "isolated re-exec failed: {}\n--- child stdout ---\n{}\n--- child stderr ---\n{}",
-        output.status,
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    Ok(true)
-}
-
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+/// `.limae-ignore` patterns are rooted at the ignore file, not at the cwd.
+///
+/// Both arms walk the same subdirectory and differ only in how the negation is
+/// written; if patterns were read relative to the cwd the first arm would keep
+/// `sub/a.md` too, and the pair would stop telling the two readings apart.
 #[test]
-fn tracked_selection_preserves_index_order_and_cwd_scope() -> TestResult {
-    if isolated_git_test("tracked_selection_preserves_index_order_and_cwd_scope")? {
-        return Ok(());
-    }
+fn ignore_patterns_stay_rooted_at_the_ignore_file_under_a_nested_cwd() -> TestResult {
     let a = TempDir::new()?;
     let b = TempDir::new()?;
-    let before = std::env::current_dir()?;
     for root in [a.path(), b.path()] {
-        git(root, &["init", "-q"])?;
         fs::create_dir_all(root.join("docs/sub"))?;
-        for name in [
-            "z.md",
-            "a space.md",
-            "docs/b.md",
-            "docs/sub/a.md",
-            "gone.md",
-            "removed.md",
-            "x.txt",
-        ] {
+        for name in ["z.md", "a space.md", "docs/b.md", "docs/sub/a.md", "x.txt"] {
             fs::write(root.join(name), "ACME")?;
         }
-        git(root, &["add", "."])?;
-        git(root, &["rm", "--cached", "-q", "removed.md"])?;
-        fs::remove_file(root.join("gone.md"))?;
-        fs::write(root.join("untracked.md"), "ACME")?;
-        // Repository ignore rules do not remove tracked files from ls-files.
-        fs::write(root.join(".gitignore"), "*.md\n")?;
-        assert_eq!(
-            tracked_markdown(root)?,
-            paths(&[
-                "a space.md",
-                "docs/b.md",
-                "docs/sub/a.md",
-                "gone.md",
-                "z.md"
-            ])
-        );
-        assert_eq!(
-            tracked_markdown(&root.join("docs"))?,
-            paths(&["b.md", "sub/a.md"])
-        );
+        let docs = root.join("docs");
+        assert_eq!(walk_markdown(&docs)?, paths(&["b.md", "sub/a.md"]));
         fs::write(root.join(".limae-ignore"), "*.md\n!sub/a.md\n")?;
         assert_eq!(
-            not_ignored(&tracked_markdown(&root.join("docs"))?, &root.join("docs"))?,
+            not_ignored(&walk_markdown(&docs)?, &docs)?,
             Vec::<PathBuf>::new()
         );
         fs::write(root.join(".limae-ignore"), "*.md\n!docs/sub/a.md\n")?;
         assert_eq!(
-            not_ignored(&tracked_markdown(&root.join("docs"))?, &root.join("docs"))?,
+            not_ignored(&walk_markdown(&docs)?, &docs)?,
             paths(&["sub/a.md"])
         );
     }
+    // An ignore file with no patterns ignores nothing, which is what keeps the
+    // arm above from passing for want of any matching at all.
     fs::write(b.path().join(".limae-ignore"), "")?;
     assert_eq!(
         not_ignored(&paths(&["z.md", "a space.md"]), b.path())?,
@@ -133,51 +71,6 @@ fn tracked_selection_preserves_index_order_and_cwd_scope() -> TestResult {
         not_ignored(&paths(&["z.md", "a space.md"]), a.path())?,
         Vec::<PathBuf>::new()
     );
-    assert_eq!(std::env::current_dir()?, before);
-    Ok(())
-}
-
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-#[test]
-fn tracked_names_use_nul_delimiters_and_native_bytes() -> TestResult {
-    if isolated_git_test("tracked_names_use_nul_delimiters_and_native_bytes")? {
-        return Ok(());
-    }
-    use std::ffi::OsString;
-    use std::os::unix::ffi::OsStringExt;
-    let root = TempDir::new()?;
-    git(root.path(), &["init", "-q"])?;
-    let names = paths(&[
-        "a space.md",
-        "line\nbreak.md",
-        "quote\".md",
-        "tab\t.md",
-        "中文.md",
-    ]);
-    for name in &names {
-        fs::write(root.path().join(name), "ACME")?;
-    }
-    let native = PathBuf::from(OsString::from_vec(b"\xff.md".to_vec()));
-    fs::write(root.path().join(&native), "ACME")?;
-    git(root.path(), &["add", "."])?;
-    let mut expected = names;
-    expected.push(native);
-    assert_eq!(tracked_markdown(root.path())?, expected);
-    Ok(())
-}
-
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-#[test]
-fn git_failure_is_distinct_from_an_empty_index() -> TestResult {
-    if isolated_git_test("git_failure_is_distinct_from_an_empty_index")? {
-        return Ok(());
-    }
-    let root = TempDir::new()?;
-    assert_matches!(tracked_markdown(root.path()), Err(GitError::Failed { .. }));
-    git(root.path(), &["init", "-q"])?;
-    assert_eq!(tracked_markdown(root.path())?, Vec::<PathBuf>::new());
-    let missing = root.path().join("missing");
-    assert_matches!(tracked_markdown(&missing), Err(GitError::Io { cwd, .. }) if cwd == &missing);
     Ok(())
 }
 
@@ -389,48 +282,49 @@ fn ignore_read_permission_failure_is_reported() -> TestResult {
     Ok(())
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+/// What the walk selects, in what order, and what it refuses to guess about.
+///
+/// The last arm is the one with a control: an unreadable directory has to be an
+/// error, because skipping it would make "nothing to report here" and "never
+/// looked here" the same output. The readable sibling is what shows the error
+/// is about that directory and not about walking at all.
 #[test]
-fn git_inherits_environment_routing_without_changing_the_caller() -> TestResult {
-    if let Some(cwd) = std::env::var_os("LIMAE_TEST_ROUTING_CWD") {
-        let cwd = PathBuf::from(cwd);
-        let before = std::env::current_dir()?;
-        let expected = std::env::var_os("LIMAE_TEST_ROUTING_EXPECTED").ok_or("expected name")?;
-        assert_eq!(tracked_markdown(&cwd)?, vec![PathBuf::from(expected)]);
-        assert_eq!(std::env::current_dir()?, before);
-        return Ok(());
+fn the_walk_sorts_relative_markdown_and_refuses_a_directory_it_cannot_read() -> TestResult {
+    let root = TempDir::new()?;
+    fs::create_dir_all(root.path().join("docs/sub"))?;
+    for name in ["z.md", "a space.md", "docs/b.md", "docs/sub/a.md", "x.txt"] {
+        fs::write(root.path().join(name), "ACME")?;
     }
-    let a = TempDir::new()?;
-    let b = TempDir::new()?;
-    for (root, name) in [(a.path(), "a.md"), (b.path(), "b.md")] {
-        git(root, &["init", "-q"])?;
-        fs::write(root.join(name), "ACME")?;
-        git(root, &["add", name])?;
-    }
-    for (route, expected) in [(None, "a.md"), (Some(b.path().join(".git")), "b.md")] {
-        let mut command = Command::new(std::env::current_exe()?);
-        command
-            .args([
-                "--exact",
-                "files::git_inherits_environment_routing_without_changing_the_caller",
-                "--nocapture",
+    // A directory whose own name ends in `.md` is not a file to check.
+    fs::create_dir(root.path().join("dir.md"))?;
+    assert_eq!(
+        walk_markdown(root.path())?,
+        paths(&["a space.md", "docs/b.md", "docs/sub/a.md", "z.md"])
+    );
+    assert_eq!(
+        walk_markdown(&root.path().join("docs"))?,
+        paths(&["b.md", "sub/a.md"])
+    );
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let locked = root.path().join("locked");
+        fs::create_dir(&locked)?;
+        fs::write(locked.join("hidden.md"), "ACME")?;
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o000))?;
+        let result = walk_markdown(root.path());
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755))?;
+        assert_matches!(result, Err(limae::files::WalkError(_)));
+        assert_eq!(
+            walk_markdown(root.path())?,
+            paths(&[
+                "a space.md",
+                "docs/b.md",
+                "docs/sub/a.md",
+                "locked/hidden.md",
+                "z.md"
             ])
-            .env_clear()
-            .env("PATH", std::env::var_os("PATH").ok_or("missing PATH")?)
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("LIMAE_TEST_ROUTING_CWD", a.path())
-            .env("LIMAE_TEST_ROUTING_EXPECTED", expected);
-        if let Some(route) = route {
-            command.env("GIT_DIR", route);
-        }
-        let output = command.output()?;
-        assert!(
-            output.status.success(),
-            "isolated re-exec failed: {}\n--- child stdout ---\n{}\n--- child stderr ---\n{}",
-            output.status,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
         );
     }
     Ok(())
