@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Publish the npm tarballs in <dir>, platform packages first and the `limae`
-# launcher last, skipping the ones npm already holds byte for byte.
+# Publish the npm tarballs in <dir>, platform packages first and the
+# `@limae/cli` launcher last, skipping the ones npm already holds byte for
+# byte.
 #
 #   tools/npm_publish_set.sh <dir> [--dry-run]
 #
@@ -40,12 +41,29 @@ fail() {
 dir=$1
 shift
 
-# `@limae/<platform>` first, `limae` last: the launcher's optionalDependencies
-# must resolve the moment it lands.
-platform_tarballs=("$dir"/limae-*-*.tgz)
-launcher_tarballs=("$dir"/limae-[0-9]*.tgz)
+# `@limae/<platform>` first, `@limae/cli` last: the launcher's
+# optionalDependencies must resolve the moment it lands.
+#
+# The sort is by the `name` inside each tarball, not by its file name. `npm
+# pack` derives the file name from the package name, so `@limae/cli` packs as
+# `limae-cli-<version>.tgz` — a file name a `limae-*-*.tgz` glob reads as a
+# platform package, leaving no launcher at all. The name is what the registry
+# publishes under; the file name was only ever a proxy for it.
+launcher_name='@limae/cli' # launchers/npm/cli/package.json
+
+platform_tarballs=()
+launcher_tarballs=()
+for tarball in "$dir"/*.tgz; do
+  name=$(tar -xzOf "$tarball" package/package.json | jq -er '.name') ||
+    fail "cannot read the package name out of $tarball"
+  if [[ $name == "$launcher_name" ]]; then
+    launcher_tarballs+=("$tarball")
+  else
+    platform_tarballs+=("$tarball")
+  fi
+done
 [[ ${#platform_tarballs[@]} -gt 0 ]] || fail "no platform tarballs in $dir"
-[[ ${#launcher_tarballs[@]} -eq 1 ]] || fail "expected one launcher tarball in $dir, found ${#launcher_tarballs[@]}"
+[[ ${#launcher_tarballs[@]} -eq 1 ]] || fail "expected one $launcher_name tarball in $dir, found ${#launcher_tarballs[@]}"
 tarballs=("${platform_tarballs[@]}" "${launcher_tarballs[@]}")
 
 to_publish=()

@@ -1,6 +1,6 @@
-# limae
+# @limae/cli
 
-[limae](https://github.com/Luolc/limae) 的 npm 启动器 (launcher)：`npm i -D limae` 之后 `npx limae` 即可用。
+[limae](https://github.com/Luolc/limae) 的 npm 启动器 (launcher)：`npm i -D @limae/cli` 之后 `npx limae` 即可用 (包名带 scope，命令名仍是 `limae`)。
 
 这个包不含任何代码逻辑，`bin/limae.js` 只是找到 npm 按平台装进来的 `@limae/<platform>` 包、执行里面的二进制。那个二进制与同版本 GitHub Release 上 `limae-<target>.tar.gz` 里的是同一份文件，打包时逐个比对过 sha256。
 

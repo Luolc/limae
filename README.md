@@ -41,7 +41,7 @@ Python 或 Node 项目也可以从各自的包管理器装同一个二进制 (�
 
 ```sh
 uv add --dev limae      # 或 pip install limae
-npm i -D limae          # 之后 npx limae
+npm i -D @limae/cli     # 之后 npx limae
 ```
 
 预构建二进制只有四个平台：Linux x86_64 / aarch64 (静态 musl，glibc 系统照跑)、macOS x86_64 / arm64。没有 Windows；Windows 上用上面的 `cargo install`。

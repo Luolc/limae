@@ -176,7 +176,11 @@ crate 一旦存在，就可以把 token 从 CI 里彻底去掉，改由 GitHub �
 
 ## 四、PyPI 与 npm 启动器
 
-同一个 tag 还会发两层薄启动器 (launcher)：PyPI 上每个 target 一份 wheel (`pip install limae` / `uv add --dev limae`)，npm 上一个裸名主包 `limae` 加四个平台包 `@limae/<platform>` (`npm i -D limae`，主包经 `optionalDependencies` 拉对应平台包，`bin/limae.js` 找到它、执行里面的二进制)。形状的选型见 [跨生态分发调研](../research/distribution-cross-ecosystem.md) §7，本文只写机制与判据。
+同一个 tag 还会发两层薄启动器 (launcher)：PyPI 上每个 target 一份 wheel (`pip install limae` / `uv add --dev limae`)，npm 上一个主包 `@limae/cli` 加四个平台包 `@limae/<platform>` (`npm i -D @limae/cli`，主包经 `optionalDependencies` 拉对应平台包，`bin/limae.js` 找到它、执行里面的二进制)。形状的选型见 [跨生态分发调研](../research/distribution-cross-ecosystem.md) §7，本文只写机制与判据。
+
+**npm 主包为什么带 scope**：无 scope 的 `limae` 发不出去 —— `v0.13.1` 的 release run `34547841511` 里 `publish-npm` 报 `403 Package name too similar to existing packages livan,mime; try renaming your package to '@luolc/limae'`，这是 npm 的抢注防护 (typosquatting 防护)，与凭证无关、换 token 过不去。`@limae` scope 已是我们的，所以主包定名 `@limae/cli` (`@angular/cli` / `@nestjs/cli` 是这个形状的先例)，**装的命令变成 `npm i -D @limae/cli`，敲的命令仍是 `limae`** (`bin` 名没变)。调研文档记的是当时的判断，不回改。
+
+这件事在打包脚本里留下一个必须按名字而不是文件名做的分类：`npm pack` 用包名拼文件名，`@limae/cli` 打出的是 `limae-cli-<version>.tgz`，任何 `limae-*-*.tgz` 这样的 glob 都会把它读成平台包、把 launcher 那组数成 0 个。所以 `tools/npm_publish_set.sh` 改成解开每个 tarball 读 `package.json` 的 `name` 来分组 —— 那正是 registry 认的那个值，文件名一直只是它的代理 (proxy)。
 
 **它们不编译任何东西。** `tools/build_launchers.sh <tag> <assets-dir> <out-dir>` 从 Release 的 `limae-<target>.tar.gz` (先过它的 `.sha256` 边车) 里取出二进制原样放进 wheel 的 `.data/scripts/limae` 与 npm 平台包的 `limae`；wheel 由 `uvx wheel pack` 打出 (它算 RECORD)，npm 包由 `npm pack` 打出，仓里没有 Python、没有 `pyproject.toml`。包版本取 tag，不取 manifest：二进制是 tag 的，而 dispatch 预演时检出的是 main。描述、license、repository 三个 metadata 串取自 `cargo metadata`，只有一个来源。
 
@@ -200,8 +204,8 @@ PyPI 的版本号**永远不能删除或重用**，npm 只有 72 小时反悔窗
 
 ### 发布顺序与 npm token
 
-tag 推上去后三家按「越不可撤销越先」发，且互相串着：`publish` (crates.io，先断言 tag == manifest) → `publish-pypi` (`pypa/gh-action-pypi-publish`，OIDC) → `publish-npm` (四个平台包先发、主包最后，`optionalDependencies` 落地即可解析)。链上任一家红，后面的不发。
+tag 推上去后三家按「越不可撤销越先」发，且互相串着：`publish` (crates.io，先断言 tag == manifest) → `publish-pypi` (`pypa/gh-action-pypi-publish`，OIDC) → `publish-npm` (四个平台包先发、主包 `@limae/cli` 最后，`optionalDependencies` 落地即可解析)。链上任一家红，后面的不发。
 
 **中途失败后可以 `gh run rerun --failed` 续，靠的是两个发布 job 各自先问 registry**：PyPI 与 npm 都不允许同名文件 / 同 name@version 上传两次，所以「从头再传一遍」会撞上已经落地的那几个，而 PyPI action 的 `skip-existing` 分不开「同一份已传」与「别的东西占了这个名字」。`tools/pypi_upload_set.sh <project> <version> <dir>` 用 PyPI 的 JSON API 拿到该版本已有文件的 sha256，与本次成品逐个比：不在 → 留着上传，同 sha256 → 从目录删掉，不同 → 退出 1 什么都不传 (PyPI 答 404 即全传，其它状态码一律退出 1)；`tools/npm_publish_set.sh <dir> [--dry-run]` 对每个 tgz 用 `npm view <name@version> dist.integrity --json` 比本地 tarball 的 sha512，先比完全部再发第一个，任一不同即停；只有 registry 明确答 E404 才算「不在」，连不上、5xx 之类一律退出 1 (查不到不等于没有)。三臂读数 (2026-09-10 本机)：PyPI 侧对 `six 1.17.0` 的真 wheel 报 dropped、假文件名报 to be uploaded、改一字节的同名文件退出 1；npm 侧对 `npm pack` 下来的两个真包报 skipped、重新打包内容不同的那份退出 1、我们自己那 5 个未发布的包全部 to be published、registry 指到不可达地址时退出 1 且零次 publish；PyPI 侧另有一臂：全部 wheel 都已在 PyPI 时 `publish-pypi` 那步数出 `count=0`、上传 action 被跳过 (计数前开 `nullglob`，否则空目录数出的是模式自己那一个)。
 
-npm 首发用的是仓库 secret `NPM_TOKEN` (npm 的 Trusted Publishing 要求包已存在才能配)，有效期 7 天 (2026-09-10 存入)。首发之后换 OIDC、删 token，是后续任务。`@limae/<platform>` 是 scoped 包，默认 restricted，`publishConfig.access = "public"` 写在每个 `package.json` 里跟着包走，不依赖发布命令怎么写。
+npm 首发用的是仓库 secret `NPM_TOKEN` (npm 的 Trusted Publishing 要求包已存在才能配)，有效期 7 天 (2026-09-10 存入)。首发之后换 OIDC、删 token，是后续任务。npm 上五个包全部带 `@limae` scope，scoped 包默认 restricted，所以 `publishConfig.access = "public"` 写在每个 `package.json` 里跟着包走，不依赖发布命令怎么写。

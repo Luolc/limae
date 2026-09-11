@@ -128,7 +128,7 @@ build_npm_platform() {
   cp "$repo_root/LICENSE" "$repo_root/launchers/npm/platform/README.md" "$dir/"
   jq -n \
     --arg name "@limae/$platform" --arg version "$version" \
-    --arg description "$description ($target binary; install the limae package, not this one)" \
+    --arg description "$description ($target binary; install the @limae/cli package, not this one)" \
     --arg license "$license" --arg repository "$repository" \
     --arg os "$os" --arg cpu "$cpu" '{
       name: $name, version: $version, description: $description,
@@ -142,12 +142,12 @@ build_npm_platform() {
 }
 
 build_npm_main() {
-  local dir="$work/npm-limae"
-  cp -r "$repo_root/launchers/npm/limae" "$dir"
+  local dir="$work/npm-cli"
+  cp -r "$repo_root/launchers/npm/cli" "$dir"
   cp "$repo_root/LICENSE" "$dir/"
   jq --arg version "$version" \
     '.version = $version | .optionalDependencies |= with_entries(.value = $version)' \
-    "$repo_root/launchers/npm/limae/package.json" >"$dir/package.json"
+    "$repo_root/launchers/npm/cli/package.json" >"$dir/package.json"
   (cd "$dir" && npm pack --silent --pack-destination "$out/npm")
 }
 

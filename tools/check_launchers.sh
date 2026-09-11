@@ -107,7 +107,8 @@ done <<<"$mapping"
 [[ $checked -eq 10 ]] || fail "expected 10 package comparisons, made $checked"
 
 # The launcher tarball carries no binary; it is the eleventh expected file.
-launcher="$out/npm/limae-$version.tgz"
+# `npm pack` names it after the package (`@limae/cli` -> `limae-cli-…`).
+launcher="$out/npm/limae-cli-$version.tgz"
 [[ -f $launcher ]] || fail "$launcher is missing"
 matched+=("$launcher")
 
