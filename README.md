@@ -17,6 +17,38 @@ Rust 实现是唯一的实现、正式的 `limae` 命令。默认规则集是中
 
 ## 使用
 
+### 一键安装 (macOS / Linux)
+
+macOS 与 Linuxbrew 走 Homebrew：
+
+```sh
+brew install luolc/tap/limae
+```
+
+不经包管理器就用安装脚本，它取的是同一批 [GitHub Release](https://github.com/Luolc/limae/releases) 预构建二进制：
+
+```sh
+curl -fsSL https://limae.luolc.com/install.sh | sh
+```
+
+脚本按 `uname` 选本机对应的 tarball、用 Release 旁边的 `.sha256` 边车校验、装进 `~/.local/bin`；那个目录还不在 `PATH` 上时，再往当前 shell 的 rc 文件里写一段带成对标记的块，重复执行不会写第二遍。装完通常**开一个新终端就行**，想在当前这个终端里立刻用，脚本会把那一行 `export` 打出来。认不出的 OS / CPU、对不上的校验和、机器上一个 sha256 工具都没有，三种情况都是**报错退出、什么都不装** —— 不猜平台，也不在校验不了的时候跳过校验。
+
+三个环境变量是留给要自己安排的人的口子：
+
+| 变量 | 作用 | 默认 |
+| --- | --- | --- |
+| `LIMAE_VERSION` | 装指定的 Release tag，如 `v0.13.2` | 最新的那个 |
+| `LIMAE_INSTALL_DIR` | 装到哪个目录 | `~/.local/bin` |
+| `LIMAE_NO_MODIFY_PATH` | 非空则一个文件都不写，只把要加的那行打出来 | 未设 |
+
+```sh
+curl -fsSL https://limae.luolc.com/install.sh | LIMAE_VERSION=v0.13.2 LIMAE_NO_MODIFY_PATH=1 sh
+```
+
+rc 文件由 chezmoi 管理时 (脚本拿 `chezmoi source-path` 判定)，它**不写**那个文件，改为把该加的行打印出来：写进去也会在下次 `chezmoi apply` 时消失，而那在用户眼里就是「装过了又没了」。fish 以及其它脚本拿不准 rc 语法的 shell 同样只打印，给的是 `fish_add_path` 那一行。
+
+Windows 没有预构建二进制，用下面的 `cargo install`。
+
 ### 接 pre-commit
 
 两条远端 hook 并存，**不是替换关系** —— 差别在消费方要有什么、以及支不支持 Windows：

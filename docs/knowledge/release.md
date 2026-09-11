@@ -237,7 +237,7 @@ job 做四件事，每件都留正向判据：
 
    四臂读数 (2026-09-10 本机，隔离的 bare remote，同一段代码只换 `$TAG`)：annotated tag 指向 `HEAD` → 退 0；lightweight tag 指向 `HEAD` → 退 0；**annotated tag 指向另一个 commit → 退 1** (对照臂：一个恒判相等的「修法」在这一臂上会绿)；tag 不存在 → 走创建分支。改回带 pattern 的写法时，第一臂给出的是 tag object 的 sha、比较不等 (审查方 2026-09-10 在 PR #169 以 P1 提出，本机独立复现)。
 
-**凭证**：仓库 secret `MIRROR_TOKEN`，一枚能写 `Luolc/limae-pre-commit` 的 token，由用户创建并存入。job 的 `permissions: {}` —— 它不碰本仓，`GITHUB_TOKEN` 一项权限都不需要。
+**凭证**：仓库 secret `PRECOMMIT_MIRROR_TOKEN`，一枚能写 `Luolc/limae-pre-commit` 的 token，由用户创建并存入。job 的 `permissions: {}` —— 它不碰本仓，`GITHUB_TOKEN` 一项权限都不需要。
 
 ### 镜像仓里哪些是生成的
 
