@@ -255,6 +255,8 @@ backlog 的正本，由实现方在改动所属的 PR 里记账，`limae-orchest
   **为什么不现在修**：修之前得先有复现，否则那条回归测试在修复不在场时也不会红，是个永远不红的空洞，比不修更坏。**复发一次就升级成任务**；届时候选修法是「exec 遇 `ETXTBSY` 有界重试」或「这组测试串行跑」，两者都只动测试代码、不动 production。
   **给下一个人的提醒**：不要把「重跑就绿」当成结论 —— 那个观察对「flake」与「真 bug 只是偶发」给出相同输出。
 
+- **版本号提到 0.13.3，只开 bump PR，不推 tag** (2026-09-12，本 PR)：`Cargo.toml` 与 `Cargo.lock` 的 `limae` 版本同步改到 `0.13.3`，两臂验收 —— `grep limae -A1 Cargo.lock` 确认版本变更，`git diff Cargo.lock` 只动了 `limae` 那一条。`git grep -n "0\.13\.2"` 核过一遍：剩下的全部是 README / `install.sh` / `tools/*.sh` 里的示例字面量 (不断言当前版本) 与 `docs/tracker.md`、`docs/knowledge/*.md` 里注明日期的历史读数，按 brief 不改。**发这一版的实质内容**：`main` 上的 hook 已在 [#180](https://github.com/Luolc/limae/pull/180) 改成只做机械排版修复，但任何按正常方式安装 limae 的人拿到的仍是 0.13.2 里的旧 hook (调模型润色 + A/B 盲评)；这一版把它送出去。**本 PR 只到合入为止，不推 tag、不 publish、不 create release** —— 那些在发版闸口里面，由 orchestra 执行；用户的发版授权 (2026-09-12，即时授权) 在推 tag 那一步兑现，不在这里。
+
 ## 愿景 (正本 `docs/adr/0005-agent-native-positioning.md`，这里只记条目)
 
 - **LLM 语义润色**：agent 调用的语义层润色特性，与确定性 lint 互补。
