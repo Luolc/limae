@@ -6,4 +6,4 @@ This package carries no logic of its own. `bin/limae.js` finds the `@limae/<plat
 
 Platforms: `linux-x64`, `linux-arm64` (static musl builds, so they run on glibc and musl systems alike), `darwin-x64`, `darwin-arm64`. No Windows.
 
-Usage, rules and configuration live in the [repository README](https://github.com/Luolc/limae#readme), which is written in Chinese.
+Usage, rules and configuration live in the repository README. The [English summary](https://github.com/Luolc/limae/blob/main/README.en.md) covers installation and the basic commands; the [full documentation](https://github.com/Luolc/limae#readme) is in Chinese.

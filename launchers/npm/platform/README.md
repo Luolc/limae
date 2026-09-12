@@ -4,4 +4,4 @@ A platform binary for [limae](https://github.com/Luolc/limae). npm installs the 
 
 The `limae` file inside is the same one that ships as `limae-<target>.tar.gz` in the GitHub Release of the same version, verified against its SHA-256 checksum when the packages are built.
 
-Usage, rules and configuration live in the [repository README](https://github.com/Luolc/limae#readme), which is written in Chinese.
+Usage, rules and configuration live in the repository README. The [English summary](https://github.com/Luolc/limae/blob/main/README.en.md) covers installation and the basic commands; the [full documentation](https://github.com/Luolc/limae#readme) is in Chinese.

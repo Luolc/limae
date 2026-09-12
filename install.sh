@@ -8,7 +8,8 @@
 # that directory is not on PATH yet — adds it to the shell rc file, so that
 # "open a new terminal" is the whole of what is left to do.
 #
-# Three knobs, all optional and all documented in the README:
+# Three knobs, all optional, all documented in
+# docs/knowledge/rust-binary-distribution.md:
 #
 #   LIMAE_VERSION          a Release tag such as v0.13.2; default: the latest
 #   LIMAE_INSTALL_DIR      where the binary lands; default: ~/.local/bin

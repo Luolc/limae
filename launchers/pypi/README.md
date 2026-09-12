@@ -6,4 +6,4 @@ The wheel carries no Python code. It drops a prebuilt `limae` binary into the sc
 
 Platforms: Linux x86_64 and aarch64 (static musl builds — the manylinux and musllinux wheels carry the same file), macOS x86_64 and arm64. No Windows.
 
-Usage, rules and configuration live in the [repository README](https://github.com/Luolc/limae#readme), which is written in Chinese.
+Usage, rules and configuration live in the repository README. The [English summary](https://github.com/Luolc/limae/blob/main/README.en.md) covers installation and the basic commands; the [full documentation](https://github.com/Luolc/limae#readme) is in Chinese.
