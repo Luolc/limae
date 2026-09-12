@@ -51,14 +51,50 @@ jobs:
   # `publish`, `publish-pypi`, `publish-npm`) belong to it; `launchers`
   # runs on both; the two `*auth-check` jobs belong to the dispatch.
   # `upload-assets` needs this job and is skipped with it.
+  #
+  # `create-release` writes the body GitHub generates for itself: one line
+  # per pull request merged since the previous Release, plus the compare
+  # link. Squash merges make that list the changelog — every entry is a PR
+  # title, and PR titles here are English commit subjects (AGENTS.md).
+  # Nothing is written to the repository; there is no CHANGELOG.md to keep
+  # in sync.
+  #
+  # `taiki-e/create-gh-release-action@v1` stood here before and has no
+  # generate-notes switch: its only body source is `parse-changelog` over a
+  # changelog file, and with no `changelog:` input it creates the Release
+  # with an empty body (main.sh at v1, eba8ea9). That empty body is what
+  # every Release so far holds: the API returns `body: null` for v0.13.0,
+  # v0.13.1 and v0.13.2 alike (2026-09-12), and the commit message their
+  # pages show is the web UI falling back to the tagged commit, not notes
+  # anybody stored.
+  #
+  # What that action also did and this step does not: reject a malformed tag
+  # (`on.push.tags` above is the stricter filter, and it is what decides
+  # whether this job runs at all), flag a pre-release (that same filter
+  # admits no pre-release tags), retry the create call, and delete an
+  # existing Release before recreating it — so a whole-workflow re-run now
+  # stops here instead of replacing the Release and its assets. Re-running
+  # only the failed jobs (`gh run rerun --failed`, see the registry jobs
+  # below) is unaffected. It never checked the tag against the manifest
+  # version; that guard lives in `publish` and is untouched.
+  #
+  # No checkout: `gh` works from `GH_REPO`, and nothing here reads the
+  # repository.
   create-release:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: taiki-e/create-gh-release-action@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      # `--verify-tag` keeps this to the tag that triggered the run: without
+      # it `gh` would create a missing tag on the default branch instead of
+      # failing. `--title` pins the Release name to the tag, which is what
+      # the previous action produced; `--generate-notes` would otherwise
+      # name it too.
+      - name: Create the Release with GitHub's generated notes
+        run: gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes
 
   upload-assets:
     needs: create-release

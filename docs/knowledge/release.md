@@ -174,6 +174,29 @@ crate 一旦存在，就可以把 token 从 CI 里彻底去掉，改由 GitHub �
 
 **这不覆盖同一个文件里后加的两个 job** (`publish` 与 `auth-check`，见「二」)：那次运行发生在它们存在之前，它们各自的第一次真实执行仍未发生。
 
+### Release 正文：GitHub 自己生成的 PR 清单
+
+`create-release` 用的是 `gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes`。`--generate-notes` 把正文交给 GitHub 的 release notes 生成接口 (REST `POST /repos/{owner}/{repo}/releases/generate-notes` 是同一套)：**自上一个 Release 以来合入的每个 PR 一行**，加一条 compare 链接。squash 合并让这份清单就是 changelog —— 每行取的是 **PR 标题**，而本仓的 PR 标题就是英文 commit subject。仓里不写 `CHANGELOG.md`，没有第二份要同步。
+
+**在这之前的三个 Release 正文都是空的**：`taiki-e/create-gh-release-action@v1` 不带 `changelog:` 输入时以空串建 Release (它的正文只有一个来源，`parse-changelog` 读一份 changelog 文件；v1 tip `eba8ea9` 的 `main.sh` 第 115 与 190 行)。`gh api repos/Luolc/limae/releases` 对 v0.13.0 / v0.13.1 / v0.13.2 三条都返回 `body: null` (2026-09-12 实测)，页面上看到的那段 commit message 是 web UI 在正文为空时回落去显示被 tag 的那条 commit，不是谁存进去的正文。
+
+换掉那个 action 丢掉的是四件事，**不含**「tag 与 manifest 版本必须逐字相等」那条守卫 —— 它在 `publish` job 里 (见「二」)，那个 action 从不读 manifest：
+
+1. tag 形状校验 —— `on.push.tags` 的 `v[0-9]+.[0-9]+.[0-9]+` 更严，且它决定这个 job 跑不跑。
+2. 预发布版自动标 prerelease —— 同一个 glob 根本放不进预发布 tag。
+3. create 调用的重试 (它重试 10 次)。
+4. 已存在的 Release 先删后建 —— 因此**整条 workflow 重跑现在会停在这个 job**，而不是把 Release 连同资产删掉重建。只重跑失败的 job (`gh run rerun --failed`) 不受影响。
+
+**正文长什么样，可以在不发版的前提下先看**：generate-notes 接口只算不写，拿它预演即可 (2026-09-12 实测，`v0.13.1...v0.13.2` 返回的正是 #168 那一行加 compare 链接)：
+
+```sh
+gh api repos/Luolc/limae/releases/generate-notes \
+  -f tag_name=v0.13.3 -f previous_tag_name=v0.13.2 \
+  -f target_commitish="$(git rev-parse origin/main)" --jq '.body'
+```
+
+**它证明不了真发版那一刻的正文。** 真跑时 `gh` 传的是 `generate_release_notes: true`、由 GitHub 自己挑上一个 Release 作起点 (gh v2.98.0 `pkg/cmd/release/create/create.go` 的 params 构造)，而不是这里手给的 `previous_tag_name`；两者的起点选择是两段不同的代码。这一臂只有下一次真实 tag 推送才有读数。
+
 ## 四、PyPI 与 npm 启动器
 
 同一个 tag 还会发两层薄启动器 (launcher)：PyPI 上每个 target 一份 wheel (`pip install limae` / `uv add --dev limae`)，npm 上一个主包 `@limae/cli` 加四个平台包 `@limae/<platform>` (`npm i -D @limae/cli`，主包经 `optionalDependencies` 拉对应平台包，`bin/limae.js` 找到它、执行里面的二进制)。形状的选型见 [跨生态分发调研](../research/distribution-cross-ecosystem.md) §7，本文只写机制与判据。

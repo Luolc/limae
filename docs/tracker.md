@@ -255,6 +255,12 @@ backlog 的正本，由实现方在改动所属的 PR 里记账，`limae-orchest
   **为什么不现在修**：修之前得先有复现，否则那条回归测试在修复不在场时也不会红，是个永远不红的空洞，比不修更坏。**复发一次就升级成任务**；届时候选修法是「exec 遇 `ETXTBSY` 有界重试」或「这组测试串行跑」，两者都只动测试代码、不动 production。
   **给下一个人的提醒**：不要把「重跑就绿」当成结论 —— 那个观察对「flake」与「真 bug 只是偶发」给出相同输出。
 
+- **Release 正文改成 GitHub 原生生成的 PR 清单** (2026-09-12，本 PR)：只改 `.github/workflows/release.yml` 的 `create-release` job —— `taiki-e/create-gh-release-action@v1` 换成一行 `gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes`，选型依据见 research agent 2026-09-12 的 release notes 调研 §5.1 / §6 (不入库，结论已转写进 [发布手册](knowledge/release.md))。**改的是「正文从哪来」，不是发版流程**：不引入 release-plz / cargo-dist / changesets，不在 CI 里调任何模型，不新建 `CHANGELOG.md`。
+  **先前那三个 Release 的正文其实是空的**，不是「bump commit 全文」：`gh api repos/Luolc/limae/releases` 对 v0.13.0 / v0.13.1 / v0.13.2 三条都返回 `body: null` (2026-09-12 实测)，页面上那段 commit message 是 web UI 在正文为空时的回落显示。调研报告把它记成 [页面] 级的「正文 = bump commit 全文」，是把 UI 回落当成了存储的正文；换 action 的理由不受影响，但**「现状是什么」这条读数要按 API 的那个**。该 action 不支持 generate-notes 这条原为 [文档] 级，已核到源码：v1 tip `eba8ea9` 的 `action.yml` 没有这个输入，`main.sh` 的正文只有 `parse-changelog` 一个来源。
+  **换 action 丢掉的四件事逐条写在 workflow 注释与手册里**，其中第四条是真的行为变化：整条 workflow 重跑会停在 `create-release`，不再删掉 Release 连同资产重建 (`gh run rerun --failed` 不受影响)。**「tag 与 manifest 版本必须逐字相等」那条守卫没有被碰** —— 它在 `publish` job 里，那个 action 从不读 manifest。
+  **验收分得开的与分不开的**：本机 actionlint 1.7.7 对改后文件退出 0，对照臂 (把 `github.ref_name` 改成 `ref_nmae`) 退出 1，所以这道检查在表达式这一层有分辨力；`GH_REPO` 让 `gh` 在没有 checkout 的目录里指到本仓，两臂 (设 / 不设) 退出 0 与 1。**这些都不证明正文会是对的** —— 语法对与正文对是两回事。正文预演走 generate-notes 接口 (只算不写)，`v0.13.1...v0.13.2` 返回的正是 #168 那一行加 compare 链接；以 `origin/main` 预演下一版，返回 14 行、每行一个 PR。**仍未测的一臂是真发版**：真跑时起点由 GitHub 自己挑上一个 Release，而不是预演里手给的 `previous_tag_name`，那段代码只有下一次真实 tag 推送才有读数。dispatch 干跑不建 Release 这一条靠的是 `if: github.event_name == 'push'` 未被改动 (#144 那次 dispatch 已给过 `create-release` skipped 的读数)，判据与对照臂写在 PR 描述里。
+  **两条已知的取舍**：清单是扁平的、不按 `type:` 前缀分组 (GitHub 只认 label)；bump PR 自己会出现在清单里。两条都可忍，真觉得吵再考虑 git-cliff。另外清单每行取的是 **PR 标题**而非 squash 后的 commit subject，两者在本仓通常相同，#179 是一个已知的例外 (PR 标题没有 `docs:` 前缀，合并时改了 subject)。
+
 ## 愿景 (正本 `docs/adr/0005-agent-native-positioning.md`，这里只记条目)
 
 - **LLM 语义润色**：agent 调用的语义层润色特性，与确定性 lint 互补。
