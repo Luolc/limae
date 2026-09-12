@@ -68,6 +68,8 @@ zhlint 与 AutoCorrect 是前 agentic 时代的成熟手作，列为本项目的
 - 落地顺序不在此定。上面每一条真要实现时另起 ADR：fixable / non-fixable 分级、experimental 规则的规范位置、LLM 润色原型的形态，都要各自定案后再动 `spec/`。
 - 参考对象的机制可以照抄，默认值不照抄 —— 已有 R1–R11 的默认值不因为「上游怎么做」而变动，要变得有本仓自己的依据。
 
+补记 (2026-09-12)：[PR #186](https://github.com/Luolc/limae/pull/186) 重写 README 之后，上面第一条提到的那个「定位与愿景」小节已不存在。它被拆开了：项目做什么收成 README 开头的那一句定位，「规则先于实现、多实现共用黄金 fixture」收成「规则」节末尾一句并链回 ADR-0001 / 0006 / 0007，其余各条 (agent-native、参考对象、两段式边界、heuristic learning) 回到本 ADR 与各自的 ADR，README 不再复述。**「以本文为准」这条关系本身没有变**，变的只是 README 那一侧不再有一个与它对应的小节：本 ADR 仍是「这个项目是什么」的正本，README 里关于定位的任何一句与本文不一致时，以本文为准。
+
 ## 状态
 
 accepted (2026-08-31)。
