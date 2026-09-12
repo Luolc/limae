@@ -50,6 +50,24 @@ Rust 命令名为 `limae`，是本项目唯一的 CLI (ADR-0015 阶段 E，Pytho
 
 脚本不安装工具链或 target。本仓 CI 在 GitHub Actions 的临时 Linux runner 上运行 pre-commit 消费仓验收，再为钉住的 toolchain 安装 musl target，并逐项运行 package / GNU / musl 三条验收。许可证已由用户于 2026-09-07 裁决为 Apache-2.0，`LICENSE` 已在仓内，`Cargo.toml` 的 SPDX 值为 `Apache-2.0`；实际发布前仍须完成发布认证，该用户项不阻塞本文的无发布副作用预演。
 
+## 一键安装的旋钮与 PATH 行为
+
+`curl -fsSL https://limae.luolc.com/install.sh | sh` 装的是本机对应的 Release 二进制。三个环境变量是留给要自己安排的人的口子，其余人一个都不用设：
+
+| 变量 | 作用 | 默认 |
+| --- | --- | --- |
+| `LIMAE_VERSION` | 装指定的 Release tag，如 `v0.13.2` | 最新的那个 |
+| `LIMAE_INSTALL_DIR` | 装到哪个目录 | `~/.local/bin` |
+| `LIMAE_NO_MODIFY_PATH` | 非空则一个文件都不写，只把要加的那行打出来 | 未设 |
+
+```sh
+curl -fsSL https://limae.luolc.com/install.sh | LIMAE_VERSION=v0.13.2 LIMAE_NO_MODIFY_PATH=1 sh
+```
+
+装完的目录不在 `PATH` 上时，脚本往当前 shell 的 rc 文件里写一段带成对标记的块，重复执行不会写第二遍，开一个新终端即可用；想在当前终端里立刻用，脚本会把那一行 `export` 打出来。**两种情况它只打印、不写文件**：rc 文件由 chezmoi 管理时 (拿 `chezmoi source-path` 判定) —— 写进去也会在下次 `chezmoi apply` 时消失，而那在用户眼里就是「装过了又没了」；fish 以及其它脚本拿不准 rc 语法的 shell —— 给的是 `fish_add_path` 那一行。只给 zsh 与 bash 写文件，理由与横向调研的读数见 [`docs/tracker.md`](../tracker.md) 里「一键安装」那条。
+
+认不出的 OS / CPU、对不上的校验和、机器上一个 sha256 工具都没有，三种情况都是报错退出、什么都不装 —— 不猜平台，也不在校验不了的时候跳过校验。各自的对照臂见下一节。
+
 ## 验收一键安装
 
 两条路的产物都在 Release 上，装的是同一批二进制：`install.sh` (仓根，由 CI 的 `build` job 复制进 `site/`，经 GitHub Pages 送到 `https://limae.luolc.com/install.sh`) 与 Homebrew formula (由 `tools/render_homebrew_formula.sh` 渲染、release workflow 的 `homebrew` job 推到 `Luolc/homebrew-tap`)。

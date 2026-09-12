@@ -5,7 +5,7 @@ edition = "2024"
 license = "Apache-2.0"
 description = "A Markdown linter that starts from Chinese technical-writing typography rules, with opt-in experimental rules for AI tells and terminology"
 repository = "https://github.com/Luolc/limae"
-readme = "README.md"
+readme = "README.en.md"
 keywords = ["markdown", "linter", "typography", "chinese", "cjk"]
 categories = ["command-line-utilities", "development-tools", "text-processing"]
 include = [
@@ -13,6 +13,7 @@ include = [
   "/Cargo.lock",
   "/LICENSE",
   "/README.md",
+  "/README.en.md",
   "/rust-toolchain.toml",
   "/askama.toml",
   "/rust/**/*.rs",
