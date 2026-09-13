@@ -8,6 +8,7 @@ pub mod cli;
 pub mod config;
 pub mod diagnosis;
 pub mod engines;
+pub mod lexicon;
 pub mod process;
 pub mod prompt;
 pub mod select;

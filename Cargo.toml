@@ -45,6 +45,10 @@ path = "rust/tools/render_lexicon.rs"
 name = "lint-lexicon"
 path = "rust/tools/lint_lexicon.rs"
 
+[[example]]
+name = "render-skill"
+path = "rust/tools/render_skill.rs"
+
 [[test]]
 name = "integration"
 path = "rust/tests/integration.rs"

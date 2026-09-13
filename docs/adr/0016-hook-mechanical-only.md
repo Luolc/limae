@@ -202,6 +202,15 @@ polish 从此有**两条并列的消费路径、一个正本**：
 
 **这条不是「已排除」，也不是「已验证安全」。** 它是一个被明确接受的**已知残余风险**，接受的理由是概率低加爆炸半径有限，不是因为它被证伪。将来若真观测到一次，回到这一节，不要当新发现。
 
+## 补记 (2026-09-12)
+
+§七 留给「后续 ADR」的 skill 形态、生成方式与位置，由用户直接定案、随实现 PR 落地，不另开 ADR；这里只记决定，读数与理由在 `docs/tracker.md` 同日那条。
+
+- **位置**：手写源 `spec/skill/SKILL.md` (语言无关) 与 `spec/skill/zh.md` (中文指南)；产物 `skills/limae/` (`SKILL.md` 加 `references/zh/guide.md`、`references/zh/lexicon.md`)，按语言分目录，**入库**。
+- **生成方式**：Cargo example `render-skill`。§七 说的「两条共用 `spec/polish/general.md` 与 `spec/polish/zh.md` 这一个正本、skill 是从它们生成的」**改了一半**：真正共用的是词典 `spec/lexicon/zh.toml`，由 `rust/polish/lexicon.rs` 同一个函数渲染进 polish 的中文层与 skill 的 `lexicon.md`；polish 的 prompt 正文与 skill 的正文是两份手写源，因为两者的读者不同 —— polish 的输出契约对写作中的模型是噪声，skill 的文件地图对一次性全加载的 prompt 是噪声。§七 的「不另写一份」在词典上成立，在正文上不成立，以本节为准。
+- **分发**：仓内 `skills/limae/` 就是发布形态，clone 下来复制进 agent 的 skill 目录即可；不进任何包管理器。
+- **prompt 再测一轮**已做 (五个变体，读数在 tracker)，polish 的两层 prompt 据此瘦身，§七 说的「一概不变」里 `spec/polish/` 这一项不再成立。
+
 ## 状态
 
 accepted (2026-09-11)。

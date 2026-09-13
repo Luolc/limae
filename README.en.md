@@ -72,6 +72,8 @@ enable_experimental = true
 
 It also ships a [pre-commit](https://pre-commit.com/) hook, a `.limae-ignore` file, inline `<!-- limae-disable-next-line -->` comments, and a `limae polish` subcommand that hands prose to a locally logged-in LLM CLI.
 
+For agents there is a skill in [`skills/limae/`](https://github.com/Luolc/limae/tree/main/skills/limae) ([agentskills.io](https://agentskills.io/specification) format): copy the directory into your agent's skill directory and the model reads the Chinese guide and the lexicon before it writes, instead of having its text polished afterwards.
+
 ## Where the details are
 
 This is a summary. The full documentation is in Chinese, because the rules it enforces are rules of Chinese typography.
