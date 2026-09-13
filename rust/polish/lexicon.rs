@@ -12,12 +12,13 @@
 //! The two callers want different amounts of it, which is what [`Detail`]
 //! selects. The skill is read on demand by a model about to write Chinese,
 //! and gets everything a writer can use: the standard, each entry's meaning,
-//! what is wrong with it, and the before/after examples. The polish prompt is
-//! loaded whole on every call, and the experiment that put the lexicon there
-//! (`docs/tracker.md`, 2026-09-12) showed that the *entries* move the
-//! result while prompt length buys nothing; so it gets each term with what to
-//! write instead and why, and nothing that the surrounding sentence already
-//! tells the model.
+//! what is wrong with it, and the before/after examples. The polish prompt
+//! gets the brief shape — each term, what to write instead, and why —
+//! because that is the shape with a reading: the prompt experiment recorded
+//! in `docs/tracker.md` (2026-09-12) appended exactly term + replacement +
+//! fault and read 9/20 collected words left in place without it, 0–1/20
+//! with it. The full shape has never been measured there; the brief one is
+//! not a saving, it is the tested one.
 //!
 //! The parser reads only the fields the Markdown prints. `render-lexicon` and
 //! `lint-lexicon` each parse the same file for their own purposes (the page
