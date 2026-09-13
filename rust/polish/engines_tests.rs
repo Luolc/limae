@@ -443,13 +443,13 @@ fn a_view_moves_every_engine_into_it_and_adds_the_read_only_flags() -> TestResul
         let plain = expand(&without, &workdir)?;
         let viewed = expand(&with, &workdir)?;
 
-        assert_eq!(viewed.cwd, view, "{}", engine.name());
-        let expected_plain = if engine.name() == "custom" {
-            root.path()
+        if engine.name() == "custom" {
+            assert_eq!(plain.cwd, root.path());
+            assert_eq!(viewed.cwd, root.path());
         } else {
-            &workdir
-        };
-        assert_eq!(plain.cwd, expected_plain, "{}", engine.name());
+            assert_eq!(plain.cwd, workdir, "{}", engine.name());
+            assert_eq!(viewed.cwd, view, "{}", engine.name());
+        }
 
         let plain_argv = argv(&plain);
         let viewed_argv = argv(&viewed);
@@ -492,7 +492,8 @@ fn a_view_moves_every_engine_into_it_and_adds_the_read_only_flags() -> TestResul
                 );
                 assert!(!plain_argv.contains(&"--tools"), "{plain_argv:?}");
             }
-            // The user's own command is not decorated: only its directory moves.
+            // The user's own command is untouched by a view: file mode never
+            // hands it one, and this is what makes that a no-op.
             Engine::Custom(_) => assert_eq!(plain_argv, viewed_argv),
         }
     }

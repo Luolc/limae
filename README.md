@@ -166,7 +166,7 @@ limae polish --share-repo-with-engine --all
 - **写文件的只有 limae 自己，且只写你点名 (或 `--all` 选出) 的文件**；引擎只回正文。写回之前 limae 核对目标仍是跑前那一版，不是就拒绝写、保留你的版本 (`not written`，退出码 1)。视图另有一道绊线：引擎要是在视图里写了东西，说明只读设置没有生效，这一轮不写、整个运行停下。**这是事后检测加冲突拒绝，不是写入隔离**，它看不见仓库之外、`.git` 内部与网络。
 - **这个 flag 挡不住它被固化进 Makefile、justfile、`.pre-commit-config.yaml` 的 `args` 或 CI step** —— 这些文件都在仓库里，之后的调用者只看到 `make polish`。这是我们知情选择的代价 (为什么不做信任记录，见 [ADR-0017](docs/adr/0017-polish-file-mode.md))。
 
-`--all` 选的是当前目录下每一个 Markdown 文件，与 `limae --all` 完全相同，所以 `.gitignore` 与 `.limae-ignore` 都被尊重；但这两份 ignore 只决定**改写哪些文件**，不决定**引擎读到哪些**：视图是 `git ls-files`，被 `.limae-ignore` 排除的 tracked 文件仍在视图里，被 `.gitignore` 排除的不在。符号链接不改写：命令行点名的拒绝 (请点名它的目标)，`--all` 选出的跳过并说明。每个目标一行输出 (`polished:` / `unchanged:`)，诊断进 stderr。`limae polish -` 一行不变，也永远不需要这个 flag。
+文件模式只跑三家预设 (它们带只读工具集)；`custom` 引擎在这里被拒绝，因为它的命令来自仓库自己的配置、limae 约束不了它 —— 自建引擎请走 `limae polish -`，那里 `custom` 仍是你自己的命令、边界由你自己划。上面几条承诺说的都是文件模式，不是 `limae polish -`。`--all` 选的是当前目录下每一个 Markdown 文件，与 `limae --all` 完全相同，所以 `.gitignore` 与 `.limae-ignore` 都被尊重；但这两份 ignore 只决定**改写哪些文件**，不决定**引擎读到哪些**：视图是 `git ls-files`，被 `.limae-ignore` 排除的 tracked 文件仍在视图里，被 `.gitignore` 排除的不在。符号链接不改写：命令行点名的拒绝 (请点名它的目标)，`--all` 选出的跳过并说明。每个目标一行输出 (`polished:` / `unchanged:`)，诊断进 stderr。`limae polish -` 一行不变，也永远不需要这个 flag。
 
 ## 给 agent 的 skill (`skills/write-naturally/`)
 

@@ -36,7 +36,7 @@ flag 的名字要说清它授予了什么，不只说「read」：授予的是�
 
 ### 三、引擎侧的只读工具集与关配置加载照加，作为纵深
 
-视图之上，每个预设在文件模式下多带一组 flag：claude `--setting-sources user --no-session-persistence --tools Read,Glob,Grep`；codex `--sandbox read-only -c project_doc_max_bytes=0`；grok `--tools read_file,list_dir,grep --disable-web-search`，永远不带 `--trust`。这些是两份报告里各家实测过有效的 (grok 的 `--disallowed-tools` 实测无效，所以用允许名单)。它们是纵深，**不是承重的那一层**：flag 随 CLI 版本变，视图不变。`custom` 引擎不加任何 flag，只把工作目录换成视图 —— 用户自己的命令自己负责。
+视图之上，每个预设在文件模式下多带一组 flag：claude `--setting-sources user --no-session-persistence --tools Read,Glob,Grep`；codex `--sandbox read-only -c project_doc_max_bytes=0`；grok `--tools read_file,list_dir,grep --disable-web-search`，永远不带 `--trust`。这些是两份报告里各家实测过有效的 (grok 的 `--disallowed-tools` 实测无效，所以用允许名单)。它们是纵深，**不是承重的那一层**：flag 随 CLI 版本变，视图不变。**`custom` 引擎在文件模式下直接拒绝** (退出码 2，不论它来自 `--engine`、`LIMAE_ENGINE` 还是配置文件；判据是回归臂里那条命令从未启动)：它的命令来自仓库自己的 `limae.toml` —— 本仓没有用户层配置 (`find_config` 只沿祖先目录走到 `.git` 为止)，文件模式下 `command` 的**唯一**来源就是被检查的仓库；它又继承调用者完整环境 (白名单只对预设生效)，limae 没有任何手段约束它运行什么、写到哪里。接受它等于让仓库自己选要跑的程序，正是视图要挡的那件事。第一版把它写成「只换工作目录」，审查方以 P0 抓出 (仓库配置一条写视图外标记的 custom 命令，文件模式退出 0、绊线看不见)。「只在显式 `--engine custom` 时允许」也不成立：flag 只表达「用 custom」，argv 仍 100% 由仓库提供，一个只为了告诉用户别用它而存在的开关不是边界 (§六)；没有用户侧配置层这一条，让这句从论证变成机制 —— 不是不愿给用户一条安全的 custom 路径，是文件模式下那条路径今天不存在。**作用域**：本 ADR 里「引擎起在导出视图里」「仓库不能让引擎运行任何东西」这类承诺**只对文件模式**为真；stdin 模式的 `custom` 不变，仍是用户自己的命令、保留调用方的目录与环境，边界由用户自己划 (ADR-0008 §三，[引擎行为实测](../research/polish-engine-cli-behavior.md) §一末段)，同一条「仓库配置能选命令」的路径在那里今天就有，记在 `docs/tracker.md`、触发点是下一次动 stdin 模式的引擎解析时。
 
 prompt 多一层 `spec/polish/file-mode.md`：告诉模型正文来自仓库里的哪个文件、它被起在一份 tracked 文件的副本里、可以读其它文件做参考、什么都不要写 —— 改写是**返回**的，不是写的。
 
@@ -50,7 +50,7 @@ prompt 多一层 `spec/polish/file-mode.md`：告诉模型正文来自仓库里�
 
 ### 五、承诺的措辞
 
-文档 (README 的 polish 一节、flag 的 `--help`、拒绝时的错误文本) **不许写「只会改你指定的文件」**。要写的是：
+文档 (README 的 polish 一节、flag 的 `--help`、拒绝时的错误文本) **不许写「只会改你指定的文件」**。下面每一条的作用域都是**文件模式**，不是全局 —— `limae polish -` 的边界由 ADR-0008 §三 写。要写的是：
 
 - 这个模式会让本机 coding agent 读到导出视图里的内容，并把它读到的发给该引擎的服务方。
 - 导出视图排除了什么 (`.git`、被忽略与未跟踪的文件、`.claude` / `.codex` / `.grok`、`.mcp.json`)，**以及排除不等于隔离** —— 引擎按绝对路径仍读得到视图之外的文件。

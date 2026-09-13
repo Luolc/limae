@@ -89,6 +89,12 @@ service. Nothing has been started.
 To accept that, pass --share-repo-with-engine on this call. A configuration \
 key or an environment variable cannot pass it for you.";
 
+const CUSTOM_REFUSAL: &str = "\
+file mode runs the three presets only, each with its read-only tool set. \
+A custom engine is a command taken from the repository's configuration, \
+and limae cannot constrain what it runs or writes, so file mode refuses it. \
+Use `limae polish -` with a custom engine, or name a preset with --engine.";
+
 /// Run the `polish` subcommand.
 ///
 /// `args` is what follows `polish`. The caller supplies the working directory,
@@ -167,6 +173,15 @@ pub fn run(
     let now = SystemTime::now();
     let picked = match chosen(&name, &settings) {
         Chosen::Preset(engine) => Picked::Static(engine),
+        // A custom command is refused in file mode before anything runs: it
+        // comes from the repository's own configuration, and nothing here
+        // can constrain what it does — the read-only tool sets are the
+        // presets' flags, and a custom command inherits the whole
+        // environment. Accepting it would let the repository choose the
+        // program, which is the one thing the view exists to prevent.
+        Chosen::Custom(_) if !matches!(mode, Mode::Stdin) => {
+            return usage(stderr, ErrorKind::InvalidValue, CUSTOM_REFUSAL);
+        }
         Chosen::Custom(command) => Picked::Owned(Engine::Custom(command)),
         Chosen::Auto => match select::select(env, limits, &cancellation, now) {
             Ok(engine) => Picked::Static(engine),

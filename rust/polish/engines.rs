@@ -210,10 +210,10 @@ pub struct EngineRequest<'a> {
     pub cwd: &'a Path,
     /// Caller's complete environment. Presets receive a filtered copy.
     pub env: &'a [(OsString, OsString)],
-    /// The exported view the engine is started in, for file mode
-    /// (ADR-0017): every engine runs there, a preset with its read-only
-    /// additions. `None` is stdin mode — a preset in its private temporary
-    /// directory, a custom command in `cwd`.
+    /// The exported view a preset is started in, for file mode (ADR-0017),
+    /// with its read-only additions. `None` is stdin mode: a preset in its
+    /// private temporary directory. A custom command never sees a view — the
+    /// `polish` command line refuses it in file mode — and keeps `cwd`.
     pub view: Option<&'a Path>,
 }
 
@@ -435,10 +435,10 @@ impl EngineError {
 /// Expand an engine template into a concrete invocation.
 ///
 /// `workdir` must be a private, existing temporary directory; the spec and
-/// answer files always live there. Without a view, presets run there and
-/// custom commands retain `request.cwd`; with one, every engine runs in the
-/// view and a preset gets its read-only additions. `{spec_file}` points into
-/// `workdir` and `{text}` is replaced in every argument of a custom command.
+/// answer files always live there. Presets run there, or in the view when
+/// one is given, then with their read-only additions; custom commands retain
+/// `request.cwd` either way. `{spec_file}` points into `workdir` and `{text}`
+/// is replaced in every argument of a custom command.
 pub fn expand(request: &EngineRequest<'_>, workdir: &Path) -> Result<Invocation, EngineError> {
     let model = if request.model.is_empty() {
         request.engine.default_model()
@@ -541,7 +541,7 @@ pub fn expand(request: &EngineRequest<'_>, workdir: &Path) -> Result<Invocation,
             Ok(Invocation {
                 argv,
                 stdin,
-                cwd: request.view.unwrap_or(request.cwd).to_owned(),
+                cwd: request.cwd.to_owned(),
                 answer: AnswerSource::Stdout,
             })
         }
