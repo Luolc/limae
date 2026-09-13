@@ -159,21 +159,25 @@ fn check_front_matter(source: &Source<'_>) -> Result<(), RenderError> {
         ));
     }
     // The value is taken as the text after `description:`, not as parsed
-    // YAML, so what this tool accepts has to be a closed set: a plain scalar
-    // that any YAML reader gives back verbatim. Anything that would start a
-    // quoted, flow, block or otherwise special scalar is refused rather than
-    // read literally — `""` is the case that would otherwise pass as two
-    // characters and reach a validator as an empty description.
-    if source.description.is_empty() || source.description.chars().count() > 1024 {
+    // YAML, so what this tool accepts is a positive condition, not a list of
+    // indicators to keep out (a list is one indicator short every time): the
+    // value starts with a letter or a digit, which is how every YAML reader
+    // begins a plain scalar and never a quoted, flow, block, anchor, tag or
+    // comment value; and it carries neither `: ` nor ` #`, the two sequences
+    // that end a plain scalar early.
+    if source.description.chars().count() > 1024 {
         return Err(RenderError::FrontMatter(
-            "`description` must be 1–1024 characters",
+            "`description` must be at most 1024 characters",
         ));
     }
-    if source.description.starts_with([
-        '"', '\'', '|', '>', '&', '*', '!', '%', '@', '`', '[', '{', '-', '?', ':', ',',
-    ]) {
+    if !source
+        .description
+        .chars()
+        .next()
+        .is_some_and(char::is_alphanumeric)
+    {
         return Err(RenderError::FrontMatter(
-            "`description` must be a plain YAML scalar: no quotes, block or flow indicator",
+            "`description` must be a plain YAML scalar starting with a letter or digit",
         ));
     }
     if source.description.contains(": ") || source.description.contains(" #") {

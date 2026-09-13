@@ -117,21 +117,29 @@ grep -qx -- 'name: write-naturally' "$committed/SKILL.md" ||
   fail 'SKILL.md front matter `name` is not the directory name `write-naturally`'
 printf '%s\n' 'front matter: opens the file, and `name` equals the directory'
 
-# The generator refuses a front matter that reads as valid YAML but is
-# not a plain scalar: `description: ""` is two characters to a byte count
-# and an empty value to a validator. A generator that renders it would
-# leave every other arm here green.
-mkdir -p "$work_dir/empty-description/spec/skill" "$work_dir/empty-description/spec/lexicon"
-sed 's/^description: .*$/description: ""/' "$repo_root/spec/skill/SKILL.md" \
-  >"$work_dir/empty-description/spec/skill/SKILL.md"
-grep -qx 'description: ""' "$work_dir/empty-description/spec/skill/SKILL.md" ||
-  fail 'the empty-description arm did not rewrite the source'
-cp "$repo_root/spec/skill/zh.md" "$work_dir/empty-description/spec/skill/"
-cp "$repo_root/spec/lexicon/zh.toml" "$work_dir/empty-description/spec/lexicon/"
-if (cd "$work_dir/empty-description" && "$binary") >"$work_dir/empty-description.log" 2>&1; then
-  fail 'the generator accepted `description: ""`'
-fi
-printf '%s\n' 'front matter: `description: ""` is refused by the generator'
+# The generator refuses a front matter that reads as valid YAML but whose
+# `description` is empty once parsed. Two spellings a person might reach
+# for, `""` and a bare comment: to a byte count the first is two characters
+# and the second a sentence, to a YAML reader both are nothing, and a
+# validator downstream rejects the skill. A generator that renders either
+# would leave every other arm here green.
+empty_description_arm() {
+  local spelling=$1 label=$2
+
+  mkdir -p "$work_dir/$label/spec/skill" "$work_dir/$label/spec/lexicon"
+  sed "s/^description: .*\$/description: $spelling/" "$repo_root/spec/skill/SKILL.md" \
+    >"$work_dir/$label/spec/skill/SKILL.md"
+  grep -qxF "description: $spelling" "$work_dir/$label/spec/skill/SKILL.md" ||
+    fail "the $label arm did not rewrite the source"
+  cp "$repo_root/spec/skill/zh.md" "$work_dir/$label/spec/skill/"
+  cp "$repo_root/spec/lexicon/zh.toml" "$work_dir/$label/spec/lexicon/"
+  if (cd "$work_dir/$label" && "$binary") >"$work_dir/$label.log" 2>&1; then
+    fail "the generator accepted \`description: $spelling\`"
+  fi
+  printf 'front matter: `description: %s` is refused by the generator\n' "$spelling"
+}
+empty_description_arm '""' empty-quoted
+empty_description_arm '# empty YAML value' empty-comment
 
 # Split arms: each source moves its own product and nothing else.
 split_arm() {
