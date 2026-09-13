@@ -117,6 +117,22 @@ grep -qx -- 'name: write-naturally' "$committed/SKILL.md" ||
   fail 'SKILL.md front matter `name` is not the directory name `write-naturally`'
 printf '%s\n' 'front matter: opens the file, and `name` equals the directory'
 
+# The generator refuses a front matter that reads as valid YAML but is
+# not a plain scalar: `description: ""` is two characters to a byte count
+# and an empty value to a validator. A generator that renders it would
+# leave every other arm here green.
+mkdir -p "$work_dir/empty-description/spec/skill" "$work_dir/empty-description/spec/lexicon"
+sed 's/^description: .*$/description: ""/' "$repo_root/spec/skill/SKILL.md" \
+  >"$work_dir/empty-description/spec/skill/SKILL.md"
+grep -qx 'description: ""' "$work_dir/empty-description/spec/skill/SKILL.md" ||
+  fail 'the empty-description arm did not rewrite the source'
+cp "$repo_root/spec/skill/zh.md" "$work_dir/empty-description/spec/skill/"
+cp "$repo_root/spec/lexicon/zh.toml" "$work_dir/empty-description/spec/lexicon/"
+if (cd "$work_dir/empty-description" && "$binary") >"$work_dir/empty-description.log" 2>&1; then
+  fail 'the generator accepted `description: ""`'
+fi
+printf '%s\n' 'front matter: `description: ""` is refused by the generator'
+
 # Split arms: each source moves its own product and nothing else.
 split_arm() {
   local source=$1 moved=$2 file

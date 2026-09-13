@@ -158,9 +158,22 @@ fn check_front_matter(source: &Source<'_>) -> Result<(), RenderError> {
             "`name` must not start or end with a hyphen, or contain `--`",
         ));
     }
+    // The value is taken as the text after `description:`, not as parsed
+    // YAML, so what this tool accepts has to be a closed set: a plain scalar
+    // that any YAML reader gives back verbatim. Anything that would start a
+    // quoted, flow, block or otherwise special scalar is refused rather than
+    // read literally — `""` is the case that would otherwise pass as two
+    // characters and reach a validator as an empty description.
     if source.description.is_empty() || source.description.chars().count() > 1024 {
         return Err(RenderError::FrontMatter(
             "`description` must be 1–1024 characters",
+        ));
+    }
+    if source.description.starts_with([
+        '"', '\'', '|', '>', '&', '*', '!', '%', '@', '`', '[', '{', '-', '?', ':', ',',
+    ]) {
+        return Err(RenderError::FrontMatter(
+            "`description` must be a plain YAML scalar: no quotes, block or flow indicator",
         ));
     }
     if source.description.contains(": ") || source.description.contains(" #") {
