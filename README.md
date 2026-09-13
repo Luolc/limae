@@ -149,9 +149,9 @@ limae polish - < draft.md > polished.md
 
 它与 `check` / `--fix` 是两段互不触发的东西：排版由规则确定性地修，语义由模型改写，`polish` 永远不进 CI 的 required check。引擎怎么选、凭证怎么处理、送出去的到底是哪些字节，见 [ADR-0008](docs/adr/0008-limae-polish-cli.md) 与 [引擎行为实测](docs/research/polish-engine-cli-behavior.md)。
 
-## 给 agent 的 skill (`skills/limae/`)
+## 给 agent 的 skill (`skills/write-naturally/`)
 
-`polish` 是写完之后改；skill 是让模型**写的时候**就守规则。把 `skills/limae/` 整个目录复制或软链进你的 agent 的 skill 目录 (格式按 [agentskills.io](https://agentskills.io/specification)，目录名就是 skill 名 `limae`)，模型写中文之前会先读 `references/zh/guide.md` 与 `references/zh/lexicon.md`。词典与 `polish` 用的是同一份 `spec/lexicon/zh.toml`，`skills/limae/` 是从 `spec/skill/` 与它生成的，改源文件后 `cargo run --example render-skill` 重新生成。
+`polish` 是写完之后改；skill 是让模型**写的时候**就守规则。把 `skills/write-naturally/` 整个目录复制或软链进你的 agent 的 skill 目录 (格式按 [agentskills.io](https://agentskills.io/specification)，目录名就是 skill 名 `write-naturally`)，模型写中文之前会先读 `references/zh/guide.md` 与 `references/zh/lexicon.md`。词典与 `polish` 用的是同一份 `spec/lexicon/zh.toml`，`skills/write-naturally/` 是从 `spec/skill/` 与它生成的，改源文件后 `cargo run --example render-skill` 重新生成。
 
 ## 参与开发
 

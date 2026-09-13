@@ -1,14 +1,16 @@
 //! Assemble the agent skill from its sources.
 //!
-//! Writes `skills/limae/` — the skill a person copies into their agent so
-//! that the model keeps limae's rules while it writes, rather than having its
-//! text polished afterwards (ADR-0016 §七). Three files, each from one
-//! source:
+//! Writes `skills/write-naturally/` — the skill a person copies into their
+//! agent so that the model keeps limae's rules while it writes, rather than
+//! having its text polished afterwards (ADR-0016 §七). Three files, each
+//! from one source:
 //!
-//! - `SKILL.md`: the YAML front matter this tool owns, then the body of
-//!   `spec/skill/SKILL.md`. The front matter is not in the source because it
-//!   is packaging: `name` has to equal the directory the skill is installed
-//!   under, which the language-neutral body has no business knowing.
+//! - `SKILL.md`: `spec/skill/SKILL.md`, front matter and body, with the
+//!   generated-file note inserted between them. The front matter (`name`,
+//!   `description`) lives in the source because it is content — what the
+//!   skill is called and when a model should reach for it — not packaging;
+//!   this tool only checks it against the agentskills.io rules and against
+//!   the directory it writes to.
 //! - `references/zh/guide.md`: `spec/skill/zh.md`, verbatim behind a note.
 //! - `references/zh/lexicon.md`: `spec/lexicon/zh.toml`, rendered by the
 //!   same [`limae::polish::lexicon::render`] the polish prompt uses, in its
@@ -42,28 +44,18 @@ use std::process::ExitCode;
 use limae::polish::lexicon::{self, Detail, LexiconError};
 use thiserror::Error;
 
-/// The skill's directory; `NAME` must be its last component.
-const TARGET_DIR: &str = "skills/limae";
-/// Front matter `name`, by the agentskills.io specification: equal to the
-/// parent directory, at most 64 characters, lowercase letters, digits and
-/// hyphens, no leading, trailing or doubled hyphen.
-const NAME: &str = "limae";
-/// Front matter `description`: what the skill does and when to use it, at
-/// most 1024 characters. Kept free of `: ` and leading punctuation so that it
-/// stays a plain YAML scalar.
-const DESCRIPTION: &str = "Write Chinese technical prose the way a native \
-speaker writes it, not the way a machine translation or an LLM draft reads. \
-Use when drafting or revising anything a person will read (replies, Markdown, \
-code comments, commit messages) in a repository that uses limae, or whenever \
-the user asks for writing without AI tells. Other languages will follow.";
+/// The skill's directory; the source front matter's `name` must be its last
+/// component (the one agentskills.io rule that ties the file to where it is
+/// installed), so a rename is a `git mv` plus an edit of the source.
+const TARGET_DIR: &str = "skills/write-naturally";
 
 const BODY_SOURCE: &str = "spec/skill/SKILL.md";
 const ZH_SOURCE: &str = "spec/skill/zh.md";
 const LEXICON_SOURCE: &str = "spec/lexicon/zh.toml";
 
-const SKILL_TARGET: &str = "skills/limae/SKILL.md";
-const ZH_TARGET: &str = "skills/limae/references/zh/guide.md";
-const LEXICON_TARGET: &str = "skills/limae/references/zh/lexicon.md";
+const SKILL_TARGET: &str = "skills/write-naturally/SKILL.md";
+const ZH_TARGET: &str = "skills/write-naturally/references/zh/guide.md";
+const LEXICON_TARGET: &str = "skills/write-naturally/references/zh/lexicon.md";
 
 #[derive(Debug, Error)]
 enum RenderError {
@@ -87,25 +79,73 @@ enum RenderError {
     },
 }
 
+/// The source `SKILL.md` split at its front matter.
+struct Source<'a> {
+    /// The front matter, `---` fences included, ending in a newline.
+    front_matter: &'a str,
+    /// Everything after the closing fence.
+    body: &'a str,
+    name: &'a str,
+    description: &'a str,
+}
+
+/// Split the source at its YAML front matter and read the two keys the
+/// specification requires.
+///
+/// The front matter is two plain scalars on their own lines, so this reads
+/// it as lines rather than pulling in a YAML parser; a value that would need
+/// one (`: ` or ` #` inside it, a block scalar) is refused instead.
+fn split_source(source: &str) -> Result<Source<'_>, RenderError> {
+    let inner = source
+        .strip_prefix("---\n")
+        .ok_or(RenderError::FrontMatter("source must open with `---`"))?;
+    let end = inner.find("\n---\n").ok_or(RenderError::FrontMatter(
+        "source front matter is not closed",
+    ))?;
+    let fields = &inner[..end];
+    let front_len = "---\n".len() + end + "\n---\n".len();
+    let (mut name, mut description) = (None, None);
+    for line in fields.lines() {
+        let (key, value) = line.split_once(':').ok_or(RenderError::FrontMatter(
+            "front matter line is not `key: value`",
+        ))?;
+        let value = value.trim();
+        match key {
+            "name" => name = Some(value),
+            "description" => description = Some(value),
+            _ => return Err(RenderError::FrontMatter("unknown front matter key")),
+        }
+    }
+    Ok(Source {
+        front_matter: &source[..front_len],
+        body: &source[front_len..],
+        name: name.ok_or(RenderError::FrontMatter("front matter has no `name`"))?,
+        description: description.ok_or(RenderError::FrontMatter(
+            "front matter has no `description`",
+        ))?,
+    })
+}
+
 /// Refuse a front matter the specification would reject.
 ///
-/// The values are constants in this file, so this runs against the person
-/// who edits them, not against user input: it is the shortest way to keep
-/// the rule and the value in the same place.
-fn check_front_matter() -> Result<(), RenderError> {
+/// The values come from `spec/skill/SKILL.md`, so this runs against the
+/// person who edits that file, not against user input: it is the shortest
+/// way to keep the rule next to the place the value is checked.
+fn check_front_matter(source: &Source<'_>) -> Result<(), RenderError> {
     let directory = Path::new(TARGET_DIR)
         .file_name()
         .and_then(|name| name.to_str())
         .ok_or(RenderError::FrontMatter("target directory has no name"))?;
-    if NAME != directory {
+    if source.name != directory {
         return Err(RenderError::FrontMatter(
             "`name` must equal the skill's directory name",
         ));
     }
-    if NAME.is_empty() || NAME.len() > 64 {
+    if source.name.is_empty() || source.name.len() > 64 {
         return Err(RenderError::FrontMatter("`name` must be 1–64 characters"));
     }
-    if !NAME
+    if !source
+        .name
         .chars()
         .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
     {
@@ -113,17 +153,34 @@ fn check_front_matter() -> Result<(), RenderError> {
             "`name` must be lowercase letters, digits and hyphens",
         ));
     }
-    if NAME.starts_with('-') || NAME.ends_with('-') || NAME.contains("--") {
+    if source.name.starts_with('-') || source.name.ends_with('-') || source.name.contains("--") {
         return Err(RenderError::FrontMatter(
             "`name` must not start or end with a hyphen, or contain `--`",
         ));
     }
-    if DESCRIPTION.is_empty() || DESCRIPTION.chars().count() > 1024 {
+    // The value is taken as the text after `description:`, not as parsed
+    // YAML, so what this tool accepts is a positive condition, not a list of
+    // indicators to keep out (a list is one indicator short every time): the
+    // value starts with a letter or a digit, which is how every YAML reader
+    // begins a plain scalar and never a quoted, flow, block, anchor, tag or
+    // comment value; and it carries neither `: ` nor ` #`, the two sequences
+    // that end a plain scalar early.
+    if source.description.chars().count() > 1024 {
         return Err(RenderError::FrontMatter(
-            "`description` must be 1–1024 characters",
+            "`description` must be at most 1024 characters",
         ));
     }
-    if DESCRIPTION.contains(": ") || DESCRIPTION.contains(" #") {
+    if !source
+        .description
+        .chars()
+        .next()
+        .is_some_and(char::is_alphanumeric)
+    {
+        return Err(RenderError::FrontMatter(
+            "`description` must be a plain YAML scalar starting with a letter or digit",
+        ));
+    }
+    if source.description.contains(": ") || source.description.contains(" #") {
         return Err(RenderError::FrontMatter(
             "`description` must stay a plain YAML scalar",
         ));
@@ -156,14 +213,17 @@ fn generated_note(source: &str) -> String {
 
 /// Read the sources and write the skill, relative to `cwd`.
 fn run(cwd: &Path, stdout: &mut dyn Write) -> Result<(), RenderError> {
-    check_front_matter()?;
-    let body = read(cwd, BODY_SOURCE)?;
+    let skill_source = read(cwd, BODY_SOURCE)?;
+    let source = split_source(&skill_source)?;
+    check_front_matter(&source)?;
     let guide = read(cwd, ZH_SOURCE)?;
     let lexicon = lexicon::render(&read(cwd, LEXICON_SOURCE)?, Detail::Full)?;
 
     let skill = format!(
-        "---\nname: {NAME}\ndescription: {DESCRIPTION}\n---\n\n{}{body}",
-        generated_note(BODY_SOURCE)
+        "{}\n{}{}",
+        source.front_matter,
+        generated_note(BODY_SOURCE),
+        source.body.trim_start_matches('\n')
     );
     write(cwd, SKILL_TARGET, &skill)?;
     write(
