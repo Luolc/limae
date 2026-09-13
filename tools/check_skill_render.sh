@@ -9,13 +9,15 @@
 # behind its source, and nothing at run time would notice: the skill is read
 # by a model, not by a test.
 #
-# Two arms:
+# Four arms:
 #   - the real sources, rendered here and now, must equal the committed
 #     `skills/limae/` byte for byte;
-#   - a perturbed copy of the sources must render something different, and
-#     the differences must land in every one of the three files. Without
-#     this arm, a generator that ignored its inputs and printed the committed
-#     files would pass the first.
+#   - three split arms, one per source: a copy of the sources with that one
+#     source perturbed must change exactly the product that source feeds and
+#     leave the other two equal to the committed files. Perturbing all three
+#     at once and asking for "something changed" would pass a generator that
+#     wired the body to the guide's file, or fed one source to every product;
+#     one source at a time is what pins the file map down.
 #
 # Also asserted on the rendered `SKILL.md`: the front matter opens the file
 # and its `name` equals the directory the skill lives in, which is the one
@@ -52,20 +54,26 @@ binary="$repo_root/target/debug/examples/render-skill"
 committed="$repo_root/skills/limae"
 [[ -d $committed ]] || fail "$committed is missing"
 
-# Copy the sources into `$work_dir/$label/` and render there.
+# Copy the sources into `$work_dir/$label/`, perturb the one named by
+# `$2` (`body`, `guide`, `lexicon`, or nothing), and render there.
 render() {
-  local label=$1
+  local label=$1 perturb=${2:-}
 
   mkdir -p "$work_dir/$label/spec/skill" "$work_dir/$label/spec/lexicon"
   cp "$repo_root/spec/skill/SKILL.md" "$repo_root/spec/skill/zh.md" \
     "$work_dir/$label/spec/skill/"
   cp "$repo_root/spec/lexicon/zh.toml" "$work_dir/$label/spec/lexicon/"
-  if [[ $label == perturbed ]]; then
-    printf '\n%s\n' '对照臂：只在 tools/check_skill_render.sh 里出现。' \
-      >>"$work_dir/$label/spec/skill/SKILL.md"
-    printf '\n%s\n' '对照臂：只在 tools/check_skill_render.sh 里出现。' \
-      >>"$work_dir/$label/spec/skill/zh.md"
-    cat >>"$work_dir/$label/spec/lexicon/zh.toml" <<'TOML'
+  case "$perturb" in
+    body)
+      printf '\n%s\n' 'Control arm: only in tools/check_skill_render.sh.' \
+        >>"$work_dir/$label/spec/skill/SKILL.md"
+      ;;
+    guide)
+      printf '\n%s\n' '对照臂：只在 tools/check_skill_render.sh 里出现。' \
+        >>"$work_dir/$label/spec/skill/zh.md"
+      ;;
+    lexicon)
+      cat >>"$work_dir/$label/spec/lexicon/zh.toml" <<'TOML'
 
 [[entry]]
 term = "对照臂"
@@ -77,7 +85,10 @@ examples = [
   { before = "原句。", after = "改句。" },
 ]
 TOML
-  fi
+      ;;
+    '') ;;
+    *) fail "unknown perturbation $perturb" ;;
+  esac
   (
     cd "$work_dir/$label"
     "$binary"
@@ -106,11 +117,22 @@ grep -qx -- 'name: limae' "$committed/SKILL.md" ||
   fail 'SKILL.md front matter `name` is not the directory name `limae`'
 printf '%s\n' 'front matter: opens the file, and `name` equals the directory'
 
-# Control arm: changed sources must change every file.
-render perturbed
-for file in "${files[@]}"; do
-  if cmp -s "$work_dir/perturbed/skills/limae/$file" "$committed/$file"; then
-    fail "the perturbed sources rendered the same $file as the committed one; the comparison is vacuous"
-  fi
-done
-printf '%s\n' 'control arm: every file changed with its source'
+# Split arms: each source moves its own product and nothing else.
+split_arm() {
+  local source=$1 moved=$2 file
+
+  render "$source" "$source"
+  for file in "${files[@]}"; do
+    if [[ $file == "$moved" ]]; then
+      if cmp -s "$work_dir/$source/skills/limae/$file" "$committed/$file"; then
+        fail "perturbing the $source source left $file unchanged; the comparison is vacuous"
+      fi
+    elif ! cmp -s "$work_dir/$source/skills/limae/$file" "$committed/$file"; then
+      fail "perturbing the $source source changed $file, which it does not feed"
+    fi
+  done
+  printf 'split arm: the %s source moved %s and nothing else\n' "$source" "$moved"
+}
+split_arm body SKILL.md
+split_arm guide references/zh/guide.md
+split_arm lexicon references/zh/lexicon.md
