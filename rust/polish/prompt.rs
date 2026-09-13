@@ -19,6 +19,8 @@ use crate::text::is_cjk;
 const GENERAL: &str = include_str!("../../spec/polish/general.md");
 const CHINESE: &str = include_str!("../../spec/polish/zh.md");
 const CHINESE_LEXICON: &str = include_str!("../../spec/lexicon/zh.toml");
+const FILE_MODE: &str = include_str!("../../spec/polish/file-mode.md");
+const PATH_PLACEHOLDER: &str = "{path}";
 
 /// Assemble the general prompt and the input language's distilled layer.
 ///
@@ -40,9 +42,21 @@ pub fn assemble(text: &str) -> Result<String, LexiconError> {
     Ok(prompt)
 }
 
+/// Return the file-mode layer: where the text comes from and what the
+/// engine may do in the view it is started in (ADR-0017 §三).
+///
+/// `path` is the target relative to the repository root, the way the engine
+/// would see it from the view.
+#[must_use]
+pub fn file_mode(path: &str) -> String {
+    format!("\n{}", FILE_MODE.replace(PATH_PLACEHOLDER, path))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{CHINESE, CHINESE_LEXICON, Detail, GENERAL, LexiconError, assemble, lexicon};
+    use super::{
+        CHINESE, CHINESE_LEXICON, Detail, GENERAL, LexiconError, assemble, file_mode, lexicon,
+    };
 
     #[test]
     fn selects_the_language_layer_from_the_input() -> Result<(), LexiconError> {
@@ -68,5 +82,13 @@ mod tests {
         assert!(!prompt.contains("- 解："));
         assert!(!prompt.contains("- 原："));
         Ok(())
+    }
+
+    #[test]
+    fn the_file_mode_layer_names_the_target_and_appends_to_the_spec() {
+        let layer = file_mode("docs/report.md");
+        assert!(layer.starts_with("\n## Where the text comes from\n"));
+        assert!(layer.contains("the file `docs/report.md` of a repository"));
+        assert!(!layer.contains("{path}"));
     }
 }

@@ -186,6 +186,7 @@ pub fn probe(
         // Only a custom command reads this, and a custom command is not probed.
         cwd: Path::new("."),
         env,
+        view: None,
     };
     let state = match engines::polish(&request, limits, cancellation) {
         Ok(answer) if answer.to_uppercase().contains(PROBE_MARKER) => EngineState::Ok,

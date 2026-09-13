@@ -673,6 +673,7 @@ fn a_real_failure_is_written_over_a_remembered_answer() -> TestResult {
         text: "text",
         cwd: root.path(),
         env: &env,
+        view: None,
     };
     let error = polish(&request, limits(), &CancellationToken::new(), now())
         .err()
@@ -700,6 +701,7 @@ fn a_real_failure_is_written_over_a_remembered_answer() -> TestResult {
             text: "text",
             cwd: root.path(),
             env: &env,
+            view: None,
         };
         let _ = polish(&request, limits(), &CancellationToken::new(), now())
             .err()

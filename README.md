@@ -149,6 +149,25 @@ limae polish - < draft.md > polished.md
 
 它与 `check` / `--fix` 是两段互不触发的东西：排版由规则确定性地修，语义由模型改写，`polish` 永远不进 CI 的 required check。引擎怎么选、凭证怎么处理、送出去的到底是哪些字节，见 [ADR-0008](docs/adr/0008-limae-polish-cli.md) 与 [引擎行为实测](docs/research/polish-engine-cli-behavior.md)。
 
+### 文件模式：`limae polish --share-repo-with-engine <files>` / `--all`
+
+把仓库里的文件原地改写，并让引擎能读仓库里的其它文件做参考 (术语、名字、交叉引用)：
+
+```sh
+limae polish --share-repo-with-engine docs/guide.md README.md
+limae polish --share-repo-with-engine --all
+```
+
+**这个 flag 每次都要带，它授予的是什么，先读完再用。** 没有它而给了文件或 `--all`，limae 在任何引擎启动之前就退出并解释；配置文件与环境变量都不能替你带上它。
+
+- **这个模式会让本机的 coding agent 读到仓库里的内容，并把它读到的发给该引擎的服务方。** 引擎不是起在你的仓库里，而是起在一份一次性的导出视图里：仓库的 tracked 文件 (`git ls-files`) 的拷贝，**没有 `.git`、没有被忽略与未跟踪的文件、没有 `.claude` / `.codex` / `.grok` 目录与 `.mcp.json`** —— 仓库自带的 hook、setting 与 MCP server 因此不会被加载，这是结构上的排除、不靠各家的 flag。三家的只读工具集与关项目配置的 flag 也加了，作为纵深。
+- **视图挡住的是执行，不是指令。** 仓库里的 `AGENTS.md` / `CLAUDE.md` / `GROK.md` 是 tracked 文件，在视图里；它们不会因为在场而运行什么，但它们的自动加载关不关靠的是上面那层纵深 flag (随各家版本变)，而且引擎用工具随时读得到，读了会不会照做是模型当场的决定。这是有意的：一个仓库的 `AGENTS.md` 往往写着它自己的行文约定。
+- **排除不等于隔离。** 引擎带着文件工具，按绝对路径交给它的、或它猜到的视图之外的文件，它仍然读得到 (实测 grok 读到了)；它按 `HOME` 自动加载的自家配置与登录态照旧。不要在含机密的仓库里用它，被 `.gitignore` 忽略的文件不在视图里，但已提交进仓库的机密在。
+- **limae 自己的写回只写你点名 (或 `--all` 选出) 的文件**；引擎只回正文。写回之前 limae 核对目标仍是跑前那一版，不是就拒绝写、保留你的版本 (`not written`，退出码 1)。视图另有一道绊线：引擎要是在视图里写了东西，说明只读设置没有生效，这一轮不写、整个运行停下。**这是事后检测加冲突拒绝，不是写入隔离**：引擎进程本身、以及你在家目录里配的东西 (hook、MCP server；实测 `~/.claude/settings.json` 的 hook 在文件模式下照跑) 仍可能在视图之外写盘，绊线只看视图。这句保证的主语是仓库，不是这台机器。
+- **这个 flag 挡不住它被固化进 Makefile、justfile、`.pre-commit-config.yaml` 的 `args` 或 CI step** —— 这些文件都在仓库里，之后的调用者只看到 `make polish`。这是我们知情选择的代价 (为什么不做信任记录，见 [ADR-0017](docs/adr/0017-polish-file-mode.md))。
+
+文件模式只跑三家预设 (它们带只读工具集)；`custom` 引擎在这里被拒绝，因为它的命令来自仓库自己的配置、limae 约束不了它 —— 自建引擎请走 `limae polish -`，那里 `custom` 仍是你自己的命令、边界由你自己划。上面几条承诺说的都是文件模式，不是 `limae polish -`。`--all` 选的是当前目录下每一个 Markdown 文件，与 `limae --all` 完全相同，所以 `.gitignore` 与 `.limae-ignore` 都被尊重；但这两份 ignore 只决定**改写哪些文件**，不决定**引擎读到哪些**：视图是 `git ls-files`，被 `.limae-ignore` 排除的 tracked 文件仍在视图里，被 `.gitignore` 排除的不在。符号链接不改写：命令行点名的拒绝 (请点名它的目标)，`--all` 选出的跳过并说明。每个目标一行输出 (`polished:` / `unchanged:`)，诊断进 stderr。`limae polish -` 一行不变，也永远不需要这个 flag。
+
 ## 给 agent 的 skill (`skills/write-naturally/`)
 
 `polish` 是写完之后改；skill 是让模型**写的时候**就守规则。把 `skills/write-naturally/` 整个目录复制或软链进你的 agent 的 skill 目录 (格式按 [agentskills.io](https://agentskills.io/specification)，目录名就是 skill 名 `write-naturally`)，模型写中文之前会先读 `references/zh/guide.md` 与 `references/zh/lexicon.md`。词典与 `polish` 用的是同一份 `spec/lexicon/zh.toml`，`skills/write-naturally/` 是从 `spec/skill/` 与它生成的，改源文件后 `cargo run --example render-skill` 重新生成。

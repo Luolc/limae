@@ -59,6 +59,16 @@ fn environment(root: &Path, extra: &[(&str, &str)]) -> Vec<(OsString, OsString)>
     env
 }
 
+/// The file-mode arms' environment: the stub directory first, then the
+/// system directories the stubs' `cat` and `grep` live in. A preset CLI on
+/// the machine cannot answer these arms either — the engine is named
+/// `custom` in every one, and a custom command is never searched for.
+fn file_environment(root: &Path, extra: &[(&str, &str)]) -> Vec<(OsString, OsString)> {
+    let mut env = environment(root, extra);
+    env[0].1 = format!("{}:/usr/bin:/bin", root.join("bin").display()).into();
+    env
+}
+
 #[cfg(unix)]
 fn stub(root: &Path, name: &str, body: &str) -> Result<(), std::io::Error> {
     use std::os::unix::fs::PermissionsExt;
@@ -171,21 +181,392 @@ fn blank_stdin_is_a_usage_error_not_an_engine_failure() -> TestResult {
     Ok(())
 }
 
+fn git(cwd: &Path, args: &[&str]) -> TestResult {
+    let status = std::process::Command::new("git")
+        .arg("-C")
+        .arg(cwd)
+        .args(args)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .status()?;
+    if !status.success() {
+        return Err(format!("git {} failed: {status}", args.join(" ")).into());
+    }
+    Ok(())
+}
+
+/// A synthetic repository for the file-mode arms: one target, one
+/// reference file, one ignored file, one untracked file, one link, and the
+/// `claude` preset selected in the configuration. Everything in it is fake
+/// (`AGENTS.md` 「隐私边界」).
+#[cfg(unix)]
+fn repository(root: &Path) -> TestResult {
+    git(root, &["init", "-q"])?;
+    fs::create_dir_all(root.join("docs"))?;
+    fs::write(root.join("docs/target.md"), TEXT)?;
+    fs::write(root.join("docs/notes.md"), "notes\n")?;
+    fs::write(root.join(".gitignore"), ".env\n")?;
+    fs::write(root.join(".env"), "SYNTHETIC=1\n")?;
+    std::os::unix::fs::symlink("docs/target.md", root.join("link.md"))?;
+    git(root, &["add", "-A"])?;
+    fs::write(root.join("untracked.md"), "never added\n")?;
+    fs::write(root.join("limae.toml"), "[polish]\nengine = \"claude\"\n")?;
+    Ok(())
+}
+
+/// A stub standing in for the `claude` binary. File mode only runs the
+/// presets, so the arms below impersonate one: the payload arrives on stdin
+/// behind the marker line, which `$skip` consumes, and the spec file is the
+/// third argument (`-p --system-prompt-file <path> …`). A preset gets the
+/// filtered environment, so anything an arm needs to know (a path to write)
+/// is baked into the body rather than passed through a variable.
+#[cfg(unix)]
+fn claude_stub(root: &Path, body: &str) -> Result<(), std::io::Error> {
+    stub(root, "claude", &format!("IFS= read -r skip\n{body}"))
+}
+
+/// The stub body that answers "polished: <first line>", as the stdin arms do.
+const REWRITE: &str = "IFS= read -r line\nprintf 'polished: %s\\n' \"$line\"";
+
+#[cfg(unix)]
 #[test]
-fn a_file_argument_is_refused_until_the_next_step() -> TestResult {
-    let root = TempDir::new("file-argument")?;
-    let env = environment(root.path(), &[]);
+fn a_file_without_the_flag_is_refused_before_any_engine_starts() -> TestResult {
+    let root = TempDir::new("file-refused")?;
+    // An engine that leaves a mark when it starts: the refusal has to happen
+    // before that, and the mark is what tells "refused before" from
+    // "refused after".
+    let mark = root.path().join("started");
+    claude_stub(root.path(), &format!(": > '{}'\ncat", mark.display()))?;
+    repository(root.path())?;
+    let env = file_environment(root.path(), &[]);
 
-    let ended = invoke(&["doc.md"], TEXT, root.path(), &env)?;
+    for args in [
+        &["docs/target.md"][..],
+        &["--all"][..],
+        &["docs/target.md", "--engine", "claude"][..],
+    ] {
+        let ended = invoke(args, "", root.path(), &env)?;
+        assert_eq!((ended.code, ended.stdout.as_str()), (2, ""), "{args:?}");
+        assert!(
+            ended.stderr.contains("Nothing has been started"),
+            "{args:?}: {}",
+            ended.stderr
+        );
+        assert!(
+            ended.stderr.contains("--share-repo-with-engine"),
+            "{}",
+            ended.stderr
+        );
+        assert!(!mark.exists(), "{args:?} started the engine");
+    }
+    assert_eq!(
+        fs::read_to_string(root.path().join("docs/target.md"))?,
+        TEXT
+    );
 
-    assert_eq!((ended.code, ended.stdout.as_str()), (2, ""));
+    // The control arm: the same call with the flag starts the engine.
+    let ended = invoke(
+        &["--share-repo-with-engine", "docs/target.md"],
+        "",
+        root.path(),
+        &env,
+    )?;
+    assert_eq!(ended.code, 0, "{}", ended.stderr);
+    assert!(mark.exists());
+    Ok(())
+}
+
+/// The repository's own configuration cannot make file mode run a program:
+/// a `custom` engine is refused before it starts, whichever tier names it.
+/// The control arm is stdin mode, where the same configuration runs the
+/// same command — so the refusal is file mode's, not a broken stub.
+#[cfg(unix)]
+#[test]
+fn a_custom_engine_from_the_repository_is_refused_in_file_mode_before_it_runs() -> TestResult {
+    let root = TempDir::new("file-custom")?;
+    let mark = root.path().join("outside-the-view");
+    stub(
+        root.path(),
+        "mygateway",
+        &format!(": > '{}'\ncat", mark.display()),
+    )?;
+    repository(root.path())?;
+    custom(root.path(), "mygateway")?;
+    let env = file_environment(root.path(), &[]);
+
+    for args in [
+        &["--share-repo-with-engine", "docs/target.md"][..],
+        &["--share-repo-with-engine", "--all"][..],
+        &[
+            "--share-repo-with-engine",
+            "--engine",
+            "custom",
+            "docs/target.md",
+        ][..],
+    ] {
+        let ended = invoke(args, "", root.path(), &env)?;
+        assert_eq!((ended.code, ended.stdout.as_str()), (2, ""), "{args:?}");
+        assert!(
+            ended
+                .stderr
+                .contains("file mode runs the three presets only"),
+            "{args:?}: {}",
+            ended.stderr
+        );
+        assert!(!mark.exists(), "{args:?} ran the custom command");
+    }
+    let variable = file_environment(root.path(), &[("LIMAE_ENGINE", "custom")]);
+    let ended = invoke(
+        &["--share-repo-with-engine", "docs/target.md"],
+        "",
+        root.path(),
+        &variable,
+    )?;
+    assert_eq!(ended.code, 2, "{}", ended.stderr);
+    assert!(!mark.exists());
+    assert_eq!(
+        fs::read_to_string(root.path().join("docs/target.md"))?,
+        TEXT
+    );
+
+    let ended = invoke(&["-"], TEXT, root.path(), &env)?;
+    assert_eq!(ended.code, 0, "{}", ended.stderr);
+    assert_eq!(ended.stdout, TEXT);
+    assert!(mark.exists(), "stdin mode did not run the custom command");
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn a_file_is_rewritten_in_place_from_an_engine_started_in_the_view() -> TestResult {
+    let root = TempDir::new("file-ok")?;
+    // The engine reports where it was started: the reference file is there,
+    // the ignored file and `.git` are not, the spec carries the file-mode
+    // layer with the target's repository-relative path, and the directory
+    // itself is named so that it can be checked afterwards.
+    claude_stub(
+        root.path(),
+        "printf 'notes=%s env=%s git=%s layer=%s\\ncwd=%s\\n' \
+         \"$([ -e docs/notes.md ] && echo yes || echo no)\" \
+         \"$([ -e .env ] && echo yes || echo no)\" \
+         \"$([ -e .git ] && echo yes || echo no)\" \
+         \"$(grep -c 'the file `docs/target.md` of a repository' \"$3\")\" \
+         \"$(pwd)\"",
+    )?;
+    repository(root.path())?;
+    let env = file_environment(root.path(), &[]);
+
+    let ended = invoke(
+        &["--share-repo-with-engine", "docs/target.md"],
+        "",
+        root.path(),
+        &env,
+    )?;
+
+    assert_eq!(ended.code, 0, "{}", ended.stderr);
+    assert_eq!(ended.stdout, "polished: docs/target.md\n");
+    assert_eq!(ended.stderr, "");
+    let written = fs::read_to_string(root.path().join("docs/target.md"))?;
+    let (report, cwd) = written
+        .split_once("cwd=")
+        .ok_or("the stub did not report its directory")?;
+    assert_eq!(report, "notes=yes env=no git=no layer=1\n");
+    // The engine ran in a private directory that is neither the repository
+    // nor inside it, and that directory is gone once the run is over.
+    let cwd = Path::new(cwd.trim_end());
+    assert!(
+        !cwd.starts_with(root.path().canonicalize()?),
+        "{}",
+        cwd.display()
+    );
+    assert!(!cwd.exists(), "{} was left behind", cwd.display());
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn an_identical_answer_leaves_the_file_untouched() -> TestResult {
+    let root = TempDir::new("file-unchanged")?;
+    claude_stub(root.path(), "cat")?;
+    repository(root.path())?;
+    let env = file_environment(root.path(), &[]);
+    let before = fs::metadata(root.path().join("docs/target.md"))?.modified()?;
+
+    let ended = invoke(
+        &["--share-repo-with-engine", "docs/target.md"],
+        "",
+        root.path(),
+        &env,
+    )?;
+
+    assert_eq!(ended.code, 0, "{}", ended.stderr);
+    assert_eq!(ended.stdout, "unchanged: docs/target.md\n");
+    assert_eq!(
+        fs::metadata(root.path().join("docs/target.md"))?.modified()?,
+        before
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn the_tripwire_stops_the_run_when_the_engine_writes_in_its_view() -> TestResult {
+    let root = TempDir::new("tripwire")?;
+    claude_stub(root.path(), "printf 'x' > PWNED.txt; cat")?;
+    repository(root.path())?;
+    let env = file_environment(root.path(), &[]);
+
+    let ended = invoke(
+        &[
+            "--share-repo-with-engine",
+            "docs/target.md",
+            "docs/notes.md",
+        ],
+        "",
+        root.path(),
+        &env,
+    )?;
+
+    assert_eq!((ended.code, ended.stdout.as_str()), (1, ""));
     assert!(
         ended
             .stderr
-            .contains("only '-' (stdin) is supported so far"),
-        "stderr was {:?}",
+            .contains("tripwire: the engine changed 1 path(s) in its view (first: PWNED.txt)"),
+        "{}",
         ended.stderr
     );
+    assert_eq!(
+        fs::read_to_string(root.path().join("docs/target.md"))?,
+        TEXT
+    );
+    assert_eq!(
+        fs::read_to_string(root.path().join("docs/notes.md"))?,
+        "notes\n"
+    );
+    assert!(!root.path().join("PWNED.txt").exists());
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn a_target_that_changed_during_the_run_keeps_its_new_content() -> TestResult {
+    let root = TempDir::new("conflict")?;
+    // The engine plays the concurrent editor: it overwrites the target
+    // through an absolute path baked into it, then answers normally.
+    let target = root.path().join("docs/target.md");
+    claude_stub(
+        root.path(),
+        &format!("printf 'edited meanwhile\\n' > '{}'; cat", target.display()),
+    )?;
+    repository(root.path())?;
+    let env = file_environment(root.path(), &[]);
+
+    let ended = invoke(
+        &[
+            "--share-repo-with-engine",
+            "docs/target.md",
+            "docs/notes.md",
+        ],
+        "",
+        root.path(),
+        &env,
+    )?;
+
+    // The first target is refused, the second still goes through: a
+    // conflict is per file, not a stop.
+    assert_eq!(ended.code, 1);
+    assert_eq!(ended.stdout, "unchanged: docs/notes.md\n");
+    assert!(
+        ended
+            .stderr
+            .contains("not written: docs/target.md changed while the engine was running"),
+        "{}",
+        ended.stderr
+    );
+    assert_eq!(fs::read_to_string(&target)?, "edited meanwhile\n");
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn all_polishes_the_walk_skips_links_and_honours_limae_ignore() -> TestResult {
+    let root = TempDir::new("file-all")?;
+    claude_stub(root.path(), REWRITE)?;
+    repository(root.path())?;
+    fs::write(root.path().join("ignored.md"), "ignored by limae\n")?;
+    fs::write(root.path().join(".limae-ignore"), "ignored.md\n")?;
+    let env = file_environment(root.path(), &[]);
+
+    let ended = invoke(
+        &["--share-repo-with-engine", "--all"],
+        "",
+        root.path(),
+        &env,
+    )?;
+
+    assert_eq!(ended.code, 0, "{}", ended.stderr);
+    // The walk's order: sorted, `docs/` before the root files.
+    assert_eq!(
+        ended.stdout,
+        "polished: docs/notes.md\npolished: docs/target.md\npolished: untracked.md\n"
+    );
+    assert_eq!(
+        ended.stderr,
+        "skipped: link.md is a symbolic link; its target is polished under its own name\n"
+    );
+    assert_eq!(
+        fs::read_to_string(root.path().join("docs/target.md"))?,
+        "polished: the acme report\n"
+    );
+    assert_eq!(
+        fs::read_to_string(root.path().join("ignored.md"))?,
+        "ignored by limae\n"
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn a_named_link_and_a_file_outside_a_repository_are_usage_errors() -> TestResult {
+    let root = TempDir::new("file-link")?;
+    claude_stub(root.path(), REWRITE)?;
+    repository(root.path())?;
+    let env = file_environment(root.path(), &[]);
+
+    let ended = invoke(
+        &["--share-repo-with-engine", "link.md"],
+        "",
+        root.path(),
+        &env,
+    )?;
+    assert_eq!((ended.code, ended.stdout.as_str()), (2, ""));
+    assert!(
+        ended.stderr.contains("link.md is a symbolic link"),
+        "{}",
+        ended.stderr
+    );
+
+    let outside = TempDir::new("file-outside")?;
+    claude_stub(outside.path(), REWRITE)?;
+    fs::write(
+        outside.path().join("limae.toml"),
+        "[polish]\nengine = \"claude\"\n",
+    )?;
+    fs::write(outside.path().join("doc.md"), TEXT)?;
+    let env = file_environment(outside.path(), &[]);
+    let ended = invoke(
+        &["--share-repo-with-engine", "doc.md"],
+        "",
+        outside.path(),
+        &env,
+    )?;
+    assert_eq!((ended.code, ended.stdout.as_str()), (2, ""));
+    assert!(
+        ended.stderr.contains("file mode needs a git repository"),
+        "{}",
+        ended.stderr
+    );
+    assert_eq!(fs::read_to_string(outside.path().join("doc.md"))?, TEXT);
     Ok(())
 }
 
@@ -201,13 +582,13 @@ fn an_unknown_engine_is_caught_at_both_tiers_the_config_file_never_sees() -> Tes
         &["-", "--engine", "gemini"],
         TEXT,
         root.path(),
-        &environment(root.path(), &[("LIMAE_ENGINE", "grok")]),
+        &file_environment(root.path(), &[("LIMAE_ENGINE", "grok")]),
     )?;
     let from_variable = invoke(
         &["-"],
         TEXT,
         root.path(),
-        &environment(root.path(), &[("LIMAE_ENGINE", "gemini")]),
+        &file_environment(root.path(), &[("LIMAE_ENGINE", "gemini")]),
     )?;
 
     for ended in [flagged, from_variable] {
@@ -234,15 +615,20 @@ fn the_flag_outranks_the_variable_which_outranks_the_file() -> TestResult {
         &["-", "--engine", "claude"],
         TEXT,
         root.path(),
-        &environment(root.path(), &[("LIMAE_ENGINE", "grok")]),
+        &file_environment(root.path(), &[("LIMAE_ENGINE", "grok")]),
     )?;
     let with_variable = invoke(
         &["-"],
         TEXT,
         root.path(),
-        &environment(root.path(), &[("LIMAE_ENGINE", "grok")]),
+        &file_environment(root.path(), &[("LIMAE_ENGINE", "grok")]),
     )?;
-    let from_file = invoke(&["-"], TEXT, root.path(), &environment(root.path(), &[]))?;
+    let from_file = invoke(
+        &["-"],
+        TEXT,
+        root.path(),
+        &file_environment(root.path(), &[]),
+    )?;
 
     assert_eq!(
         (
@@ -262,7 +648,7 @@ fn the_flag_outranks_the_variable_which_outranks_the_file() -> TestResult {
 #[test]
 fn custom_without_a_command_is_a_config_error() -> TestResult {
     let root = TempDir::new("custom-bare")?;
-    let env = environment(root.path(), &[]);
+    let env = file_environment(root.path(), &[]);
 
     let ended = invoke(&["-", "--engine", "custom"], TEXT, root.path(), &env)?;
 
@@ -279,7 +665,7 @@ fn custom_without_a_command_is_a_config_error() -> TestResult {
 fn an_unreadable_config_file_is_a_config_error() -> TestResult {
     let root = TempDir::new("bad-config")?;
     fs::write(root.path().join("limae.toml"), "not valid toml = [")?;
-    let env = environment(root.path(), &[]);
+    let env = file_environment(root.path(), &[]);
 
     let ended = invoke(&["-"], TEXT, root.path(), &env)?;
 
@@ -296,7 +682,7 @@ fn an_unreadable_config_file_is_a_config_error() -> TestResult {
 fn auto_with_nothing_installed_diagnoses_every_engine_and_exits_one() -> TestResult {
     let root = TempDir::new("auto-none")?;
     fs::create_dir(root.path().join("bin"))?;
-    let env = environment(root.path(), &[]);
+    let env = file_environment(root.path(), &[]);
 
     let ended = invoke(&["-"], TEXT, root.path(), &env)?;
 
@@ -327,7 +713,7 @@ fn auto_runs_the_first_engine_that_answers_the_probe() -> TestResult {
          case \"$body\" in *probe*) echo LIMAE-PROBE-OK ;; \
          *) printf 'polished: %s\\n' \"$body\" ;; esac",
     )?;
-    let env = environment(root.path(), &[]);
+    let env = file_environment(root.path(), &[]);
 
     let ended = invoke(&["-"], TEXT, root.path(), &env)?;
 
@@ -346,7 +732,7 @@ fn auto_runs_the_first_engine_that_answers_the_probe() -> TestResult {
 fn the_model_flag_replaces_the_presets_own_default() -> TestResult {
     let root = TempDir::new("model")?;
     stub(root.path(), "claude", "printf '%s\\n' \"$*\"")?;
-    let env = environment(root.path(), &[]);
+    let env = file_environment(root.path(), &[]);
 
     let default = invoke(&["-", "--engine", "claude"], TEXT, root.path(), &env)?;
     let overridden = invoke(
