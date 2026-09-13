@@ -90,7 +90,7 @@ limae --fix --all # 先修再查
 サンプルIT推進部の例
 ```
 
-整份文件不该检查时，放一个 `.limae-ignore`，语法与 `.gitignore` 相同。两者的语义都以 [`spec/rules.md`](spec/rules.md)「行内指令」「忽略文件」为准。
+整份文件不该检查时，放一个 `.limae-ignore`，语法与 `.gitignore` 相同。两者的语义都在 [`spec/rules.md`](spec/rules.md)「行内指令」「忽略文件」。
 
 ## 接 pre-commit
 
@@ -129,7 +129,7 @@ enable_experimental = true           # 一次纳入全部实验规则
 severity = { zh-typography-8 = "warning" }   # 覆盖单条规则的严重度
 ```
 
-启用集 = ((默认集 ∪ experimental 集) ∪ `enable`) − `disable`，experimental 集只在 `enable_experimental = true` 时并入。全部键、发现顺序和配置错误的判定，都以 [`spec/rules.md`](spec/rules.md)「配置」为准。
+启用集 = ((默认集 ∪ experimental 集) ∪ `enable`) − `disable`，experimental 集只在 `enable_experimental = true` 时并入。全部键、发现顺序和配置错误的判定，见 [`spec/rules.md`](spec/rules.md)「配置」。
 
 ## 规则
 
