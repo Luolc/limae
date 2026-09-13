@@ -173,7 +173,7 @@ check_package() {
       >"$work_dir/render-skill.log" 2>&1
   ) || fail_with_log "$work_dir/render-skill.log" \
     'packaged render-skill example did not run'
-  [[ -s "$package_root/skills/limae/SKILL.md" ]] || \
+  [[ -s "$package_root/skills/write-naturally/SKILL.md" ]] || \
     fail 'packaged render-skill example wrote no SKILL.md'
   printf '%s\n' 'Cargo package: render-skill ran from its packaged sources'
 

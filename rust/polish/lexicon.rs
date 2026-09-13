@@ -6,7 +6,7 @@
 //! embeds the TOML at build time (the same way `rust/resources.rs` embeds the
 //! wordlists) and renders it into the Chinese layer of its prompt at run
 //! time; the `render-skill` Cargo example calls the same function to write
-//! `skills/limae/references/zh/lexicon.md`. One function, two callers, so the
+//! `skills/write-naturally/references/zh/lexicon.md`. One function, two callers, so the
 //! two products cannot disagree about what an entry says.
 //!
 //! The two callers want different amounts of it, which is what [`Detail`]

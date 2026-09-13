@@ -6,7 +6,7 @@
 - `fixtures/` —— 黄金集 (golden fixtures)：可执行的那一半，每加一个 case 就是所有实现的回归测试。
 - `wordlists/` —— 词表：zh-tell-1 / zh-tell-3 / zh-tell-4 / en-tell-1 / en-tell-3 / zh-tell-5 / zh-word-1 / zh-word-2 的判定数据，格式与匹配语义的正本是 `rules.md`「词表」。
 - `lexicon/` —— AI 中文词典：读得懂却没人这么说的词，每条给「实际想说什么 / 中文里怎么说 / 带上下文的例子」。三个用途：渲染进 `limae polish` 的中文层当判据，渲染成 skill 的 `references/zh/lexicon.md`，或转成 `wordlists/` 的词表交给 linter 直接报；前两个由 `rust/polish/lexicon.rs` 同一个函数渲染。判据是「一个母语者会不会这样说」，不是「读者能不能看懂」。
-- `skill/` —— agent skill 的手写部分：`SKILL.md` 是语言无关的正文 (判据、文件地图、边界)，`zh.md` 是中文指南；`skills/limae/` 由 `cargo run --example render-skill` 从这两份加 `lexicon/zh.toml` 生成，是入库的产物，不在这里手改。skill 与 `polish/` 共用词典这一个源，但装配清单不同：skill 不带 polish 的输出契约，polish 不带 skill 的文件地图。
+- `skill/` —— agent skill 的手写部分：`SKILL.md` 是 front matter (`name` / `description`) 加语言无关的正文 (判据、文件地图、边界)，`zh.md` 是中文指南；`skills/write-naturally/` 由 `cargo run --example render-skill` 从这两份加 `lexicon/zh.toml` 生成，是入库的产物，不在这里手改。skill 与 `polish/` 共用词典这一个源，但装配清单不同：skill 不带 polish 的输出契约，polish 不带 skill 的文件地图。
 - `polish/` —— `limae polish` 的 prompt spec：通用层 `general.md` (英文) 加每种语言一份用该语言写的层 (`zh.md`)，形制的正本是 ADR-0008 §九。它是 prompt，不是判定数据 —— 词表不进 prompt。
 
 三份同目录、同 PR 改，不会漂移。改规则的顺序固定：先改这里，再改各实现。

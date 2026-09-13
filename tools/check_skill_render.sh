@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The committed skill is what its sources render.
 #
-# `skills/limae/` is a generated product that is committed — unlike
+# `skills/write-naturally/` is a generated product that is committed — unlike
 # `site/`, it is used as files out of a clone, so it has to be in the clone.
 # Three sources feed it: `spec/skill/SKILL.md`, `spec/skill/zh.md` and
 # `spec/lexicon/zh.toml`, through the `render-skill` Cargo example. A change
@@ -11,7 +11,7 @@
 #
 # Four arms:
 #   - the real sources, rendered here and now, must equal the committed
-#     `skills/limae/` byte for byte;
+#     `skills/write-naturally/` byte for byte;
 #   - three split arms, one per source: a copy of the sources with that one
 #     source perturbed must change exactly the product that source feeds and
 #     leave the other two equal to the committed files. Perturbing all three
@@ -51,7 +51,7 @@ fail() {
 binary="$repo_root/target/debug/examples/render-skill"
 [[ -x $binary ]] || fail 'the render-skill example was not built'
 
-committed="$repo_root/skills/limae"
+committed="$repo_root/skills/write-naturally"
 [[ -d $committed ]] || fail "$committed is missing"
 
 # Copy the sources into `$work_dir/$label/`, perturb the one named by
@@ -101,20 +101,20 @@ files=(SKILL.md references/zh/guide.md references/zh/lexicon.md)
 # Positive arm: the real sources render exactly the committed product.
 render current
 for file in "${files[@]}"; do
-  [[ -f "$work_dir/current/skills/limae/$file" ]] ||
+  [[ -f "$work_dir/current/skills/write-naturally/$file" ]] ||
     fail "the generator did not write $file"
 done
-if ! diff -r "$work_dir/current/skills/limae" "$committed" >"$work_dir/diff" 2>&1; then
+if ! diff -r "$work_dir/current/skills/write-naturally" "$committed" >"$work_dir/diff" 2>&1; then
   cat "$work_dir/diff" >&2
-  fail 'skills/limae/ is behind its sources; run `cargo run --example render-skill` and commit the result'
+  fail 'skills/write-naturally/ is behind its sources; run `cargo run --example render-skill` and commit the result'
 fi
-printf '%s\n' 'current: skills/limae/ equals what its sources render'
+printf '%s\n' 'current: skills/write-naturally/ equals what its sources render'
 
 # The one specification rule a reader cannot check from the file alone.
 head -n 1 "$committed/SKILL.md" | grep -qx -- '---' ||
   fail 'SKILL.md does not open with YAML front matter'
-grep -qx -- 'name: limae' "$committed/SKILL.md" ||
-  fail 'SKILL.md front matter `name` is not the directory name `limae`'
+grep -qx -- 'name: write-naturally' "$committed/SKILL.md" ||
+  fail 'SKILL.md front matter `name` is not the directory name `write-naturally`'
 printf '%s\n' 'front matter: opens the file, and `name` equals the directory'
 
 # Split arms: each source moves its own product and nothing else.
@@ -124,10 +124,10 @@ split_arm() {
   render "$source" "$source"
   for file in "${files[@]}"; do
     if [[ $file == "$moved" ]]; then
-      if cmp -s "$work_dir/$source/skills/limae/$file" "$committed/$file"; then
+      if cmp -s "$work_dir/$source/skills/write-naturally/$file" "$committed/$file"; then
         fail "perturbing the $source source left $file unchanged; the comparison is vacuous"
       fi
-    elif ! cmp -s "$work_dir/$source/skills/limae/$file" "$committed/$file"; then
+    elif ! cmp -s "$work_dir/$source/skills/write-naturally/$file" "$committed/$file"; then
       fail "perturbing the $source source changed $file, which it does not feed"
     fi
   done

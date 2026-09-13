@@ -88,7 +88,7 @@ jobs:
       - name: Lexicon page renders from its source
         run: tools/check_lexicon_render.sh
 
-      # The committed skill under skills/limae/ is generated from
+      # The committed skill under skills/write-naturally/ is generated from
       # spec/skill/ and spec/lexicon/zh.toml and, unlike the page above, is
       # committed — it is used as files out of a clone. This is the gate
       # that notices a source edited without a re-render. Same family as
