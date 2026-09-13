@@ -12,6 +12,7 @@ pub mod lexicon;
 pub mod process;
 pub mod prompt;
 pub mod select;
+pub mod view;
 
 /// Return the home directory of a run.
 ///

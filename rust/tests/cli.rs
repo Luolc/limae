@@ -412,9 +412,12 @@ fn directive_and_unavailable_subcommands_are_usage_errors() -> TestResult {
         "{stderr}"
     );
 
+    // A file without the consent flag is refused before anything runs, and
+    // the refusal is the explanation, not a bare usage line.
     let (code, stdout, stderr) = output_text(run(root.path(), &["polish", "doc.md"])?)?;
     assert_eq!((code, stdout.as_str()), (2, ""));
-    assert!(stderr.contains("only \'-\' (stdin) is supported so far"));
+    assert!(stderr.contains("Nothing has been started"), "{stderr}");
+    assert!(stderr.contains("--share-repo-with-engine"), "{stderr}");
     Ok(())
 }
 

@@ -1,6 +1,6 @@
 use super::{
-    AnswerSource, Engine, EngineError, EngineLimits, EngineRequest, Invocation, PAYLOAD_SEPARATOR,
-    expand, polish,
+    AnswerSource, ENGINES, Engine, EngineError, EngineLimits, EngineRequest, Invocation,
+    PAYLOAD_SEPARATOR, expand, polish,
 };
 use crate::polish::diagnosis::{EngineState, FailureReason};
 use crate::polish::process::{CancellationToken, ProcessError, Stream};
@@ -89,6 +89,7 @@ fn request<'a>(
         text: TEXT,
         cwd,
         env,
+        view: None,
     }
 }
 
@@ -238,6 +239,7 @@ fn prose_that_carries_a_boundary_line_does_not_become_one() -> TestResult {
                 text: &prose,
                 cwd: root.path(),
                 env: &env,
+                view: None,
             },
             &workdir,
         )?;
@@ -421,6 +423,82 @@ fn grok_stub_consumes_the_spec_and_text_as_distinct_arguments() -> TestResult {
     Ok(())
 }
 
+/// File mode moves every engine into the view and gives each preset its
+/// read-only additions; stdin mode is the control arm and must not change.
+#[test]
+fn a_view_moves_every_engine_into_it_and_adds_the_read_only_flags() -> TestResult {
+    let root = TempDir::new("view-expand")?;
+    let workdir = root.path().join("work");
+    let view = root.path().join("view");
+    fs::create_dir_all(&workdir)?;
+    fs::create_dir_all(&view)?;
+    let env = environment(&root.path().join("bin"));
+    let custom = Engine::Custom(vec!["gateway".to_owned(), "--flag".to_owned()]);
+
+    for engine in ENGINES.iter().chain(std::iter::once(&custom)) {
+        let mut without = request(engine, "", root.path(), &env);
+        let mut with = request(engine, "", root.path(), &env);
+        without.view = None;
+        with.view = Some(&view);
+        let plain = expand(&without, &workdir)?;
+        let viewed = expand(&with, &workdir)?;
+
+        assert_eq!(viewed.cwd, view, "{}", engine.name());
+        let expected_plain = if engine.name() == "custom" {
+            root.path()
+        } else {
+            &workdir
+        };
+        assert_eq!(plain.cwd, expected_plain, "{}", engine.name());
+
+        let plain_argv = argv(&plain);
+        let viewed_argv = argv(&viewed);
+        match engine {
+            Engine::Claude => {
+                assert!(
+                    viewed_argv.ends_with(&[
+                        "--setting-sources",
+                        "user",
+                        "--no-session-persistence",
+                        "--tools",
+                        "Read,Glob,Grep"
+                    ]),
+                    "{viewed_argv:?}"
+                );
+                assert!(!plain_argv.contains(&"--tools"), "{plain_argv:?}");
+            }
+            Engine::Codex => {
+                assert!(
+                    viewed_argv.ends_with(&[
+                        "--sandbox",
+                        "read-only",
+                        "-c",
+                        "project_doc_max_bytes=0",
+                        "-"
+                    ]),
+                    "{viewed_argv:?}"
+                );
+                assert!(!plain_argv.contains(&"--sandbox"), "{plain_argv:?}");
+                assert_eq!(plain_argv.last(), Some(&"-"));
+            }
+            Engine::Grok => {
+                assert!(
+                    viewed_argv.ends_with(&[
+                        "--tools",
+                        "read_file,list_dir,grep",
+                        "--disable-web-search"
+                    ]),
+                    "{viewed_argv:?}"
+                );
+                assert!(!plain_argv.contains(&"--tools"), "{plain_argv:?}");
+            }
+            // The user's own command is not decorated: only its directory moves.
+            Engine::Custom(_) => assert_eq!(plain_argv, viewed_argv),
+        }
+    }
+    Ok(())
+}
+
 #[cfg(unix)]
 #[test]
 fn custom_stub_retains_the_callers_cwd_and_complete_environment() -> TestResult {
@@ -531,6 +609,7 @@ fn failures_and_debug_output_do_not_echo_request_or_child_content() -> TestResul
         text: SYNTHETIC_VALUE,
         cwd: root.path(),
         env: &env,
+        view: None,
     };
     let error = polish(&request, limits(), &CancellationToken::new())
         .err()
@@ -552,6 +631,7 @@ fn failures_and_debug_output_do_not_echo_request_or_child_content() -> TestResul
         text: SYNTHETIC_VALUE,
         cwd: root.path(),
         env: &env,
+        view: None,
     };
     let error = polish(&request, limits(), &CancellationToken::new())
         .err()

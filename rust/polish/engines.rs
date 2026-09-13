@@ -23,6 +23,25 @@ const PAYLOAD_SEPARATOR: &str = "----- The text to rewrite follows this line, ma
 const BOUNDARY_NOTE: &str = "## Where the text begins\n\nThe text to rewrite starts after the marker line below and runs to the end of the input. The marker is unique to this run and is shown here in full:\n\n{line}";
 const NONCE_BYTES: usize = 8;
 
+/// What file mode adds to each preset when the engine is started in an
+/// exported view (ADR-0017 §三): a read-only tool set, and the project
+/// configuration switched off at the engine's own door. These are depth
+/// behind the view, which already holds none of that configuration; the
+/// flags are what each CLI accepted on the date recorded in
+/// `docs/research/polish-engine-cli-behavior.md` §七, and they move with the
+/// CLI's versions, which is why they are not the load-bearing layer.
+const CLAUDE_VIEW_ARGS: &[&str] = &[
+    "--setting-sources",
+    "user",
+    "--no-session-persistence",
+    // Variadic in claude's parser: keep it last, or it eats the next flag.
+    "--tools",
+    "Read,Glob,Grep",
+];
+const CODEX_VIEW_ARGS: &[&str] = &["--sandbox", "read-only", "-c", "project_doc_max_bytes=0"];
+// An allow list: grok's `--disallowed-tools` was measured to have no effect.
+const GROK_VIEW_ARGS: &[&str] = &["--tools", "read_file,list_dir,grep", "--disable-web-search"];
+
 const SHARED_ENV: &[&str] = &["PATH", "HOME", "TMPDIR", "LANG", "TZ"];
 const DIRECTORY_ENV: &[&str] = &["PWD", "OLDPWD"];
 /// What a hook sets in an engine's environment to stop it starting
@@ -191,6 +210,11 @@ pub struct EngineRequest<'a> {
     pub cwd: &'a Path,
     /// Caller's complete environment. Presets receive a filtered copy.
     pub env: &'a [(OsString, OsString)],
+    /// The exported view the engine is started in, for file mode
+    /// (ADR-0017): every engine runs there, a preset with its read-only
+    /// additions. `None` is stdin mode — a preset in its private temporary
+    /// directory, a custom command in `cwd`.
+    pub view: Option<&'a Path>,
 }
 
 /// Time and byte bounds applied to an engine invocation.
@@ -410,31 +434,38 @@ impl EngineError {
 
 /// Expand an engine template into a concrete invocation.
 ///
-/// `workdir` must be a private, existing temporary directory. Presets run there;
-/// custom commands retain `request.cwd`, while `{spec_file}` still points into
-/// `workdir` and `{text}` is replaced in every argument.
+/// `workdir` must be a private, existing temporary directory; the spec and
+/// answer files always live there. Without a view, presets run there and
+/// custom commands retain `request.cwd`; with one, every engine runs in the
+/// view and a preset gets its read-only additions. `{spec_file}` points into
+/// `workdir` and `{text}` is replaced in every argument of a custom command.
 pub fn expand(request: &EngineRequest<'_>, workdir: &Path) -> Result<Invocation, EngineError> {
     let model = if request.model.is_empty() {
         request.engine.default_model()
     } else {
         request.model
     };
+    let preset_cwd = request.view.unwrap_or(workdir).to_owned();
     match request.engine {
         Engine::Claude => {
             let (spec, payload) = framed(request.spec, request.text)?;
             let spec_file = workdir.join(SPEC_FILENAME);
             fs::write(&spec_file, spec).map_err(|source| EngineError::Temporary { source })?;
+            let mut argv = strings(&[
+                CLAUDE.binary,
+                "-p",
+                "--system-prompt-file",
+                utf8_path(&spec_file)?,
+                "--model",
+                model,
+            ]);
+            if request.view.is_some() {
+                argv.extend(strings(CLAUDE_VIEW_ARGS));
+            }
             Ok(Invocation {
-                argv: strings(&[
-                    CLAUDE.binary,
-                    "-p",
-                    "--system-prompt-file",
-                    utf8_path(&spec_file)?,
-                    "--model",
-                    model,
-                ]),
+                argv,
                 stdin: payload.into_bytes(),
-                cwd: workdir.to_owned(),
+                cwd: preset_cwd,
                 answer: AnswerSource::Stdout,
             })
         }
@@ -442,27 +473,31 @@ pub fn expand(request: &EngineRequest<'_>, workdir: &Path) -> Result<Invocation,
             let (spec, payload) = framed(request.spec, request.text)?;
             let output = workdir.join(OUTPUT_FILENAME);
             let output_path = utf8_path(&output)?;
+            let mut argv = strings(&[
+                CODEX.binary,
+                "exec",
+                "--skip-git-repo-check",
+                "--ephemeral",
+                "-c",
+                &format!("model={model}"),
+                "-c",
+                &format!("model_reasoning_effort={CODEX_EFFORT}"),
+                "--output-last-message",
+                output_path,
+            ]);
+            if request.view.is_some() {
+                argv.extend(strings(CODEX_VIEW_ARGS));
+            }
+            argv.push("-".into());
             Ok(Invocation {
-                argv: strings(&[
-                    CODEX.binary,
-                    "exec",
-                    "--skip-git-repo-check",
-                    "--ephemeral",
-                    "-c",
-                    &format!("model={model}"),
-                    "-c",
-                    &format!("model_reasoning_effort={CODEX_EFFORT}"),
-                    "--output-last-message",
-                    output_path,
-                    "-",
-                ]),
+                argv,
                 stdin: format!("{spec}\n\n{payload}").into_bytes(),
-                cwd: workdir.to_owned(),
+                cwd: preset_cwd,
                 answer: AnswerSource::File(output),
             })
         }
-        Engine::Grok => Ok(Invocation {
-            argv: strings(&[
+        Engine::Grok => {
+            let mut argv = strings(&[
                 GROK.binary,
                 "--system-prompt-override",
                 request.spec,
@@ -471,11 +506,17 @@ pub fn expand(request: &EngineRequest<'_>, workdir: &Path) -> Result<Invocation,
                 "--verbatim",
                 "-p",
                 request.text,
-            ]),
-            stdin: Vec::new(),
-            cwd: workdir.to_owned(),
-            answer: AnswerSource::Stdout,
-        }),
+            ]);
+            if request.view.is_some() {
+                argv.extend(strings(GROK_VIEW_ARGS));
+            }
+            Ok(Invocation {
+                argv,
+                stdin: Vec::new(),
+                cwd: preset_cwd,
+                answer: AnswerSource::Stdout,
+            })
+        }
         Engine::Custom(command) => {
             if command.is_empty() {
                 return Err(EngineError::EmptyCommand);
@@ -500,7 +541,7 @@ pub fn expand(request: &EngineRequest<'_>, workdir: &Path) -> Result<Invocation,
             Ok(Invocation {
                 argv,
                 stdin,
-                cwd: request.cwd.to_owned(),
+                cwd: request.view.unwrap_or(request.cwd).to_owned(),
                 answer: AnswerSource::Stdout,
             })
         }
@@ -527,7 +568,7 @@ pub fn polish(
         let deadline = Instant::now()
             .checked_add(limits.timeout)
             .ok_or(EngineError::InvalidTimeout)?;
-        let environment = child_env(request.engine, request.env, &workdir);
+        let environment = child_env(request.engine, request.env, &invocation.cwd);
         let process_request = ProcessRequest {
             argv: invocation.argv,
             stdin: invocation.stdin,
@@ -624,7 +665,7 @@ fn create_workdir() -> Result<PathBuf, EngineError> {
 fn child_env(
     engine: &Engine,
     env: &[(OsString, OsString)],
-    workdir: &Path,
+    cwd: &Path,
 ) -> Vec<(OsString, OsString)> {
     if !engine.is_preset() {
         return env.to_vec();
@@ -637,7 +678,7 @@ fn child_env(
     child.extend(
         DIRECTORY_ENV
             .iter()
-            .map(|name| ((*name).into(), workdir.as_os_str().to_owned())),
+            .map(|name| ((*name).into(), cwd.as_os_str().to_owned())),
     );
     child
 }
