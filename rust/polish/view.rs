@@ -22,9 +22,10 @@
 //! The view is also what the tripwire watches. [`View::snapshot`] hashes
 //! every path in it before the engines run and again after each call, and a
 //! difference means an engine had write capability it was not supposed to
-//! have — a flag that stopped meaning read-only, a custom command that
-//! writes. The tripwire detects; it does not prevent, and it sees only the
-//! view: nothing about the repository, the home directory or the network.
+//! have — a read-only flag that stopped meaning that after a CLI upgrade, a
+//! tool name that was silently renamed out of the allow list. The tripwire
+//! detects; it does not prevent, and it sees only the view: nothing about
+//! the repository, the home directory or the network.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -55,9 +56,18 @@ pub enum ViewError {
         #[source]
         source: io::Error,
     },
-    /// `git` ran and refused: the directory is not inside a repository.
+    /// `git rev-parse` found no repository above the working directory.
     #[error("file mode needs a git repository; the working directory is not inside one")]
     NotARepository,
+    /// `git` found the repository but the listing failed — an index or
+    /// I/O failure inside a real repository, which is not the same
+    /// mistake as being outside one. Git's own message stays on its
+    /// stderr, which is not captured here.
+    #[error("git {command} failed in the repository ({status}); run it by hand to see why")]
+    GitFailed {
+        command: &'static str,
+        status: std::process::ExitStatus,
+    },
     /// A tracked path is not UTF-8, which this implementation does not carry.
     #[error("a tracked path is not valid UTF-8")]
     PathEncoding,
@@ -125,7 +135,10 @@ impl View {
             .output()
             .map_err(|source| ViewError::GitMissing { source })?;
         if !listing.status.success() {
-            return Err(ViewError::NotARepository);
+            return Err(ViewError::GitFailed {
+                command: "ls-files",
+                status: listing.status,
+            });
         }
         let view = Self {
             root: private_directory()?,

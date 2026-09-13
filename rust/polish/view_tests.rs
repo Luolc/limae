@@ -195,3 +195,32 @@ fn the_repository_root_is_found_from_a_subdirectory_and_refused_outside_one() ->
     assert!(matches!(error, ViewError::NotARepository), "{error}");
     Ok(())
 }
+
+/// A real repository whose index cannot be read is a git failure, not
+/// "outside a repository": the two need different next steps. The control
+/// arm is the test above, where a directory outside any repository is still
+/// reported as such.
+#[test]
+fn a_listing_failure_inside_a_repository_is_reported_as_git_failing() -> TestResult {
+    let root = TempDir::new("bad-index")?;
+    repository(root.path())?;
+    fs::remove_file(root.path().join(".git/index"))?;
+    fs::create_dir(root.path().join(".git/index"))?;
+
+    // `rev-parse` still finds the repository; only the listing fails.
+    repository_root(root.path())?;
+    let error = View::export(root.path())
+        .err()
+        .ok_or("exported a view from an unreadable index")?;
+    assert!(
+        matches!(
+            error,
+            ViewError::GitFailed {
+                command: "ls-files",
+                ..
+            }
+        ),
+        "{error}"
+    );
+    Ok(())
+}

@@ -73,8 +73,10 @@ it reads to its service; required for <FILE>... and --all. The copy has no \
 .git, no ignored or untracked file and none of the engines' own \
 configuration (.claude, .codex, .grok, .mcp.json), so the repository cannot \
 make the engine run anything; the engine can still read any absolute path \
-it is given. Only limae writes files, and only \
-the ones named; a target that changed during the run is left alone. This \
+it is given. limae's own write-back writes only the files named, and leaves \
+a target that changed during the run alone; the engine itself and your \
+user-level configuration (hooks under HOME) can still write outside the \
+view, and the tripwire does not see that. This \
 flag cannot stop a Makefile, a pre-commit `args` list or a CI step in the \
 repository from passing it for you — that is the cost of a per-call flag, \
 and it is chosen knowingly";
