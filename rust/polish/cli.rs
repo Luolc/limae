@@ -146,7 +146,10 @@ pub fn run(
         .map(String::as_str)
         .filter(|model| !model.is_empty())
         .unwrap_or_else(|| settings.model());
-    let spec = prompt::assemble(&text);
+    let spec = match prompt::assemble(&text) {
+        Ok(spec) => spec,
+        Err(error) => return report(stderr, &format!("prompt error: {error}"), FAILED),
+    };
     let request = EngineRequest {
         engine,
         model,

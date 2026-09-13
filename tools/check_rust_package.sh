@@ -77,7 +77,7 @@ check_static_elf() {
 check_package() {
   local cargo_target="$work_dir/package-target"
   local consumer_target="$work_dir/package-consumer-target"
-  local archives package_roots archive package_root missing_root lexicon_root
+  local archives package_roots archive package_root missing_root lexicon_root skill_root
 
   (
     cd "$repo_root"
@@ -158,6 +158,37 @@ check_package() {
       "$work_dir/missing-lexicon.log" 'missing-lexicon run failed for an unrelated reason'
   fi
   printf '%s\n' 'missing-lexicon control: rejected by the packaged example'
+
+  # Same shape for render-skill: it reads spec/skill/*.md and the lexicon at
+  # run time, so the package has to carry spec/skill/ too. The control arm
+  # removes that directory alone; the lexicon arm above already covers the
+  # third source.
+  cp -a "$package_root" "$work_dir/missing-skill"
+  skill_root="$work_dir/missing-skill"
+  rm -r "$skill_root/spec/skill"
+
+  (
+    cd "$package_root"
+    CARGO_TARGET_DIR="$consumer_target" cargo run --locked --example render-skill \
+      >"$work_dir/render-skill.log" 2>&1
+  ) || fail_with_log "$work_dir/render-skill.log" \
+    'packaged render-skill example did not run'
+  [[ -s "$package_root/skills/limae/SKILL.md" ]] || \
+    fail 'packaged render-skill example wrote no SKILL.md'
+  printf '%s\n' 'Cargo package: render-skill ran from its packaged sources'
+
+  if (
+    cd "$skill_root"
+    CARGO_TARGET_DIR="$consumer_target" cargo run --locked --example render-skill \
+      >"$work_dir/missing-skill.log" 2>&1
+  ); then
+    fail 'package without spec/skill still rendered the skill'
+  fi
+  if ! grep -Fq 'spec/skill/' "$work_dir/missing-skill.log"; then
+    fail_with_log \
+      "$work_dir/missing-skill.log" 'missing-skill run failed for an unrelated reason'
+  fi
+  printf '%s\n' 'missing-skill control: rejected by the packaged example'
 
   (
     cd "$package_root"

@@ -22,23 +22,13 @@ adds detail; nothing there loosens the rules below.
 - A rewrite is a paraphrase. It says what the input says, to the input's
   own reader, in the input's own voice.
 
-## How much to change
+## When to change a sentence
 
-Assume the text needs work. It was drafted in one pass and never edited,
-and it carries the habits listed below. Your job is to find them and fix
-them, not to decide whether fixing is warranted.
-
-On a draft that has never been edited, an output whose only changes are
-punctuation, conjunctions, or sentence breaks means you stopped too
-early: you smoothed the surface instead of reading what the sentences
-say. Go back and look at the wording. On a text that has already been
-edited, that same output can be the whole of the work.
-
-The opposite failure is manufacturing work. A sentence that is already
-right is already right — leave it exactly as it is, and do not reach for
-a synonym to show effort. Some texts have been edited already; on those,
-few changes or none is the correct answer. What is never correct is
-returning the input untouched without having looked for the habits below.
+Change a sentence only when you can say what is wrong with it. If you
+cannot, leave it exactly as it is: a rewrite you cannot justify is not
+polish. Read every sentence for the habits below before you decide; do
+not stop at punctuation and conjunctions, and do not reach for a synonym
+to show effort.
 
 ## Keep these unchanged, character for character
 
@@ -57,14 +47,10 @@ returning the input untouched without having looked for the habits below.
 
 ## What to change
 
-- Wording that says less than it seems to: filler openings, restated
-  premises, sentences that only announce what the next sentence says.
-- Abstraction the text does not need: name the concrete thing when the
-  text already knows it.
-- Rhetoric standing in for content: stacked metaphors, three-part
-  parallels, emphasis by repetition.
-- Structure inside a sentence: an overlong sentence may become two, and
-  two thin ones may become one, as long as the block structure holds.
+Wording that says less than it seems to, abstraction the text does not
+need, and rhetoric standing in for content. An overlong sentence may
+become two and two thin ones may become one, as long as the block
+structure holds.
 
 ## What not to do
 

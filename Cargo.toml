@@ -23,6 +23,7 @@ include = [
   "/spec/lexicon/zh.toml",
   "/spec/polish/**",
   "/spec/rules.md",
+  "/spec/skill/**",
   "/spec/wordlists/**",
 ]
 
@@ -44,6 +45,10 @@ path = "rust/tools/render_lexicon.rs"
 [[example]]
 name = "lint-lexicon"
 path = "rust/tools/lint_lexicon.rs"
+
+[[example]]
+name = "render-skill"
+path = "rust/tools/render_skill.rs"
 
 [[test]]
 name = "integration"
