@@ -88,6 +88,16 @@ jobs:
       - name: Lexicon page renders from its source
         run: tools/check_lexicon_render.sh
 
+      # The committed skill under skills/limae/ is generated from
+      # spec/skill/ and spec/lexicon/zh.toml and, unlike the page above, is
+      # committed — it is used as files out of a clone. This is the gate
+      # that notices a source edited without a re-render. Same family as
+      # the step above (a generator over the lexicon, needs only the Rust
+      # toolchain), so it sits next to it. The control arm is inside the
+      # script.
+      - name: Skill matches its sources
+        run: tools/check_skill_render.sh
+
       # The lexicon's own Chinese prose, checked with this repo's own rules.
       # Same blind spot as the page above: the `limae` hook selects `\.md$`,
       # so the hundred-odd fields of spec/lexicon/*.toml were read by nobody.
