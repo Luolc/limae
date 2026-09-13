@@ -55,6 +55,7 @@ prompt 多一层 `spec/polish/file-mode.md`：告诉模型正文来自仓库里�
 - 这个模式会让本机 coding agent 读到导出视图里的内容，并把它读到的发给该引擎的服务方。
 - 导出视图排除了什么 (`.git`、被忽略与未跟踪的文件、`.claude` / `.codex` / `.grok`、`.mcp.json`)，**以及排除不等于隔离** —— 引擎按绝对路径仍读得到视图之外的文件。
 - 视图挡住的是执行、不是指令：仓库的 `AGENTS.md` / `CLAUDE.md` / `GROK.md` 在视图里，引擎读得到，读了会不会照做由模型当场决定。
+- limae 自己的写回只写点名 (或 `--all` 选出) 的目标；引擎进程本身与用户家目录里配的东西 (hook、MCP server) 仍可能在视图之外写盘，绊线看不见。这句保证的主语是仓库，不是这台机器。
 - 写入侧是事后检测加冲突拒绝，不是写入隔离。
 - flag 挡不住它被固化进 Makefile / justfile / `.pre-commit-config.yaml` 的 `args` / CI step —— 这些文件都在仓库里。
 
