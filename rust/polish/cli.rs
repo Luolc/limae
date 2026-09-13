@@ -74,9 +74,9 @@ it reads to its service; required for <FILE>... and --all. The copy has no \
 configuration (.claude, .codex, .grok, .mcp.json), so the repository cannot \
 make the engine run anything; the engine can still read any absolute path \
 it is given. limae's own write-back writes only the files named, and leaves \
-a target that changed during the run alone; the engine itself and your \
-user-level configuration (hooks under HOME) can still write outside the \
-view, and the tripwire does not see that. This \
+a target that changed during the run alone; the engine itself and what you \
+configured under HOME (hooks, MCP servers) can still write outside the view, \
+and the tripwire does not see them. This \
 flag cannot stop a Makefile, a pre-commit `args` list or a CI step in the \
 repository from passing it for you — that is the cost of a per-call flag, \
 and it is chosen knowingly";
