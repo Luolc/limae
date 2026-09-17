@@ -338,7 +338,7 @@ Gvozdev 的「跟输入同一语言」对中文 **机制上可用**，质量取�
 
 | 形态 | 利 | 弊 |
 | --- | --- | --- |
-| `lo-md-lint` 的 CLI 子命令 (如 `polish`) | 用户只记一个二进制；能直接复用本仓的豁免解析与 `--fix` | 把非确定性、要密钥、要网络的路径塞进以 CI 为质量关卡的工具；容易被误接进 required check；和「lint 快、公式化、确定性」(`docs/adr/0005-agent-native-positioning.md:32`) 抢同一入口 |
+| `lo-md-lint` 的 CLI 子命令 (如 `polish`) | 用户只记一个二进制；能直接复用本仓的豁免解析与 `--fix` | 把非确定性、要密钥、要网络的路径塞进以 CI 为质量门的工具；容易被误接进 required check；和「lint 快、公式化、确定性」(`docs/adr/0005-agent-native-positioning.md:32`) 抢同一入口 |
 | agent skill | 人已经在会话里，审稿是同一回合；不给 linter 加 API 依赖；ADR-0005 的 agent-native 定位天然匹配；三家 harness 都能读项目 skill | 没有 Claude Code 就没有 Gvozdev 那种 hook 热路径；批跑 `docs/` 要另开会话；skill 文本本身会过期，要当 prompt 源文件维护 |
 | 独立工具 (Gvozdev `rewrite-md.sh` 那种) | 与 linter 解耦，fail-open 不影响 `check` 退出码；可被 skill、CLI、将来的 CI 可选 job 共用 | 又一个发行面；两套配置；若它自己再实现一遍 Markdown 豁免，会和 `spec/rules.md` 漂移 |
 
