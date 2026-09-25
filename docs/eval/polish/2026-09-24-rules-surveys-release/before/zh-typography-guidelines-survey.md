@@ -50,7 +50,7 @@
 | 《中文文案排版指北》 | [sparanoid](https://github.com/sparanoid/chinese-copywriting-guidelines) | [简体 README](https://github.com/sparanoid/chinese-copywriting-guidelines/blob/master/README.zh-Hans.md) | ~15.6k star / 1.8k fork；正文最近合入约 2023-08-09；dependabot 分支 2026-07 仍在动 | **事实：** 中英混排文案的事实标准。Apple / Microsoft 中港台站、V2EX、Ruby China、少数派被它列为实践者。 |
 | 《中文技术文档的写作规范》 | 阮一峰 [ruanyf/document-style-guide](https://github.com/ruanyf/document-style-guide) | [文本](https://github.com/ruanyf/document-style-guide/blob/master/docs/text.md) / [标点](https://github.com/ruanyf/document-style-guide/blob/master/docs/marks.md) / [数值](https://github.com/ruanyf/document-style-guide/blob/master/docs/number.md) | ~12.7k star / 2.3k fork；95 commits；公共领域 | 写作规范 (标题层级、句长、语态) + 排版。标点更靠近国标。 |
 | 译文排版规则指北 | 掘金翻译计划 | 见 §1 | 停更 | sparanoid 衍生 + 破折号空格 |
-| 《中文技术文档写作风格指南》 | [yikeke/zh-style-guide](https://github.com/yikeke/zh-style-guide) | [在线](https://zh-style-guide.readthedocs.io/zh-cn/latest/) | 开源、章节完整 | 由 PingCAP / TiDB 中文文档经验积累而成，标点专章写得比 sparanoid 细 (破折号明确「前后不空格」；括号按内容选全角/半角) |
+| 《中文技术文档写作风格指南》 | [yikeke/zh-style-guide](https://github.com/yikeke/zh-style-guide) | [在线](https://zh-style-guide.readthedocs.io/zh-cn/latest/) | 开源、章节完整 | 从 PingCAP / TiDB 中文文档经验长出来，标点专章写得比 sparanoid 细 (破折号明确「前后不空格」；括号按内容选全角/半角) |
 | 百度 FEX Markdown 规范 | [fex-team/styleguide](https://github.com/fex-team/styleguide/blob/master/markdown.md) | 同上 | 标注「还未定稿」 | 中英数字加空格；中文用直角引号「」；括号内有中文用全角、全英文用半角 |
 
 ### 2.2 国家标准与排版需求 (权威，但不等于 Markdown 空格规则)
@@ -235,7 +235,7 @@
 | pangu.js | **明确不要拿它处理 Markdown** | README：「You SHOULD NOT use pangu.js to spacing Markdown documents」issue #127 |
 | 本仓 | 行内代码 span **内部**豁免；定界反引号算正文，所以 `` `code`(x) `` 仍报 zh-typography-3 | `spec/rules.md` 全局豁免 |
 
-**有分歧。** 行内代码两侧空格在工具里是主流默认；链接两侧空格，规范自己也标成了争议 (Markdown `[文字](url)` 渲染后链接文字与中文是否留白，和源码里 `](` 语法空格是两件事)。本仓 zh-typography-3 已经处理「反引号与括号」的边界，但不管「中文与 `` `code` `` 之间」。
+**有分歧。** 行内代码两侧空格在工具里是主流默认；链接两侧空格被规范自己标成争议 (Markdown `[文字](url)` 渲染后链接文字与中文是否留白，和源码里 `](` 语法空格是两件事)。本仓 zh-typography-3 已经处理「反引号与括号」的边界，但不管「中文与 `` `code` `` 之间」。
 
 ---
 
@@ -431,7 +431,7 @@ textlint-rule-zh-half-and-full-width-bracket 的三档：一律半角 (当前 zh
 ### 待用户拍板
 
 1. **破折号 `——` 两侧空格**：掘金要求、国标反对。建议独立 flag、默认关。这是 brief 里最需要一句话裁决的项。
-2. **括号策略要不要做成三档** vs 维持 zh-typography-2 写死为一律半角。家规已选半角；flag 化时要不要给国标党退路。
+2. **括号策略三档** vs 维持死 zh-typography-2 (一律半角)。家规已选半角；flag 化时要不要给国标党退路。
 3. **数字与汉字之间空格** (含「年月日」例外)：默认关还是 warning。
 4. **引号「」 vs “”**：统一转换还是不管。
 5. **链接两侧空格**：规范自己标争议。

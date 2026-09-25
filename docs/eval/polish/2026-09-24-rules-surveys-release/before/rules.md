@@ -1,6 +1,6 @@
 # limae 规则规范
 
-本文件是规则的源文件 (normative)，语言无关：任何实现 (implementation) 都按这里的判定与修复行为工作，并以 `spec/fixtures/` 的黄金集 (golden fixtures) 验收。规范是上游 —— 实现与规范不一致时先改规范、再改实现 (ADR-0001)。
+本文件是规则的正本 (normative)，语言无关：任何实现 (implementation) 都按这里的判定与修复行为工作，并以 `spec/fixtures/` 的黄金集 (golden fixtures) 验收。规范是上游 —— 实现与规范不一致时先改规范、再改实现 (ADR-0001)。
 
 规则 id 稳定且不复用，形如 `<语言>-<家族>-<序号>` (见「规则属性」)，当前是 `zh-typography-1` 到 `zh-typography-11`、`zh-tell-1` 到 `zh-tell-5`、`en-tell-1` 到 `en-tell-3`、`zh-word-1` 与 `zh-word-2`；实现报告违规时用的 id 必须与这里一致。fixture 格式与 runner 的判定见 `spec/README.md`。
 
@@ -65,7 +65,7 @@ zh-tell-1 / zh-tell-3 / zh-tell-4 / en-tell-1 / en-tell-3 / zh-tell-5 / zh-word-
 - **英文词表 (en-tell-1 / en-tell-3) 匹配整词 (whole word)、大小写不敏感**：命中处两端须满足下面的英文边界合同 —— `pivotal` 不命中 `pivotally`、也不命中 `is_pivotal`；连字符允许相邻，所以 `load-bearing` 在 `non-load-bearing` 里算命中 (连字符压缩本身就是要管的形态)。**不做词干还原 (stemming)**：要管的屈折形在词表里逐条写全 (`delve` / `delves` / `delving`)。
 - **英文大小写与边界合同 (en-tell-1 / en-tell-2 / en-tell-3)**：对 ASCII 词条与句式关键字，ASCII 字母不分大小写；另将 `İ` (U+0130)、`ı` (U+0131) 与 `i`，`ſ` (U+017F) 与 `s`，U+212A (Kelvin sign) 与 `k` 视为等价。整词匹配要求两端的相邻字符 (若存在) 均不属于 `A-Za-z0-9_` 加这四个码点组成的字符类；其它非 ASCII 字符允许相邻。此合同对应 Python 参考实现的 `re.IGNORECASE`。
 - **豁免表 (zh-tell-5 / zh-word-2) 按覆盖 (cover) 判定**：表里某条在行内的某次出现盖住了命中处的第一个字 (zh-tell-5 的那个「零」、zh-word-2 的「秘」)，这一处就不报。条目都是连续的汉字，所以「盖住」就是命中处落在这次出现的范围之内 —— `零售` 盖住「零售价格」里的零，`从零` 盖住「从零建机」里的零：命中处两侧的固定搭配用同一张表表达，不需要前缀与后缀两套规则。
-- **豁免表在整行范围内查找，不受全局豁免约束**，与 zh-word-1 的锚点同理 —— 它是用词的证据，不是违规本身；违规本身照旧受全局豁免约束。
+- **豁免表在整行范围内查找，不受全局豁免约束**，与 zh-word-1 的锚点同理 —— 它是关于用词的证据，不是违规本身；违规本身照旧受全局豁免约束。
 - **长的先匹配**：一条是另一条的子串时，参与匹配的顺序按长度降序，同一处只算一次命中。
 - **全局豁免照常适用**：落在围栏代码块、行内代码、链接 destination / 裸 URL、含假名引用 span 里的文字不报也不改。英文词表尤其吃这一条 —— 英文词在标识符、路径与 URL 里极常见，它们落在行内代码或 URL 里就不是行文。
 - **词表为空** (整份文件只有注释与空行) 的规则永不报违规；**豁免表为空则相反** —— 什么都不豁免，判定照常。
@@ -86,7 +86,7 @@ zh-tell-1 / zh-tell-3 / zh-tell-4 / en-tell-1 / en-tell-3 / zh-tell-5 / zh-word-
 
 ## 规则属性
 
-每条规则有三个正交 (orthogonal) 的属性，取值与语义以 ADR-0006 (`docs/adr/0006-rule-grading-fixability-severity-experimental.md`) 为准。三轴互不推导，任意组合都合法 —— 不可修复的规则可以是 error，experimental 的规则可以是 fixable。
+每条规则有三个正交 (orthogonal) 的属性，取值与语义的正本是 ADR-0006 (`docs/adr/0006-rule-grading-fixability-severity-experimental.md`)。三轴互不推导，任意组合都合法 —— 不可修复的规则可以是 error，experimental 的规则可以是 fixable。
 
 | 轴 | 取值 | 谁定 |
 | --- | --- | --- |
