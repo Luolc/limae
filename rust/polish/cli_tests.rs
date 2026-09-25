@@ -487,6 +487,74 @@ fn a_target_that_changed_during_the_run_keeps_its_new_content() -> TestResult {
     Ok(())
 }
 
+/// A synthetic target with the three kinds of line the structure check
+/// counts.
+const STRUCTURED: &str =
+    "# ACME\n\nthe acme report\n\n## Foo\n\n- one\n- two\n\n```sh\nacme run\n```\n";
+
+#[cfg(unix)]
+#[test]
+fn a_rewrite_that_lost_a_heading_is_not_written() -> TestResult {
+    let root = TempDir::new("structure")?;
+    claude_stub(root.path(), "sed '/^## Foo/d; s/report/summary/'")?;
+    repository(root.path())?;
+    let target = root.path().join("docs/target.md");
+    fs::write(&target, STRUCTURED)?;
+    let env = file_environment(root.path(), &[]);
+
+    let ended = invoke(
+        &["--share-repo-with-engine", "docs/target.md"],
+        "",
+        root.path(),
+        &env,
+    )?;
+
+    assert_eq!((ended.code, ended.stdout.as_str()), (1, ""));
+    assert_eq!(
+        ended.stderr,
+        "not written: docs/target.md: the rewrite changed the count of heading lines 2 → 1; the file is kept, polish it again\n"
+    );
+    assert_eq!(fs::read_to_string(&target)?, STRUCTURED);
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn a_rewrite_that_lost_a_list_is_not_written_and_the_next_file_still_is() -> TestResult {
+    let root = TempDir::new("structure-next")?;
+    claude_stub(root.path(), "sed '/^- /d; s/notes/polished notes/'")?;
+    repository(root.path())?;
+    let target = root.path().join("docs/target.md");
+    fs::write(&target, STRUCTURED)?;
+    let env = file_environment(root.path(), &[]);
+
+    let ended = invoke(
+        &[
+            "--share-repo-with-engine",
+            "docs/target.md",
+            "docs/notes.md",
+        ],
+        "",
+        root.path(),
+        &env,
+    )?;
+
+    // Per file, like the conflict check: the broken rewrite is dropped and
+    // the run goes on to the next target.
+    assert_eq!(ended.code, 1);
+    assert_eq!(ended.stdout, "polished: docs/notes.md\n");
+    assert_eq!(
+        ended.stderr,
+        "not written: docs/target.md: the rewrite changed the count of list items 2 → 0; the file is kept, polish it again\n"
+    );
+    assert_eq!(fs::read_to_string(&target)?, STRUCTURED);
+    assert_eq!(
+        fs::read_to_string(root.path().join("docs/notes.md"))?,
+        "polished notes\n"
+    );
+    Ok(())
+}
+
 #[cfg(unix)]
 #[test]
 fn all_polishes_the_walk_skips_links_and_honours_limae_ignore() -> TestResult {

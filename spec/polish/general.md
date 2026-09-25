@@ -21,6 +21,9 @@ adds detail; nothing there loosens the rules below.
   author and "you" is its reader; the model rewriting it is neither.
 - A rewrite is a paraphrase. It says what the input says, to the input's
   own reader, in the input's own voice.
+- Text the input shows as a bad example — a before / after pair, a
+  sentence marked as the wrong way, a sample it goes on to correct — is
+  material in itself. Keep it as it is; do not fix it.
 
 ## When to change a sentence
 
