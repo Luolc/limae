@@ -18,16 +18,18 @@
 not written: spec/rules.md: the rewrite changed the count of code fence lines 62 → 60; the file is kept, polish it again
 ```
 
-按 brief 要求没有手工拼接，原样记在这里；退出码 0，文件保持基线不变。重跑一次，第二次输出 `polished: spec/rules.md`，结构核对通过 (标题 45 → 45、围栏 58 → 58、列表项 161 → 161，均相等)。这是 #200 那条写回前结构核对在真实运行里第一次拦下一次坏写回；产物为空、没有产生可比的废弃版本，因此没有 `discarded-runs` 条目。
+按 brief 要求没有手工拼接，原样记在这里；退出码 0，文件保持基线不变，即第一次跑之前的 62 行围栏。重跑一次，第二次输出 `polished: spec/rules.md`，结构核对通过。这是 #200 那条写回前结构核对在真实运行里第一次拦下一次坏写回；产物为空、没有产生可比的废弃版本，因此没有 `discarded-runs` 条目。
 
-## 结构核对 (标题 / 围栏 / 列表项 / 总行数)，全部四份
+## 结构核对 (标题 / 围栏行 / 列表项 / 总行数)，全部四份
 
-| 文件 | 标题 | 围栏 | 列表项 | 行数 |
+下表用与 `rust/polish/cli.rs::Shape::of` 相同的口径重算 (围栏行按开合各计一行；列表项含 `-` / `*` / `+` 与有序标记)，不是简单的 `grep -c` 估算 —— PR #201 首轮审查发现最初这里记的是几条 grep 正则的估算值，与 `Shape::of` 的真实读数不符，已按复核后的读数改写：
+
+| 文件 | 标题 | 围栏行 | 列表项 | 行数 |
 | --- | --- | --- | --- | --- |
-| `spec/rules.md` | 45 → 45 | 58 → 58 | 161 → 161 | 688 → 688 |
-| `docs/research/claudish-and-ai-slop-survey.md` | 33 → 33 | 0 → 0 | 105 → 105 | 487 → 487 |
-| `docs/research/zh-typography-guidelines-survey.md` | 35 → 35 | 0 → 0 | 43 → 43 | 460 → 460 |
-| `docs/knowledge/release.md` | 25 → 25 | 2 → 2 | 22 → 22 | 376 → 376 |
+| `spec/rules.md` | 44 → 44 | 62 → 62 | 188 → 188 | 688 → 688 |
+| `docs/research/claudish-and-ai-slop-survey.md` | 33 → 33 | 0 → 0 | 139 → 139 | 487 → 487 |
+| `docs/research/zh-typography-guidelines-survey.md` | 35 → 35 | 0 → 0 | 77 → 77 | 460 → 460 |
+| `docs/knowledge/release.md` | 25 → 25 | 16 → 16 | 46 → 46 | 376 → 376 |
 
 `docs/knowledge/release.md` 是上一批 (2026-09-16) 被砍掉一半而撤回的那份，这次四项计数全部相等，没有重演那次故障。
 
