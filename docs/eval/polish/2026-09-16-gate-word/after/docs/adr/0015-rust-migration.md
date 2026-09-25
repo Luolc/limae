@@ -125,7 +125,7 @@ Rust 使用 Cargo 内建测试框架：模块内 unit tests 覆盖局部业务�
 设计、每份实现 brief、自审与正式审查均加载用户级 `rust-review` 与 `pr-review`，再叠加本仓适用规则；这里记录具体设计取舍，不复制或安装另一份 skill。
 
 - **RS5–RS9、RS29**：库用 `Config` / `Directive` / `Resource` / `Io` 等领域错误，保留路径、行号与 source；CLI 将用法 / 配置 / 指令错误映射为 2，I/O / Git / 资源执行失败为 1，报告未完成，不能打印 clean。Python 的未捕获异常 traceback 不属于要复制的界面。`None` 只表示没配置 / 无事件等正常缺席；不用 `.ok()` / 默认集吞错误。规则、严重度、操作模式用 enum / 具名 options，不给库接口加难懂的位置布尔值。
-- **RS5、RS24、RS26**：单 package 在根 `[lints.rust]` 开 `unsafe_code = "forbid"`、`unused_must_use = "deny"`，`[lints.clippy]` deny `unwrap_used` / `expect_used` / `dbg_macro` / `print_stdout` / `print_stderr`；测试是否允许 unwrap 在独立的质量检查约定中显式写清，默认用 `Result`。stdout 只由 CLI / hook 协议边界输出，窄范围 lint 例外附理由。纯库暂不打日志，因此不加 tracing；确需事件时遵循 RS24 / RS25，只记录审计过的字段。
+- **RS5、RS24、RS26**：单 package 在根 `[lints.rust]` 开 `unsafe_code = "forbid"`、`unused_must_use = "deny"`，`[lints.clippy]` deny `unwrap_used` / `expect_used` / `dbg_macro` / `print_stdout` / `print_stderr`；测试是否允许 unwrap 在独立质量门约定中显式写清，默认用 `Result`。stdout 只由 CLI / hook 协议边界输出，窄范围 lint 例外附理由。纯库暂不打日志，因此不加 tracing；确需事件时遵循 RS24 / RS25，只记录审计过的字段。
 - **RS10–RS23、RS27–RS28**：A 的纯文本 lint / fix 没有 async、spawn、signal、channel；`--all` 的 Git 是独立外部调用，要有超时、受控输出与 wait。C 的引擎 runner 单独落地，以同步管道消费 / OS 安全封装为默认；Unix 用安全的 [CommandExt::process_group(0)](https://doc.rust-lang.org/std/os/unix/process/trait.CommandExt.html#method.process_group)，检查 PGID 大于 1，区分已退出与真实系统错误。取消与超时是不同结果，都向组 TERM、有限宽限、KILL、wait，并关闭 / 回收 stdout、stderr、stdin 的 reader / writer；孙进程仍持 pipe 时也必须到期退出。两路输出及 answer 文件设字节上限，A/B 最多两候选，失败时清理全部存活调用，不靠 Drop 收尾。只有受测需求证明同步结构不够时才另提 Tokio。
 - **RS20、RS22–RS25**：预设 cwd / 环境白名单、custom 的既有继承边界与 hook 递归标记分别测试；不读取真实凭证或会话作测试数据。日志、错误、Debug 不带正文、完整 prompt、argv / 环境值或原始引擎输出。正文只走产品既定的输入 / 显示 / 会话态记录通路；D 记录按 [ADR-0012](0012-single-run-polish-records.md) 保持权限与期限，批次、缓存、诊断文件另设容量上限，不能只靠过期时间控制增长。
 - **RS27、RS29–RS37**：纯 lint 不依赖 Unix；首个发行验证目标为 Linux GNU / musl，macOS / Windows 的实际运行支持各自拿到 CI 证据再声明。进程 adapter 必须有非 Unix 的可编译、可诊断「不支持」路径，不能假装成功；声明 Windows polish 支持前实现等价进程树清理。进程清理测试用隔离且能 reap 的环境，包含正常成功臂和故意留下孙进程的失败臂；异步、输出限制与安全边界按实际新增路径复核。
@@ -140,7 +140,7 @@ A1 新增根 `rust-toolchain.toml`，按上述环境选择具体 `channel = "1.9
 
 | 任务 | 目标与文件集 | 依赖 / 可并行性 | 本 PR 验收 |
 | --- | --- | --- | --- |
-| G | 独立的仓级 Rust 布局 / 质量检查约定：仅 `AGENTS.md`，必要时项目 skill | 最先；守则 / skills 独占串行 | 明确 A1 出现 Cargo 后即启用检查与 lint 例外；继续引用用户级两 skill，不抄另一仓路径 |
+| G | 独立的仓级 Rust 布局 / 质量门约定：仅 `AGENTS.md`，必要时项目 skill | 最先；守则 / skills 独占串行 | 明确 A1 出现 Cargo 后即启用门与 lint 例外；继续引用用户级两 skill，不抄另一仓路径 |
 | A1 | 根 `Cargo.toml` / `Cargo.lock` / `rust-toolchain.toml`、`.gitignore` 加 `target/`、`rust/lib.rs` / `text.rs`、测试 target 与 `.github/workflows/ci.yml`；实现字符位置和单条宽度转换原语 | G；共享文件独占 | 可执行库测试与 doctest，emoji / 组合字符范围安全；CI / 本地按文件 pin 工具链，required check 从本 PR 起执行 fmt / clippy / test / doc，没有空 binary 或假全量通过 |
 | A2 | `rust/markdown.rs` 与保护范围测试 | A1；可与 A5 并行 | 四类保护、跨行与块边界、零长 delimiter span；用真实受保护 / 正文两臂 |
 | A3 | `rules/typography.rs`：全部排版规则、固定阶段与不动点；按宽度 / 间距的实际审阅规模分 PR | A2；同文件及 `lib.rs` 接线串行 | 每批对照对应 fixture，最后混合规则、重复修复、禁用组合全部通过；原文 finding 与修后结果分开验 |
@@ -153,16 +153,16 @@ A1 新增根 `rust-toolchain.toml`，按上述环境选择具体 `channel = "1.9
 | B2 | 独立 opt-in hook id、`.pre-commit-hooks.yaml` 与对应说明 | B1；入口文件串行 | 临时消费仓安装 Rust 入口与原 Python 入口各跑一次；现有默认不换 |
 | C1 | `rust/polish/process.rs` 与进程边界测试 | B；独立模块，OS 依赖串行 | 真外部受控命令的成功、超时、取消、超量输出、pipe / 孙进程回收 |
 | C2a / C2b | `polish/engines.rs` / prompt 资源与 `polish/config.rs`：命令展开，随后 auto / TTL | C1；接线串行 | Python tests 中的引擎 / 配置边界，调用合成 custom 路径与预设探活路径 |
-| C3 | `polish/mod.rs`、CLI 接入与分发资源 / CI | C2；共享文件串行 | `polish -` 真运行；离线受控 tests 纳入检查，真实模型 smoke 留独立证据、不作 required check |
+| C3 | `polish/mod.rs`、CLI 接入与分发资源 / CI | C2；共享文件串行 | `polish -` 真运行；离线受控 tests 进门，真实模型 smoke 留独立证据、不作 required check |
 | D1a / D1b | `rust/hook/state.rs` / `render.rs`：记录、诊断、prune，随后计数与展示 | C；模块可并行，状态协议统一 | 权限、容量、记录覆盖、计数差分；均用合成文本 |
 | D2a / D2b | `hook/claude.rs` / `ab.rs`、随后 `hook/codex.rs` 与主入口 | D1；宿主 / A/B 共用状态接线串行 | Claude 迟到 / 缺批、A/B / 一次性回注；Codex 单路、递归禁用、失败后下一轮恢复；分别真实宿主对照 |
 | E | Rust bin 命名、`pyproject.toml` reference 入口、README 弃用说明、仓内 hook / dogfood / CI；本地受管安装由 orchestra 在 machine-setup 另走 PR | D 全过；互审后自动执行，外部消费仓仅调查 / 准备 | 正式 CLI 为 Rust `limae`，Python deprecated 且 reference / 测试保留，安装 / 回退可复演；汇报发布缺口并停在实际 tag / release / publish 之前 |
 
 根 `Cargo.toml`、`Cargo.lock`、`rust-toolchain.toml`、CI、`rust/lib.rs` 与共享测试入口由当时的集成任务独占；「可并行」只指文件集不相交的正文，接线 / 加依赖在合入时串行。`uv.lock` 也遵守原有单持有者规则。本方案不改 `AGENTS.md`、skills 或 tracker，G 由后续独立任务完成。
 
-G 建议约定：既有两项 Python 裸质量检查继续保留；从 A1 首个 Rust 代码 PR 起，按仓根 toolchain pin 新增 `cargo fmt --check`、`cargo clippy --all-targets --locked -- -D warnings`、`RUSTDOCFLAGS=-Dwarnings cargo test --locked`、`RUSTDOCFLAGS=-Dwarnings cargo doc --no-deps --locked`，本地与现有 required check 同步执行。[RUSTDOCFLAGS](https://doc.rust-lang.org/cargo/reference/environment-variables.html) 将文档警告作为错误，文档构建与实际执行 doctest 两项分别验收。
+G 建议约定：既有两个 Python 裸质量门继续保留；从 A1 首个 Rust 代码 PR 起，按仓根 toolchain pin 新增 `cargo fmt --check`、`cargo clippy --all-targets --locked -- -D warnings`、`RUSTDOCFLAGS=-Dwarnings cargo test --locked`、`RUSTDOCFLAGS=-Dwarnings cargo doc --no-deps --locked`，本地与现有 required check 同步执行。[RUSTDOCFLAGS](https://doc.rust-lang.org/cargo/reference/environment-variables.html) 将文档警告作为错误，文档构建与实际执行 doctest 两项分别验收。
 
-A8b 后，裸 `uv run pytest -q` 仍只跑 Python 臂；push 前 / CI 则先 `cargo build --locked --bin limae-rs --example diff-probe`，再 `uv run pytest -q --rust-bin target/debug/limae-rs`。给参数就必须运行双臂，CLI 或其旁的 `examples/diff-probe` 缺席均失败，不能 skip；E 更名时同步该命令与 Python 臂入口。B 再加入 package / 安装 / musl 验收。Rust 的重检查放在 push 前与 CI，commit 钩子不塞完整 Cargo 构建。每次 push 前全部已启用的质量检查全绿。
+A8b 后，裸 `uv run pytest -q` 仍只跑 Python 臂；push 前 / CI 则先 `cargo build --locked --bin limae-rs --example diff-probe`，再 `uv run pytest -q --rust-bin target/debug/limae-rs`。给参数就必须运行双臂，CLI 或其旁的 `examples/diff-probe` 缺席均失败，不能 skip；E 更名时同步该命令与 Python 臂入口。B 再加入 package / 安装 / musl 验收。Rust 的重检查放在 push 前与 CI，commit 钩子不塞完整 Cargo 构建。每次 push 前全部已启用的质量门全绿。
 
 ## 后果
 

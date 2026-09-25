@@ -189,7 +189,7 @@ A9 与 A9b 的读数说明：`.mcp.json` 位于视图中时，挡住它的是 fl
 
 **端到端 (A8、A11)**：三家各运行一次 `limae polish --share-repo-with-engine --engine <engine> docs/target.md`，都退出 0、`polished: docs/target.md`、`git diff` 只修改这一个文件、绊线没有响、输出不含 `ZEBRA-7731`；claude 再运行一次 `--all`，`CLAUDE.md` 报 `unchanged`、两份 docs 被改写。
 
-**未测的内容**：用户自己家目录中的 hook 与 MCP (`~/.claude/settings.json`、`~/.claude.json`) —— 它们在两种模式中都会加载，是用户自己的东西，与 §一 第 2 类基于同一判断；grok 在用户已 `--trust` 过的目录中的项目 hook —— 视图每次都是新路径，永远不在 `~/.grok/trusted_folders.toml` 中，因此这条在文件模式下不成立，但没有专门运行一臂；codex 的 hook 持久化信任关卡 (`--dangerously-bypass-hook-trust` 的反面) 同样未测。
+**未测的内容**：用户自己家目录中的 hook 与 MCP (`~/.claude/settings.json`、`~/.claude.json`) —— 它们在两种模式中都会加载，是用户自己的东西，与 §一 第 2 类基于同一判断；grok 在用户已 `--trust` 过的目录中的项目 hook —— 视图每次都是新路径，永远不在 `~/.grok/trusted_folders.toml` 中，因此这条在文件模式下不成立，但没有专门运行一臂；codex 的 hook 持久化信任门 (`--dangerously-bypass-hook-trust` 的反面) 同样未测。
 
 ## 复核这份文档
 
