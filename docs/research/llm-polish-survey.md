@@ -181,7 +181,7 @@ README 说程序下载一次后在本地运行，不要传 `max_tokens`，PAW �
 | `specs/claudish-to-english.md` | 205 | 正向：Claudish → 直白英语 |
 | `specs/english-to-claudish.md` | 39 | 反向：把普通英语写成 Claudish (生成「腔」样本用) |
 
-**`translate.py` 不读这两份文件，也不读词典。** 运行时只有 function id。规范与权重是否字节一致，从本仓源码 **无法核实**；README 把 spec 标为可复制的正本，而不是运行时加载的资源。
+**`translate.py` 不读这两份文件，也不读词典。** 运行时只有 function id。规范与权重是否字节一致，从本仓源码 **无法核实**；README 把 spec 标为可复制的源文件，而不是运行时加载的资源。
 
 正向 spec 的结构 (比 Gvozdev 默认 prompt 长一个数量级)：
 
@@ -204,7 +204,7 @@ README 说程序下载一次后在本地运行，不要传 `max_tokens`，PAW �
 
 ### 2.3 词典形制
 
-`dictionary/entries.json`，`schema_version` 必须为 2 (`dictionary/validate.py:53`)。这是网站词典的正本 (`dictionary/README.md:3`)，**不是**翻译器的运行时词表。
+`dictionary/entries.json`，`schema_version` 必须为 2 (`dictionary/validate.py:53`)。这是网站词典的源文件 (`dictionary/README.md:3`)，**不是**翻译器的运行时词表。
 
 校验器强制的规模与字段 (`dictionary/validate.py:15`、`dictionary/validate.py:130`)：
 
@@ -318,7 +318,7 @@ Gvozdev 的「跟输入同一语言」对中文 **机制上可用**，质量取�
 流水线固定为：
 
 1. (可选) `lo-md-lint` **check** 原文，tell / word 两类家族的 findings 作为润色 prompt 的 hint。这是 ADR-0006 §四允许的「使用方式」，不是「warning 累积才润色」。没有 findings 也可以润色。
-2. LLM 润色 → 旁路文件，**不覆盖正本**。
+2. LLM 润色 → 旁路文件，**不覆盖源文件**。
 3. **确定性**结构不变量检查 (围栏、行内代码、destination / URL、表格骨架、frontmatter)。失败则丢弃这次润色，fail-open 回原文。
 4. 对旁路文件运行 `lo-md-lint --fix` (默认 `zh-typography` 一族；zh-word-1 仅当 `enable_experimental` 已开)。再 `check` 一次作为验收。
 5. 人对照「原文 vs (润色 + 排版 fix) 后的旁路」，接受后才写回。
@@ -380,7 +380,7 @@ Prompt 组织建议分层，借鉴两侧各自擅长的部分，不要把一份 
 - **unified diff** (原文 vs 旁路)：人审时比读两份全文快。
 - **建议列表**不适合作为主产物。语义压缩跨句、可以减行 (Deng `specs/claudish-to-english.md:29`)，落不进本仓 `.findings` 的「一行一条」。硬做成 findings 会逼模型一对一改词，正好违反 Deng 的「不要机械换词典」。
 
-写回合同 (与 ADR-0005 §四一致)：旁路文件 **不是**正本；人审接受后才覆盖。独立批跑入口即使提供 overwrite，也必须是显式 flag，并且失败时文件字节与原文相同 (Gvozdev `rewrite-md.sh:24`)。
+写回合同 (与 ADR-0005 §四一致)：旁路文件 **不是**源文件；人审接受后才覆盖。独立批跑入口即使提供 overwrite，也必须是显式 flag，并且失败时文件字节与原文相同 (Gvozdev `rewrite-md.sh:24`)。
 
 Gvozdev overwrite 的 HTML marker (`rewrite-md.sh:79`) 能防二次改写，但会污染文档。本仓若做幂等，宜用「旁路已存在且原文未变则跳过」，不要往 `docs/` 里插 `<!-- claudish-to-english:rewritten -->`。
 
@@ -448,12 +448,12 @@ ADR-0005 §六要的是：pair 只 **提议**规则，人审后进 `spec/`，新
 
 1. **不要把润色接进 `lo-md-lint --fix`。** `--fix` 的契约是逐行、唯一、不动点 (`spec/rules.md`「处理单位」)。语义压缩会减句，又非确定，接进去会拆掉黄金集。ADR-0006 已经把润色从 warning 触发上解开，不要再从 fix 路径耦回去。
 2. **不要先 `--fix` 再润色。** 理由见 §4.3：模型会把 zh-typography-1 的全角标点改回去，也毁掉 HL 需要的 before。
-3. **不要默认 overwrite 正本。** Gvozdev 自己把 overwrite 标成弱模型会毁文档 (`README.md:410`)，且没有人审关卡。本仓 ADR-0005 §四已经要求旁路 + 人审后写回。
+3. **不要默认 overwrite 源文件。** Gvozdev 自己把 overwrite 标成弱模型会毁文档 (`README.md:410`)，且没有人审关卡。本仓 ADR-0005 §四已经要求旁路 + 人审后写回。
 4. **不要只靠 prompt 保护围栏 / 行内代码 / 链接。** Gvozdev 对围栏就是这样，还被 `tldr` 反过来要求删除。本仓有豁免解析器，应机械剥离。
 5. **不要把 Deng 的 `entries.json` 当可执行词表灌进 zh-word-1 或 en-tell-3。** 正向 spec 禁止机械换词；30 条里多数是合法技术用语；本仓 en-tell-3 已经用「造得出无修辞技术句就不收」筛过一轮 (`spec/rules.md` 的 en-tell-3)。词典的用法是给人读、给润色 spec 当例子，不是 `wrong = right`。
 6. **不要用 Gvozdev 的 `tldr` / `5y` / `caveman` 当文档润色默认档。** `tldr` 会省略围栏；`caveman` 删冠词、改时态，会改事实表面。文档润色要的是 Deng 那种 paraphrase，不是风格戏仿。
 7. **不要借鉴 `CLAUDISH_ANTHROPIC_AUTH=oauth`。** 非官方、订阅凭证、本仓 public。Gvozdev 自己每会话警告一次 (`providers.sh:422`)。
-8. **不要把润色做成 MessageDisplay 式的显示层插件。** 本仓的对象是仓库里的 Markdown 正本，不是 Claude Code 的屏幕。显示层改写解决不了 `docs/` 入库。
+8. **不要把润色做成 MessageDisplay 式的显示层插件。** 本仓的对象是仓库里的 Markdown 源文件，不是 Claude Code 的屏幕。显示层改写解决不了 `docs/` 入库。
 9. **不要用 `.in` / `.fixed` 去锁模型散文，也不要为了迁就润色放宽「不增删行」。** 那是 `zh-typography` 一族的契约；润色另测不变量。
 10. **不要从未经人审的模型输出蒸馏规则。** HL 的反馈是人接受的 after；把原始输出当 after，等于把一次幻觉写进 `spec/wordlists/`。
 11. **不要为中文另做语言探测再切 prompt 包。** ADR-0006 §五：规则不分语言。润色 prompt 可以「中英两段都写上，模型按看到的文字用」，不要按文件路径猜语言。

@@ -20,10 +20,10 @@
 | 位置 | [Wiki 页](https://github.com/xitu/gold-miner/wiki/%E8%AF%91%E6%96%87%E6%8E%92%E7%89%88%E8%A7%84%E5%88%99%E6%8C%87%E5%8C%97) |
 | 译者入门另写 | [如何参与翻译](https://github.com/xitu/gold-miner/wiki/%E5%A6%82%E4%BD%95%E5%8F%82%E4%B8%8E%E7%BF%BB%E8%AF%91) 第 5 条：「翻译为中文时排版请参考 **中文文案排版指北**」 |
 
-**上游。** 指北正文几乎整段搬自 sparanoid 的《中文文案排版指北》，Wiki 文末参考文献却链到 fork [mzlogin/chinese-copywriting-guidelines](https://github.com/mzlogin/chinese-copywriting-guidelines)，不是正本。相对正本，掘金加了几条翻译场景特有的规则：
+**上游。** 指北正文几乎整段搬自 sparanoid 的《中文文案排版指北》，Wiki 文末参考文献却链到 fork [mzlogin/chinese-copywriting-guidelines](https://github.com/mzlogin/chinese-copywriting-guidelines)，不是源头。相对源头，掘金加了几条翻译场景特有的规则：
 
 - 「以国标 GB/T 15834-2011 为基础」这一句
-- **破折号前后需要增加一个空格** (`你好，我是破折号 —— 一个不苟言笑的符号。`) —— sparanoid 正本**没有**这条
+- **破折号前后需要增加一个空格** (`你好，我是破折号 —— 一个不苟言笑的符号。`) —— sparanoid 原文**没有**这条
 - 省略号用「一格三点、连续两格 `……`」，后接正文时再加一个空格；并链到 sparanoid issue [#58](https://github.com/sparanoid/chinese-copywriting-guidelines/issues/58)
 - 斜体改加粗 (中文阅读体验)
 - GitHub 脚注折中方案
@@ -33,7 +33,7 @@
 - Wiki 该页最后编辑：2021-04-04，Hoarfroster，共 19 次修订
 - 仓 `master` 最近一次提交：2024-01-21 (`db4f91a`)
 - 2025 年仍有「申请成为译者」issue 打开，但没有对应的译文合入
-- 仓库仍 public、仍挂在 README 教程列表里，规范文本可当历史正本读，不宜当「还在执行的社区法」
+- 仓库仍 public、仍挂在 README 教程列表里，规范文本可当历史原文读，不宜当「还在执行的社区法」
 
 **观点。** 用户记忆准确：这就是那套。它不是独立发明，是 sparanoid 指北的翻译社区衍生版；破折号两侧空格是掘金自己加上的，不是上游共识。
 

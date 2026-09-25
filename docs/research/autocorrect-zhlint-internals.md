@@ -194,7 +194,7 @@ remark 同时识别 CommonMark / GFM 的 \`\`\` 与 `~~~`。围栏代码不是 p
 | front matter | `---` 块内普通值会改，`tags:` 特例 | yaml 节点整块跳过 | 规范未提，按行文处理 |
 | 写回 | pair 拼接；parse 失败回原文 | 按 offset 嵌块 (`replaceBlocks`) | 逐行 `split("\n")` / `join`，**不增删行**是规范 (`spec/rules.md`「处理单位」) |
 | 位置 | pest `line_col`；lint 报整行 old/new | 源码 offset → 行 / 列；按 token 部件 | 行号 + 规则 id，无列号 |
-| 规则单元 | 具名 `fn(&str) -> Cow<str>`，两张静态表 | `Handler` 闭包 + `Options` 三态布尔 | 稳定 id zh-typography-1 到 zh-typography-11，规范正本在 `spec/rules.md` |
+| 规则单元 | 具名 `fn(&str) -> Cow<str>`，两张静态表 | `Handler` 闭包 + `Options` 三态布尔 | 稳定 id zh-typography-1 到 zh-typography-11，规范以 `spec/rules.md` 为准 |
 | 顺序 | `RULES` 然后 `AFTER_RULES`，实现细节 | `generateHandlers` 数组，先改再还原特例 | 「修复顺序」是契约，各实现必须一致 |
 | 幂等 | 单遍，无 fixpoint，无测试 | 单遍 + 还原，无 `run(run(x))` 测试 | `--fix` 循环到不动点；runner 断言 `fix(fixed) == fixed` |
 | 只报不修 | Warning：lint 跑、format 不跑 | 无；`undefined` = 不报不改。CLI 不写盘只是不保存 | check 与 fix 同一启用集；tracker 有 non-fixable / warning backlog |
