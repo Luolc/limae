@@ -31,7 +31,7 @@ token 若曾以任何形式出现在会话记录、命令输出或仓内文本�
 
 manifest 到底合不合格，只有真正 `cargo publish` 那一刻由 crates.io 给出答复。`--dry-run` 仍然值得跑，它是一次**本地打包检查** (打得出包吗、编译得过吗)；只是**发布成不成功以真 `cargo publish` 的退出码为准**，不以它为准。
 
-同一个形状咬过一次，记在这里：`Cargo.toml` 的 `include` 曾经漏掉 `spec/lexicon/zh.toml`，而随包分发的 `render-lexicon` example 在运行时要读它。包打得出来、example 编译得过、`cargo test` 全绿 —— 因为编译一个 example 不需要它的运行时输入。**「编译过了」对「装出来能不能用」零分辨力**；只有在解包目录里真的跑一次那个 example 才分得开 (PR #141 审查方发现，同 PR 修复：入 `include`，并让打包检查真跑它、外加一条抽掉词典的对照臂)。
+同一个形状咬过一次，记在这里：`Cargo.toml` 的 `include` 曾经漏掉 `spec/lexicon/zh.toml`，而随包分发的 `render-lexicon` example 在运行时要读它。包打得出来、example 编译得过、`cargo test` 全绿 —— 因为编译一个 example 不需要它的运行时输入。**「编译过了」对「装出来能不能用」零分辨力**；只有在解包目录里真的跑一次那个 example 才分得开 (PR #141 审查方发现，同 PR 修复：入 `include`，并让打包门真跑它、外加一条抽掉词典的对照臂)。
 
 ## 一、首发 (crate 尚不存在时，只做一次)
 
@@ -53,11 +53,11 @@ crates.io 的 Trusted Publishing 无法在 crate 存在之前配置，官方原�
 
    完成判据：第一条命令**无任何输出**，第二条打出的 SHA 与你要发布的 commit 相同。
 
-2. 同一台机器、同一个目录，按 CI 的顺序裸跑全部质量检查 (命令清单见仓根 `AGENTS.md`)，**不接管道**。
+2. 同一台机器、同一个目录，按 CI 的门顺序裸跑全部质量门 (命令清单见仓根 `AGENTS.md`)，**不接管道**。
 
-   完成判据：每一项检查都退出 0。输出太长就整条重定向到文件、再单独看退出码 —— `| tail` / `| grep` 会把退出码换成管道末端那个程序的，通过与失败给出同一个 0。
+   完成判据：每一道门都退出 0。输出太长就整条重定向到文件、再单独看退出码 —— `| tail` / `| grep` 会把退出码换成管道末端那个程序的，通过与失败给出同一个 0。
 
-3. 同一台机器，确认打包检查能真的产出包：
+3. 同一台机器，确认打包门能真的产出包：
 
    ```sh
    tools/check_rust_package.sh package
@@ -207,7 +207,7 @@ gh api repos/Luolc/limae/releases/generate-notes \
 
 **它们不编译任何东西。** `tools/build_launchers.sh <tag> <assets-dir> <out-dir>` 从 Release 的 `limae-<target>.tar.gz` (先过它的 `.sha256` 边车) 里取出二进制原样放进 wheel 的 `.data/scripts/limae` 与 npm 平台包的 `limae`；wheel 由 `uvx wheel pack` 打出 (它算 RECORD)，npm 包由 `npm pack` 打出，仓里没有 Python、没有 `pyproject.toml`。包版本取 tag，不取 manifest：二进制是 tag 的，而 dispatch 预演时检出的是 main。描述、license、repository 三个 metadata 串取自 `cargo metadata`，只有一个来源。
 
-**硬不变量：用户从 PyPI 或 npm 装到的二进制与 GitHub Release 上那份是同一份字节。** 「构造上就是这么做的」不算证据 —— 那对「同一份字节」与「两次编译碰巧都能跑」给出相同输出。证据是 `tools/check_launchers.sh <tag> <assets-dir> <out-dir>`：对每个 target 比两个值，一边是**从 Release tarball 里重新解出的**二进制的 sha256 (tarball 先过边车，所以这个值链到 Release 页面公布的那份)，另一边是**从打好的 wheel / npm tarball 里重新解出的**二进制的 sha256 (用安装器同一套工具解成品包，不看构建时的中间目录)；两个值都打进日志，任一不等即红。它还断言两个输出目录里**正好**是预期的那 11 个文件、每个模式命中的是不同的文件：只数命中次数的话，多一个没人认识的 wheel (会被 `publish-pypi` 整目录上传) 或一个同时带两个 tag 的 wheel 顶替两份，都能凑回同一个数 (审查方 2026-09-10 两条反臂实测假绿，同日修)。反臂 (2026-09-10 本机实测，读数记在引入这项检查的 PR 描述里)：在一个 wheel 的二进制里改一个字节、重新打包 → 红并打出两个不同的值；在一个 npm 平台包里改一个字节 → 红；空的输出目录 → 红；多一个 `win_amd64` wheel → 红；双 tag wheel 顶替两份 → 红；改回 → 绿。
+**硬不变量：用户从 PyPI 或 npm 装到的二进制与 GitHub Release 上那份是同一份字节。** 「构造上就是这么做的」不算证据 —— 那对「同一份字节」与「两次编译碰巧都能跑」给出相同输出。证据是 `tools/check_launchers.sh <tag> <assets-dir> <out-dir>`：对每个 target 比两个值，一边是**从 Release tarball 里重新解出的**二进制的 sha256 (tarball 先过边车，所以这个值链到 Release 页面公布的那份)，另一边是**从打好的 wheel / npm tarball 里重新解出的**二进制的 sha256 (用安装器同一套工具解成品包，不看构建时的中间目录)；两个值都打进日志，任一不等即红。它还断言两个输出目录里**正好**是预期的那 11 个文件、每个模式命中的是不同的文件：只数命中次数的话，多一个没人认识的 wheel (会被 `publish-pypi` 整目录上传) 或一个同时带两个 tag 的 wheel 顶替两份，都能凑回同一个数 (审查方 2026-09-10 两条反臂实测假绿，同日修)。反臂 (2026-09-10 本机实测，读数记在引入这道门的 PR 描述里)：在一个 wheel 的二进制里改一个字节、重新打包 → 红并打出两个不同的值；在一个 npm 平台包里改一个字节 → 红；空的输出目录 → 红；多一个 `win_amd64` wheel → 红；双 tag wheel 顶替两份 → 红；改回 → 绿。
 
 平台映射写在 `tools/build_launchers.sh` 顶部那张表里，两处取舍：**Linux 只有 musl 产物**，静态 musl 二进制在 glibc 系统上照跑，所以同一份文件在 PyPI 上发两个 wheel (manylinux 与 musllinux 各一，pip 按它探测到的 libc 选)、在 npm 上只发一个包 (`os` / `cpu` 不带 `libc` 字段，两类系统都装)；**没有 Windows 产物**，所以映射里没有 Windows 那一行，`optionalDependencies` 与 wheel 矩阵都不写一个不存在的 target，启动器在不支持的平台上退出 1 并说明。
 
@@ -321,7 +321,7 @@ crates.io 那边 `auth-check` 能「只认证不发布」，是因为 `rust-lang
 
 **脚本的读数 (2026-09-11 本机，七臂)**：不给参数 / 给一个不存在的 manifest / 一个 `name` 不是 `@limae/*` 的 manifest / 一个只有 `name` 没有 `optionalDependencies` 的 manifest，四臂各自退出 1 并说清哪里不对；拿真的 `launchers/npm/cli/package.json` 跑，列出的正好是那五个包；**把 GitHub 的 token 端点换成本机一个返回假 id_token 的 stub、对真 registry 跑完整循环**，五个包各报 `HTTP 401 / keys [message] / OIDC token exchange error - unauthorized`，脚本汇总后退出 1；同一个 stub 改成不返回 `.value`，脚本在发第一个交换请求之前就退出 1。**唯一没跑过的是成功那一臂** —— 它要一枚真的 GitHub OIDC token，只有在 Actions 里才有，第一次 `workflow_dispatch` 就是它的首跑。
 
-**首跑的读数：交换成功，但脚本判红** (run 34568232100，2026-09-11，`tag=v0.13.2`)。五个包全部答 **HTTP 201 Created**、`keys [created,expires,token,token_type]` —— token 真发出来了，这是「五个包的 trusted publisher 都配好了」第一次拿到独立读数。红在脚本自己身上：状态码那一条判据写的是 `== 200`，而 npm 答 201。**判据比它要证的事窄，就会把成功报成失败。** 修法是让状态码只进日志、不做判决，判决全部交给下一行本来就在的 token 形状断言 (脚本里那句注释「HTTP 200 is not the check: the answer has to carry a token」原本就是这么写的，只是实现没照着做)；日志里那个写死的 `HTTP 200` 一并改成打印真实状态码。
+**首跑的读数：交换成功，但脚本判红** (run 34568232100，2026-09-11，`tag=v0.13.2`)。五个包全部答 **HTTP 201 Created**、`keys [created,expires,token,token_type]` —— token 真发出来了，这是「五个包的 trusted publisher 都配好了」第一次拿到独立读数。红在脚本自己身上：状态码那道门写的是 `== 200`，而 npm 答 201。**判据比它要证的事窄，就会把成功报成失败。** 修法是让状态码只进日志、不做判决，判决全部交给下一行本来就在的 token 形状断言 (脚本里那句注释「HTTP 200 is not the check: the answer has to carry a token」原本就是这么写的，只是实现没照着做)；日志里那个写死的 `HTTP 200` 一并改成打印真实状态码。
 
 **改完之后的六臂读数** (2026-09-11 本机，PATH 上放一个按 `STUB_STATUS` / `STUB_BODY` 作答的假 `curl`，跑的是真脚本)：`201` 带 token → 退 0；`200` 带 token → 退 0；`201` 不带 token (配置只勾了 stage 这类) → 退 1；`404` / `401` → 各退 1 并带出响应里的 `message`；2xx 但响应不是 JSON → 退 1。**分辨力的证据是同一组臂在旧脚本上的读数**：第一臂 (`201` 带 token) 在旧脚本上退 1，逐字复现了 run 34568232100 的那四行 —— 两个版本对同一个输入给出不同结论，这个对照才说明修的是那一处。**假 `curl` 证不了真 registry 的行为**，201 这个读数来自上面那次真跑，不来自桩。
 

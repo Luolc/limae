@@ -54,7 +54,7 @@
 
 - 事件：`MessageDisplay` (显示层) + 可选 `PostToolUse` (Markdown 文件，默认关)。
 - 默认 rewriter：本机 ollama (默认模型 `gemma4:26b-mlx`)；也可 `codex` CLI、Anthropic API、任意 OpenAI-compatible。
-- 约定：**display-only、fail-open**。推理与 transcript 保留原文；provider 挂了就显示原文。
+- 合同：**display-only、fail-open**。推理与 transcript 保留原文；provider 挂了就显示原文。
 - 内置 system prompt 很短，核心一句：把助手消息改成更简单的 plain language，保留事实 / 数字 / 路径，代码围栏不动，只输出改写。另有 style preset：`tldr` / `5y` / `caveman`。
 - Markdown hook 才碰磁盘：按目录 opt-in，默认写 `NAME.plain.md` 旁路文件。
 
@@ -66,12 +66,12 @@
 
 - Python：`to_claudish = paw.function("ca9d5165b6c8e6615529")`，`to_english = paw.function("e469f61ccab2699fbd51")`
 - 程序下载后本地跑；live demo 在网站。
-- 规范源文件：
+- 规范正本：
   - https://github.com/programasweights/claudish/blob/main/specs/claudish-to-english.md
   - https://github.com/programasweights/claudish/blob/main/specs/english-to-claudish.md
 - 词典：https://github.com/programasweights/claudish/tree/main/dictionary (`entries.json` + https://programasweights.com/claudish/dictionary)
 
-另有开放权重适配器尝试：Hugging Face `adamrotmil/claudish-style-adapter` (作者 X 自称 2026-08-25 WIP，把 Claudish 压成可在 CPU 上跑的权重)。未核其质量。
+另有开权适配器尝试：Hugging Face `adamrotmil/claudish-style-adapter` (作者 X 自称 2026-08-25 WIP，把 Claudish 压成可在 CPU 上跑的权重)。未核其质量。
 
 ### 1.4 Philosophy：什么算 Claudish (事实，摘自 Deng spec)
 
@@ -141,7 +141,7 @@ Deng 给的定义 (claudish-to-english.md)：
 
 ## 2. Claudish / AI 腔特征清单
 
-社区其实有两套重叠但不相同的清单：一套是 **Claude 编程助手方言 (Claudish)**，一套是 **通用 LLM 网文 / 百科腔 (AI slop)**。前者更贴合 coding agent 文档；后者更贴合中文公众号 / README。
+社区其实有两套重叠但不相同的清单：一套是 **Claude 编程助手方言 (Claudish)**，一套是 **通用 LLM 网文 / 百科腔 (AI slop)**。前者对 coding agent 文档更尖；后者对中文公众号 / README 更尖。
 
 ### 2.1 英文 (事实，按出处)
 
@@ -354,7 +354,7 @@ https://zh.wikipedia.org/zh-cn/Wikipedia:AI生成文的特征 (快捷 WP:AISIGNS
 3. 人审之后才进规范；agent 可以养实验分支，但不能绕过黄金集
 4. 新规则必须跑全量 fixture，回归失败就删规则或改规则 —— 对应 HL 的「旧能力固化成测试」
 
-不要把 HL 理解成「让模型自己从 pair 归纳出不可读的检测器」。翁家翌强调的价值是策略**可读、可回归、可删**。
+不要把 HL 理解成「让模型自己从 pair 长出不可读的检测器」。翁家翌强调的价值是策略**可读、可回归、可删**。
 
 ---
 
@@ -396,7 +396,7 @@ https://github.com/huacnlee/autocorrect
 - 词表分区 (crypto / 系统 / 通用)，避免 `secret` 全局替换
 - 只收录高置信、单义或可被周围英文锚点消歧的项 (文中同时出现 `secret` 与 key/token/API 才报「密钥」)
 - 组织抄 AutoCorrect：`wrong = right`，默认 warning，`--fix` 可选
-- 权威集 (术语在线) 当参考，不要把 60 万条灌进 linter；从本仓文档真实误译 (secret/cache/token/prompt…) 归纳出一小表，第三次重复再收
+- 权威集 (术语在线) 当参考，不要把 60 万条灌进 linter；从本仓文档真实误译 (secret/cache/token/prompt…) 长一小表，第三次重复再收
 
 两岸用词 (视频 / 影片) 是另一条产品决策：本仓是简体情况 A，不要把繁中本地化规则混进默认包 (zh-tw-humanizer 那 48 组是台湾产品，不是 lo-md-lint 默认)。
 
@@ -422,7 +422,7 @@ Claudish 哲学里「语义压缩、降抽象」几乎不能变 findings：同�
 
 ### 7.1 建议现在记进 tracker
 
-1. **记清爆款身份**：`gvzdv/claudish-to-english` (插件，2.4k★) vs `programasweights/claudish` (Deng 翻译器 + spec/词典，X 爆款)。Philosophy 以 Deng spec 为准。
+1. **记清爆款身份**：`gvzdv/claudish-to-english` (插件，2.4k★) vs `programasweights/claudish` (Deng 翻译器 + spec/词典，X 爆款)。Philosophy 以 Deng spec 为正本。
 2. **记一条产品边界**：去 AI 腔分「确定性 warning」和「LLM 润色」两段；后者不进 required check。
 3. **记中英两套指纹**：英文 Claudish (`load-bearing` / gated / 否定平行) ≠ 中文 AI 腔 (赋能 / 接住体 / 翻译腔)。不要共用一张禁词表。
 4. **记 heuristic learning 的人名**：翁家翌 (Jiayi Weng, `@Trinkle23897`)，文章 *Learning Beyond Gradients*；「汪嘉毅」无稳定命中。
