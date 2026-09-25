@@ -63,7 +63,7 @@ tools/check_rust_package.sh target x86_64-unknown-linux-musl
 
 ## 合并
 
-合并流程见跨仓守则「Git 工作流」的「合并必须固定 LGTM 的 SHA」，这里只记本仓增量两条：required check 叫 `check`，设上之后可以加 `--auto` (绿了自动进 main，红永不合并)；**轮询 PR 状态时同时监听失败态** (FAILURE / CANCELLED / TIMED_OUT 即退出)，不要只等 MERGED —— 只等 MERGED 的循环在 CI 红掉时会一直转到超时。
+合并流程见跨仓守则「Git 工作流」的「合并必须固定 LGTM 的 SHA」，这里只记本仓增量两条：required check 叫 `check`，设上之后可以加 `--auto` (绿了自动进 main，红永不合并)；**轮询 PR 状态用 `gh pr checks <N> --required --json name,bucket`，同时监听失败态** (`bucket` 为 `fail` 或 `cancel` 即退出)，不要只等 MERGED —— 只等 MERGED 的循环在 CI 红掉时会一直转到超时。`--required` 只看 required check (`check`)：本仓 `deploy` job 只在 main 上跑，在每个 PR 上的 `bucket` 都是 `skipping`，不属于失败态，不加 `--required` 会把它也轮询进来。
 
 ## 发版
 
