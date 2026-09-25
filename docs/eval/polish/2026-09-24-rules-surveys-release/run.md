@@ -18,7 +18,7 @@
 not written: spec/rules.md: the rewrite changed the count of code fence lines 62 → 60; the file is kept, polish it again
 ```
 
-按 brief 要求没有手工拼接，原样记在这里；退出码 0，文件保持基线不变，即第一次跑之前的 62 行围栏。重跑一次，第二次输出 `polished: spec/rules.md`，结构核对通过。这是 #200 那条写回前结构核对在真实运行里第一次拦下一次坏写回；产物为空、没有产生可比的废弃版本，因此没有 `discarded-runs` 条目。
+按 brief 要求没有手工拼接，原样记在这里；退出码 1、文件保持基线不变，即第一次跑之前的 62 行围栏 (退出码是 2026-09-24 用同一个二进制两臂复测得到的：被拒 1 / 通过 0)。重跑一次，第二次输出 `polished: spec/rules.md`，结构核对通过。这是 #200 那条写回前结构核对在真实运行里第一次拦下一次坏写回；产物为空、没有产生可比的废弃版本，因此没有 `discarded-runs` 条目。
 
 ## 结构核对 (标题 / 围栏行 / 列表项 / 总行数)，全部四份
 
