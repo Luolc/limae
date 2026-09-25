@@ -18,11 +18,11 @@
 //!
 //! Three exit codes, and they have to stay distinguishable (ADR-0008 section
 //! 六): `0` when the work reached its output, `1` when the engine did not
-//! answer, a target changed underneath the run, or the tripwire fired, `2`
-//! for a usage or configuration mistake. In stdin mode only the rewrite goes
-//! to stdout; in file mode stdout carries one line per target and every
-//! diagnosis goes to stderr, so that `limae polish - > out.md` writes prose
-//! and nothing else.
+//! answer, a target changed underneath the run, a rewrite failed the
+//! structure check, or the tripwire fired, `2` for a usage or configuration
+//! mistake. In stdin mode only the rewrite goes to stdout; in file mode
+//! stdout carries one line per target and every diagnosis goes to stderr, so
+//! that `limae polish - > out.md` writes prose and nothing else.
 //!
 //! An engine named on the command line or in `LIMAE_ENGINE` is checked here
 //! even though [`super::config::resolve`] checks the one in the file. They are
@@ -47,7 +47,8 @@ use crate::files::{not_ignored, walk_markdown};
 
 /// The work reached its output.
 const SUCCESS: u8 = 0;
-/// The engine did not answer, a target moved, or the tripwire fired.
+/// The engine did not answer, a target moved, a rewrite failed the structure
+/// check, or the tripwire fired.
 const FAILED: u8 = 1;
 /// The command line or the configuration was wrong.
 const USAGE: u8 = 2;
@@ -370,9 +371,11 @@ impl Run<'_> {
     /// Rewrite `targets` in place through one exported view (ADR-0017 §二).
     ///
     /// The view is built once; the engine is started in it once per target.
-    /// After each call the view is compared with its snapshot (the tripwire)
-    /// and the target with the bytes read before the call (the conflict
-    /// check); only then is anything written, and only by this function.
+    /// After each call the view is compared with its snapshot (the tripwire),
+    /// the target with the bytes read before the call (the conflict check),
+    /// and the answer's counts of headings, fences and list items with the
+    /// target's (the structure check); only then is anything written, and
+    /// only by this function.
     fn rewrite(&self, targets: Vec<Target>, stdout: &mut dyn Write, stderr: &mut dyn Write) -> u8 {
         let repository = match view::repository_root(self.cwd) {
             Ok(repository) => repository,
@@ -519,6 +522,25 @@ impl Run<'_> {
                     );
                 }
             }
+            // The structure check: the prompt keeps headings, fences and the
+            // number of list items as they are, so a count that moved means
+            // the output broke the prompt, most often by dropping a block.
+            // It compares three counts only; a block replaced by another of
+            // the same kind passes it.
+            let drift = Shape::of(&text).drift(&Shape::of(&polished));
+            if !drift.is_empty() {
+                if writeln!(
+                    stderr,
+                    "not written: {shown}: the rewrite changed the count of {}; the file is kept, polish it again",
+                    drift.join(", ")
+                )
+                .is_err()
+                {
+                    return FAILED;
+                }
+                code = FAILED;
+                continue;
+            }
             if polished == text {
                 if writeln!(stdout, "unchanged: {shown}").is_err() {
                     return FAILED;
@@ -597,6 +619,88 @@ fn write_through(path: &Path, content: &str) -> io::Result<()> {
     let mut file = OpenOptions::new().write(true).truncate(true).open(path)?;
     file.write_all(content.as_bytes())?;
     file.flush()
+}
+
+/// How many heading lines, code fence lines and list items a text has,
+/// counted line by line; lines inside a fence count as neither of the other
+/// two.
+#[derive(Debug, PartialEq, Eq)]
+struct Shape {
+    headings: usize,
+    fences: usize,
+    items: usize,
+}
+
+impl Shape {
+    fn of(text: &str) -> Self {
+        let mut shape = Self {
+            headings: 0,
+            fences: 0,
+            items: 0,
+        };
+        let mut in_fence = false;
+        for line in text.lines() {
+            let stripped = line.trim_start_matches(crate::text::is_python_whitespace);
+            if stripped.starts_with("```") || stripped.starts_with("~~~") {
+                shape.fences += 1;
+                in_fence = !in_fence;
+                continue;
+            }
+            if in_fence {
+                continue;
+            }
+            if heading(line) {
+                shape.headings += 1;
+            } else if item(stripped) {
+                shape.items += 1;
+            }
+        }
+        shape
+    }
+
+    /// One "<what> <before> → <after>" entry per count that differs.
+    fn drift(&self, after: &Self) -> Vec<String> {
+        [
+            ("heading lines", self.headings, after.headings),
+            ("code fence lines", self.fences, after.fences),
+            ("list items", self.items, after.items),
+        ]
+        .into_iter()
+        .filter(|(_, before, after)| before != after)
+        .map(|(what, before, after)| format!("{what} {before} → {after}"))
+        .collect()
+    }
+}
+
+/// An ATX heading: up to three spaces, one to six `#`, then a space or the
+/// end of the line.
+fn heading(line: &str) -> bool {
+    let rest = line.trim_start_matches(' ');
+    if line.len() - rest.len() > 3 {
+        return false;
+    }
+    let marks = rest.len() - rest.trim_start_matches('#').len();
+    (1..=6).contains(&marks) && separated(&rest[marks..])
+}
+
+/// A bullet (`-`, `*`, `+`) or an ordered marker (`1.`, `1)`) followed by a
+/// space or the end of the line, at any indentation.
+fn item(stripped: &str) -> bool {
+    if let Some(rest) = stripped.strip_prefix(['-', '*', '+']) {
+        return separated(rest);
+    }
+    let digits = stripped.len()
+        - stripped
+            .trim_start_matches(|c: char| c.is_ascii_digit())
+            .len();
+    (1..=9).contains(&digits)
+        && stripped[digits..]
+            .strip_prefix(['.', ')'])
+            .is_some_and(separated)
+}
+
+fn separated(rest: &str) -> bool {
+    rest.is_empty() || rest.starts_with(crate::text::is_python_whitespace)
 }
 
 fn blank(text: &str) -> bool {
