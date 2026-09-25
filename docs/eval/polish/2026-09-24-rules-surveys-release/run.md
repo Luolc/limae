@@ -22,7 +22,7 @@ not written: spec/rules.md: the rewrite changed the count of code fence lines 62
 
 ## 结构核对 (标题 / 围栏行 / 列表项 / 总行数)，全部四份
 
-下表用与 `rust/polish/cli.rs::Shape::of` 相同的口径重算 (围栏行按开合各计一行；列表项含 `-` / `*` / `+` 与有序标记)，不是简单的 `grep -c` 估算 —— PR #201 首轮审查发现最初这里记的是几条 grep 正则的估算值，与 `Shape::of` 的真实读数不符，已按复核后的读数改写：
+下表按 `rust/polish/cli.rs::Shape::of` 统计：围栏行按开合各计一行，列表项含 `-` / `*` / `+` 与有序标记。
 
 | 文件 | 标题 | 围栏行 | 列表项 | 行数 |
 | --- | --- | --- | --- | --- |
