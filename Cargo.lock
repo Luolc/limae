@@ -18,6 +18,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
 
 [[package]]
+name = "arraydeque"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d902e3d592a523def97af8f317b08ce16b7ab854c1985a0c671e6f15cebc236"
+
+[[package]]
 name = "askama"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -252,6 +258,7 @@ dependencies = [
  "ignore",
  "regex",
  "rustix",
+ "saphyr-parser",
  "serde",
  "serde_json",
  "soft-canonicalize",
@@ -362,6 +369,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "saphyr-parser"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7429158804c36e705d9423b7848018e535b3e92d439a763e364ee12670ef473b"
+dependencies = [
+ "arraydeque",
+ "thiserror",
 ]
 
 [[package]]

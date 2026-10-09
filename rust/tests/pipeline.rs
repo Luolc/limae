@@ -1,6 +1,6 @@
 use std::error::Error;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use limae::config::{CliOverrides, ResolvedConfig, RuleId, Severity, resolve};
 use limae::pipeline::{Finding, Pipeline};
@@ -49,10 +49,16 @@ fn all_golden_cases_use_the_document_api() -> TestResult {
         } else {
             ResolvedConfig::default()
         };
+        let path_file = input.with_extension("path");
+        let path = if path_file.try_exists()? {
+            PathBuf::from(fs::read_to_string(path_file)?.trim_end())
+        } else {
+            input.clone()
+        };
         let original = fs::read_to_string(&input)?;
         let expected = fs::read_to_string(input.with_extension("fixed"))?;
         let findings: String = pipeline
-            .check(&original, &config)?
+            .check_file(&path, &original, &config)?
             .iter()
             .map(|f| format!("{} {}\n", f.line, f.rule))
             .collect();

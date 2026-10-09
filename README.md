@@ -133,7 +133,7 @@ severity = { zh-typography-8 = "warning" }   # 覆盖单条规则的严重度
 
 ## 规则
 
-规则 id 按家族分前缀：`zh-typography` 中文排版、`zh-tell` / `en-tell` AI 腔、`zh-word` 术语选词。中文排版一族默认启用，全部可修复，严重度为 `error`；AI 腔与术语选词为 experimental，默认关闭、默认 `warning` —— 打开它们不会让 CI 变红。规则不分文档语言，英文 tell 出现在中文文档里同样会报。
+规则 id 按家族分前缀：`zh-typography` 中文排版、`zh-tell` / `en-tell` AI 腔、`zh-word` 术语选词、`yaml-frontmatter` skill 的 frontmatter。中文排版一族默认启用，全部可修复，严重度为 `error`；`yaml-frontmatter-1` 检查每个 `SKILL.md` 开头的 frontmatter 是不是合法的 YAML，默认启用、严重度为 `error`，只报不改；AI 腔与术语选词为 experimental，默认关闭、默认 `warning` —— 打开它们不会让 CI 变红。规则不分文档语言，英文 tell 出现在中文文档里同样会报。
 
 每条规则的判定、例句与三轴属性 (可修复性 / 严重度 / 成熟度) 都在 [`spec/rules.md`](spec/rules.md)；判定使用的词表在 [`spec/wordlists/`](spec/wordlists/)，加一条词只改那里，不动任何实现。AI 腔那一族的取词标准与词条释义另有一部[机器文言大词典](https://limae.luolc.com/)。
 

@@ -1,5 +1,6 @@
 //! Deterministic rule primitives for line checks and prose fragment fixes.
 
+pub mod frontmatter;
 pub mod spacing;
 pub mod structural;
 pub mod tells;
