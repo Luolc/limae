@@ -82,7 +82,7 @@ jobs:
   # repository.
   create-release:
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
@@ -102,9 +102,9 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
+            os: ubuntu-24.04
           - target: aarch64-unknown-linux-musl
-            os: ubuntu-latest
+            os: ubuntu-24.04
           - target: x86_64-apple-darwin
             os: macos-latest
           - target: aarch64-apple-darwin
@@ -141,7 +141,7 @@ jobs:
   launchers:
     needs: upload-assets
     if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.upload-assets.result == 'success') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Read only: this job downloads public Release assets and uploads a
     # workflow artifact; the top-level `contents: write` is for
     # `create-release` and `upload-assets`. Nothing here talks to git after
@@ -214,7 +214,7 @@ jobs:
   publish-pypi:
     if: github.event_name == 'push'
     needs: [launchers, publish]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # No `environment:`, like `publish`: the trusted publisher on PyPI is
     # configured with the environment left as "(Any)" (2026-09-10, from the
     # PyPI page), so naming one here would add a condition nobody asked for.
@@ -261,7 +261,7 @@ jobs:
   publish-npm:
     if: github.event_name == 'push'
     needs: [launchers, publish-pypi]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # `id-token: write` is what npm exchanges for a short-lived registry
     # token; `contents: read` is for the checkout that brings tools/, not
     # something npm asks for.
@@ -319,7 +319,7 @@ jobs:
   # docs/knowledge/release.md, which records the source verbatim.
   publish:
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       # Required for the OIDC token exchange — the only permission
       # crates.io asks for. `contents: read` is here because job-level
@@ -364,7 +364,7 @@ jobs:
   # docs/knowledge/release.md.
   auth-check:
     if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       id-token: write
       contents: read
@@ -401,7 +401,7 @@ jobs:
   # job elsewhere would fail against a perfectly correct one.
   npm-auth-check:
     if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # `id-token: write` for the exchange; `contents: read` for the checkout
     # that brings tools/ and the launcher manifest the package set is read
     # from.
@@ -448,7 +448,7 @@ jobs:
   mirror:
     if: github.event_name == 'push'
     needs: publish-pypi
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Nothing here touches this repository; the mirror is written with
     # `PRECOMMIT_MIRROR_TOKEN`, and job-level permissions zero out the rest.
     permissions: {}
@@ -526,7 +526,7 @@ jobs:
   # `workflow_dispatch` against an existing tag is where they run — every step
   # below except the last one, which is the only step gated on the tag push.
   #
-  # macos-latest rather than ubuntu-latest: the macOS runner image ships
+  # macos-latest rather than ubuntu-24.04: the macOS runner image ships
   # Homebrew, and macOS is what the tap is for. This run exercises one of the
   # four platforms in the formula; the other three are covered by their
   # digests, which came from the same Release assets `launchers` repackages.
