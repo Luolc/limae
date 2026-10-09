@@ -15,12 +15,14 @@
 
 use std::borrow::Cow;
 use std::ops::Range;
+use std::path::Path;
 use thiserror::Error;
 
 use crate::config::{ResolvedConfig, RuleId};
 use crate::directives::{DirectiveError, rule_masks};
 use crate::markdown::{LineProtection, Markdown};
 use crate::rules::{
+    frontmatter,
     spacing::SpacingRules,
     structural::{FragmentContext, StructuralRules},
     tells::{SentenceTells, WordlistError, WordlistTells},
@@ -97,6 +99,33 @@ impl Pipeline {
         text: &'text str,
         config: &ResolvedConfig,
     ) -> Result<Vec<Finding<'text>>, DirectiveError> {
+        self.check_document(text, config, false)
+    }
+
+    /// Check text read from `path`, adding the rules that depend on its file
+    /// name: a `SKILL.md` also gets yaml-frontmatter-1. Only the final path
+    /// component matters; the file is not read.
+    ///
+    /// # Errors
+    /// Returns [`DirectiveError`] when an inline directive names an unknown rule.
+    pub fn check_file<'text>(
+        &self,
+        path: &Path,
+        text: &'text str,
+        config: &ResolvedConfig,
+    ) -> Result<Vec<Finding<'text>>, DirectiveError> {
+        let skill = path
+            .file_name()
+            .is_some_and(|name| name == frontmatter::SKILL_FILE_NAME);
+        self.check_document(text, config, skill)
+    }
+
+    fn check_document<'text>(
+        &self,
+        text: &'text str,
+        config: &ResolvedConfig,
+        skill: bool,
+    ) -> Result<Vec<Finding<'text>>, DirectiveError> {
         let lines = check_lines(text);
         let protected = self.markdown.protect(&lines);
         let verbatim = protected
@@ -104,11 +133,21 @@ impl Pipeline {
             .map(|protection| matches!(protection, LineProtection::Verbatim))
             .collect::<Vec<_>>();
         let masks = rule_masks(&lines, &verbatim)?;
+        let mut front = if skill {
+            frontmatter::check(&lines)
+        } else {
+            None
+        };
         let mut findings = Vec::new();
         for (i, ((line, protection), mask)) in lines.iter().zip(&protected).zip(&masks).enumerate()
         {
             let line_config = config.without_rules(mask);
             let mut matches = self.width.check_line(line, protection, &line_config);
+            if let Some((_, found)) =
+                front.take_if(|(index, found)| *index == i && line_config.is_enabled(found.rule))
+            {
+                matches.push(found);
+            }
             matches.extend(self.spacing.check_line(line, protection, &line_config));
             matches.extend(self.structural.check_line(line, protection, &line_config));
             matches.extend(self.wordlists.check_line(line, protection, &line_config));

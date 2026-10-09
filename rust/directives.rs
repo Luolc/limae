@@ -149,6 +149,7 @@ fn ids(listed: Option<&str>, line: usize) -> Result<RuleMask, DirectiveError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::RULES;
 
     fn names(mask: &RuleMask) -> Vec<&'static str> {
         mask.iter().copied().map(RuleId::as_str).collect()
@@ -162,12 +163,12 @@ mod tests {
             "\u{a0}<!--\u{2003}limae-disable\u{3000}-->\u{202f}",
         ] {
             let masks = rule_masks(&[source, "中A"], &[false, false])?;
-            assert_eq!(masks[0].len(), 21);
-            assert_eq!(masks[1].len(), 21);
+            assert_eq!(masks[0].len(), RULES.len());
+            assert_eq!(masks[1].len(), RULES.len());
         }
         for source in ["<!-- limae-disable , -->", "<!-- limae-disable , , -->"] {
             let masks = rule_masks(&[source, "中A"], &[false, false])?;
-            assert_eq!(masks[0].len(), 21);
+            assert_eq!(masks[0].len(), RULES.len());
             assert!(masks[1].is_empty());
         }
         Ok(())
@@ -189,9 +190,9 @@ mod tests {
         let masks = rule_masks(&lines, &[false; 9])?;
         assert_eq!(names(&masks[1]), ["zh-typography-4"]);
         assert!(masks[4].is_empty());
-        assert_eq!(masks[6].len(), 21);
+        assert_eq!(masks[6].len(), RULES.len());
         assert!(masks[7].is_empty());
-        assert_eq!(masks[8].len(), 21);
+        assert_eq!(masks[8].len(), RULES.len());
         Ok(())
     }
 

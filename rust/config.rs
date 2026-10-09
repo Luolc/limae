@@ -50,6 +50,7 @@ impl RuleId {
     pub const ZH_TELL_5: Self = Self(18);
     pub const ZH_WORD_1: Self = Self(19);
     pub const ZH_WORD_2: Self = Self(20);
+    pub const YAML_FRONTMATTER_1: Self = Self(21);
 
     /// Return the stable external rule id.
     #[must_use]
@@ -123,7 +124,7 @@ const fn experimental(name: &'static str) -> RuleMetadata {
 }
 
 /// All known rules in specification order; this is the sole Rust metadata table.
-pub const RULES: [RuleMetadata; 21] = [
+pub const RULES: [RuleMetadata; 22] = [
     stable("zh-typography-1", true),
     stable("zh-typography-2", true),
     stable("zh-typography-3", true),
@@ -145,6 +146,7 @@ pub const RULES: [RuleMetadata; 21] = [
     experimental("zh-tell-5"),
     experimental("zh-word-1"),
     experimental("zh-word-2"),
+    stable("yaml-frontmatter-1", true),
 ];
 
 /// Raw values of the two repeatable CLI rule flags.

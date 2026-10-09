@@ -662,3 +662,36 @@ fn a_configuration_error_is_a_usage_error_on_the_check_path() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn only_a_skill_file_has_its_front_matter_parsed() -> TestResult {
+    let root = TempDir::new()?;
+    let skill = root.path().join("skills/demo/SKILL.md");
+    fs::create_dir_all(skill.parent().ok_or("skill directory")?)?;
+    let invalid = include_str!("../../spec/fixtures/yaml-frontmatter-1-invalid.in");
+    fs::write(&skill, invalid)?;
+    fs::write(root.path().join("NOTES.md"), invalid)?;
+
+    let (code, stdout, stderr) =
+        output_text(run(root.path(), &["skills/demo/SKILL.md", "NOTES.md"])?)?;
+    assert_eq!((code, stderr.as_str()), (1, ""));
+    assert!(
+        stdout.starts_with(
+            "skills/demo/SKILL.md:3: error: [yaml-frontmatter-1 invalid YAML front matter: "
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("\n1 error(s), 0 warning(s). --fix auto-fixes most.\n"));
+
+    fs::write(
+        &skill,
+        include_str!("../../spec/fixtures/yaml-frontmatter-1-valid.in"),
+    )?;
+    let (code, stdout, stderr) =
+        output_text(run(root.path(), &["skills/demo/SKILL.md", "NOTES.md"])?)?;
+    assert_eq!(
+        (code, stdout.as_str(), stderr.as_str()),
+        (0, "OK: 2 file(s) clean\n", "")
+    );
+    Ok(())
+}

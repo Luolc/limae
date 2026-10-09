@@ -2,7 +2,7 @@
 
 本文件是规则的源文件 (normative)，语言无关：任何实现 (implementation) 都按这里的判定与修复行为工作，并以 `spec/fixtures/` 的黄金集 (golden fixtures) 验收。规范是上游 —— 实现与规范不一致时先改规范、再改实现 (ADR-0001)。
 
-规则 id 稳定且不复用，形如 `<语言>-<家族>-<序号>` (见「规则属性」)，当前是 `zh-typography-1` 到 `zh-typography-11`、`zh-tell-1` 到 `zh-tell-5`、`en-tell-1` 到 `en-tell-3`、`zh-word-1` 与 `zh-word-2`；实现报告违规时用的 id 必须与这里一致。fixture 格式与 runner 的判定见 `spec/README.md`。
+规则 id 稳定且不复用，形如 `<语言>-<家族>-<序号>` (见「规则属性」)，当前是 `zh-typography-1` 到 `zh-typography-11`、`zh-tell-1` 到 `zh-tell-5`、`en-tell-1` 到 `en-tell-3`、`zh-word-1` 与 `zh-word-2`、`yaml-frontmatter-1`；实现报告违规时用的 id 必须与这里一致。fixture 格式与 runner 的判定见 `spec/README.md`。
 
 ## 通用模型
 
@@ -108,10 +108,11 @@ zh-tell-1 / zh-tell-3 / zh-tell-4 / en-tell-1 / en-tell-3 / zh-tell-5 / zh-word-
 | `zh-tell` | 中文 AI 腔：套话、句式、黑话、聊天残留、造词 | `zh-tell-1` 到 `zh-tell-5` |
 | `en-tell` | 英文 AI 腔：AI 词汇、否定平行、Claudish 专用词 | `en-tell-1` 到 `en-tell-3` |
 | `zh-word` | 中文用词：该换词或该换说法的地方 —— `zh-word-1` 是 `wrong = right` 的替换，`zh-word-2` 是没有唯一替换、只报不改的误用 | `zh-word-1` 与 `zh-word-2` |
+| `yaml-frontmatter` | 文件开头的 YAML frontmatter：语法合不合法；只查 `SKILL.md` | `yaml-frontmatter-1` |
 
 ### 每条规则的三轴取值
 
-每条规则的条目在标题下有一行 `属性：<可修复性> · <严重度> · <成熟度>`，给出它的三轴取值。**`zh-typography` 一族全部是 fixable · error · stable**。
+每条规则的条目在标题下有一行 `属性：<可修复性> · <严重度> · <成熟度>`，给出它的三轴取值。**`zh-typography` 一族全部是 fixable · error · stable**；yaml-frontmatter-1 是 non-fixable · error · stable，默认启用。
 
 **实验规则清单**：zh-tell-1、zh-tell-2、zh-tell-3、zh-tell-4、zh-tell-5、en-tell-1、en-tell-2、en-tell-3、zh-word-1、zh-word-2，全部 warning · experimental —— 其中只有 zh-word-1 是 fixable，`zh-tell` 与 `en-tell` 两族加 zh-word-2 都是 non-fixable。它们默认不进启用集，只有 `enable_experimental = true` 才一次纳入 (见「配置」)。
 
@@ -165,7 +166,7 @@ enable_experimental = true
 severity = { zh-typography-8 = "warning" }
 ```
 
-- **类型**：一张 toml 表；不写等价于空表，即每条规则都用规范给它的默认严重度 (`zh-typography` 一族是 `error`，`zh-tell` / `en-tell` / `zh-word` 三族是 `warning`)。
+- **类型**：一张 toml 表；不写等价于空表，即每条规则都用规范给它的默认严重度 (`zh-typography` 与 `yaml-frontmatter` 两族是 `error`，`zh-tell` / `en-tell` / `zh-word` 三族是 `warning`)。
 - **只影响报告与退出码，不影响修复**：降成 `warning` 的 fixable 规则 `--fix` 照样修。
 - 对不在启用集里的规则写严重度是空操作 —— 关掉的规则本来就不报。
 - 值不是表、键是未知规则 id、值不是 `"error"` / `"warning"`，三者都是配置错误。
@@ -685,4 +686,27 @@ Read the `load-bearing` flag from config.      → 不变 (行内代码豁免)
 这一条的说法是零秘密。                   → zh-tell-5 + zh-word-2
 双方有保守秘密的义务。                   → 不变 (白名单盖住命中)
 行内代码 `秘密` 与 `零秘密` 都不报。     → 不变 (行内代码豁免)
+```
+
+## yaml-frontmatter-1：`SKILL.md` 的 frontmatter 不是合法 YAML
+
+属性：non-fixable · error · stable
+
+- **只查文件名正好是 `SKILL.md` 的文件**：看的是路径的最后一段，区分大小写，与所在目录无关。agent skill 的格式 ([agentskills.io](https://agentskills.io/specification)) 要求 `SKILL.md` 以 frontmatter 开头；别的 Markdown 没有这个约定，开头的 `---` 可能只是分隔线，一律不查。这是唯一一条判定依赖文件名的规则：文件名由 CLI 带进来，黄金集用 `<case>.path` 表达 (见 `spec/README.md`)。
+- **frontmatter 的范围**：第一行是 `---` 才算有 frontmatter，从第二行起到下一行 `---` 之前是 YAML 块。两条 `---` 行允许带尾随空白，不认 `...` 作闭合。第一行不是 `---` 的 `SKILL.md` 不报 —— 有没有 frontmatter 不归这条规则管。
+- **判定**：YAML 块按 YAML 1.2 解析，失败就报一处，行号是**文件里**的行号 (不是块内的相对行号)，位置是解析器报错的那一列；解析器停在第一个错误，所以一份文件最多报一处。解析错误落在块的末尾之后时，报在闭合的 `---` 那一行。只判语法：重复的键、缺 `name` / `description` 这类结构问题不报。tag 不执行，只作为语法的一部分读过。
+- **第一行是 `---`、却一直找不到闭合的 `---`**：报一处，落在第 1 行。skill 的加载方读不出 frontmatter，GitHub 也不会把它当 frontmatter 渲染，这份文件一定是坏的。
+- **全局豁免不适用**：YAML 块不是行文，围栏代码块、行内代码这些豁免都按 Markdown 行文定义，这条规则不看它们。
+- **行内指令与配置照常生效**：`disable`、`severity` 按规则 id 生效；行内指令按报告的那一行判定。指令是 HTML 注释，写进 YAML 块本身就会让块不合法，所以要某份文件不查用「忽略文件」，要整条关掉用配置的 `disable`。
+- **不修复**：同一个错误有几种改法 (加引号、改成块标量、删掉多余的冒号)，没有唯一修法。
+
+```text
+---                                   (文件 skills/demo/SKILL.md)
+name: demo
+description: 审 PR: 看两件事           → yaml-frontmatter-1 (第 3 行：没加引号的「: 」)
+---
+
+description: "审 PR: 看两件事"        → 不变 (加了引号)
+同样的内容写在 NOTES.md 里            → 不变 (文件名不是 SKILL.md)
+第一行是 `---`、后面没有闭合的 `---`  → yaml-frontmatter-1 (第 1 行)
 ```

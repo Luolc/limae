@@ -186,6 +186,13 @@ fn rule_metadata_matches_the_specification() {
             Severity::Warning,
             Maturity::Experimental,
         ),
+        (
+            RuleId::YAML_FRONTMATTER_1,
+            "yaml-frontmatter-1",
+            true,
+            Severity::Error,
+            Maturity::Stable,
+        ),
     ];
     assert_eq!(RULES.len(), expected.len());
     for (metadata, (id, name, default_enabled, default_severity, maturity)) in
@@ -540,7 +547,7 @@ fn unconsumed_existing_keys_are_accepted_without_exposing_their_values() -> Test
     )?;
 
     let config = resolve(temp.path(), CliOverrides::default())?;
-    assert_eq!(config.enabled_rules().count(), 10);
+    assert_eq!(config.enabled_rules().count(), 11);
     Ok(())
 }
 

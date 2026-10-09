@@ -19,7 +19,7 @@
 
 ## fixture 文件格式
 
-一个 case 由三个同名文件和一个可选的第四个文件组成，`<case>` 是 case 名：
+一个 case 由三个同名文件和至多两个可选文件组成，`<case>` 是 case 名：
 
 | 文件 | 内容 |
 | --- | --- |
@@ -27,11 +27,12 @@
 | `<case>.fixed` | 期望的 `--fix` 输出；「应保持不变」的 case 与 `.in` 逐字相同 |
 | `<case>.findings` | 期望的违规列表，每行 `<行号> <规则 id>`，如 `3 zh-typography-1`；空文件表示无违规 |
 | `<case>.conf` | 可选：这个 case 的配置，内容就是独立配置文件 `limae.toml` 的内容 —— 配置键见 `rules.md`「配置」；没有这个文件 = 默认配置 |
+| `<case>.path` | 可选：把 `.in` 当作哪个路径的文件来检查，一行一个相对路径，如 `skills/demo/SKILL.md`；只有判定依赖文件名的规则 (当前是 yaml-frontmatter-1) 用得到。没有这个文件 = 文件名就是 `<case>.in` |
 
 约定：
 
 - **三个文件都必须存在**，都是 UTF-8，并且都以一个换行结束。空的 `.findings` 是零字节文件 —— 不允许省略，否则无法区分省略和「无违规」。
-- **`.conf` 只在这个 case 需要修改配置时才存在**：它是唯一可选的文件，其余三个始终齐全。带 `.conf` 的 case 使用它算出的配置运行 (启用集见 `rules.md`「配置」，其余键使用 `rules.md` 的默认值)，不带的使用默认配置 —— 「配置」本身也是规范的一部分，因此配置维度的期望也要手写进 `.fixed` 与 `.findings`。
+- **`.conf` 只在这个 case 需要修改配置时才存在**，`.path` 只在这个 case 需要某个文件名时才存在：可选的只有这两个，其余三个始终齐全。带 `.conf` 的 case 使用它算出的配置运行 (启用集见 `rules.md`「配置」，其余键使用 `rules.md` 的默认值)，不带的使用默认配置 —— 「配置」本身也是规范的一部分，因此配置维度的期望也要手写进 `.fixed` 与 `.findings`。
 - **`.findings` 的顺序与实现报告违规的顺序一致**：先按行号升序，同一行内按 `rules.md` 的规则顺序 (zh-typography-1、zh-typography-2、……)，同一条规则内按出现位置。同一行的同一条规则可以出现多次，如 `（测试）` 的两处 zh-typography-2。
 - **严重度不写进 `.findings`**：某处违规是 error 还是 warning，只由 `rules.md`「规则属性」的默认值和这个 case 的 `.conf` 决定，runner 需要时自行推导 —— 因此 `severity` 键不会改变任何 fixture 文件的内容。
 - **`.in` 与 `.fixed` 逐行对齐**：修复不增删行 (见 `rules.md`「处理单位」)，两个文件的行数始终相同。
@@ -47,7 +48,7 @@
 
 ## runner 的判定
 
-每个实现都写一个简单的 runner，遍历 `fixtures/*.in`，根据 `<case>.conf` 算出该 case 的配置 (没有该文件则使用默认配置)，再用它运行 `check` 与 `fix`，并对每个 case 断言三项：
+每个实现都写一个简单的 runner，遍历 `fixtures/*.in`，根据 `<case>.conf` 算出该 case 的配置 (没有该文件则使用默认配置)，再用它运行 `check` 与 `fix`；`check` 以 `<case>.path` 给的路径 (没有该文件则是 `.in` 自己的路径) 作为文件名，并对每个 case 断言三项：
 
 1. **修复正确**：`fix(<case>.in) == <case>.fixed`。
 2. **修复幂等 (idempotent)**：`fix(<case>.fixed) == <case>.fixed`。

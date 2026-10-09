@@ -56,7 +56,7 @@ impl FileText {
         config: &ResolvedConfig,
     ) -> Result<Vec<Finding<'text>>, FileError> {
         pipeline
-            .check(&self.text, config)
+            .check_file(&self.path, &self.text, config)
             .map_err(|source| FileError::Directive {
                 path: self.path.clone(),
                 source,
