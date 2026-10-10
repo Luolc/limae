@@ -62,12 +62,8 @@ fn environment(bin: &Path, home: &Path, extra: &[(&str, &str)]) -> Vec<(OsString
 
 #[cfg(unix)]
 fn stub(directory: &Path, name: &str, body: &str) -> Result<(), std::io::Error> {
-    use std::os::unix::fs::PermissionsExt;
-
     fs::create_dir_all(directory)?;
-    let path = directory.join(name);
-    fs::write(&path, format!("#!/bin/sh\n{body}\n"))?;
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
+    crate::testing::write_script(&directory.join(name), body)
 }
 
 fn names(engines: &[&'static Engine]) -> Vec<&'static str> {
