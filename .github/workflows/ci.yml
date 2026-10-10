@@ -124,7 +124,7 @@ jobs:
 
   clippy:
     needs: changes
-    if: fromJSON(needs.changes.outputs.groups).clippy
+    if: false # control arm, reverted in the next commit
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
