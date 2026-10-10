@@ -21,6 +21,12 @@
 # wheel instead of compiling limae; and the Homebrew tap, Luolc/homebrew-tap
 # (`homebrew`), which carries a formula pointing back at these same Release
 # tarballs.
+#
+# Before any of that, `verify` admits only a commit already green on main:
+# the tag is `v` + the manifest version, the tagged commit is on main, and
+# that commit's push run of ci.yml on main passed at its first attempt. CI is
+# not run again here; a fresh run could pass where main's run failed. Every
+# job that publishes needs `verify`.
 name: release
 
 on:
@@ -47,11 +53,44 @@ permissions:
 
 jobs:
   # `on:` has exactly two triggers, so `github.event_name == 'push'` is the
-  # tag push and nothing else. The four publishing jobs (`create-release`,
-  # `publish`, `publish-pypi`, `publish-npm`) belong to it; `launchers`
-  # runs on both; the two `*auth-check` jobs belong to the dispatch.
-  # `upload-assets` needs this job and is skipped with it.
-  #
+  # tag push and nothing else. `verify` and the jobs that publish
+  # (`create-release`, `upload-assets`, `publish`, `publish-pypi`,
+  # `publish-npm`, `mirror`) belong to it; `launchers` and `homebrew` run on
+  # both; the two `*auth-check` jobs belong to the dispatch, which `verify`
+  # therefore neither runs for nor blocks.
+  verify:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    # tools/release_ci_green.sh waits for at most 30 minutes.
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      actions: read # the CI runs of the tagged commit
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The main check compares against origin/main, which a shallow
+          # clone does not have.
+          fetch-depth: 0
+          persist-credentials: false
+      # Positive form: the version has to be read and has to equal the tag;
+      # anything else stops the run before anything is published.
+      - name: Tag matches the manifest version
+        run: tools/release_tag_version.sh "$GITHUB_REF_NAME"
+      # The commit, not the tag object, for an annotated tag.
+      - id: commit
+        name: Tagged commit
+        run: echo "sha=$(git rev-parse "$GITHUB_REF^{commit}")" >>"$GITHUB_OUTPUT"
+      - name: Tagged commit is on main
+        env:
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: tools/release_on_main.sh "$SHA" origin/main
+      - name: Tagged commit is green on main
+        env:
+          SHA: ${{ steps.commit.outputs.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: tools/release_ci_green.sh "$SHA"
+
   # `create-release` writes the body GitHub generates for itself: one line
   # per pull request merged since the previous Release, plus the compare
   # link. Squash merges make that list the changelog — every entry is a PR
@@ -76,12 +115,13 @@ jobs:
   # stops here instead of replacing the Release and its assets. Re-running
   # only the failed jobs (`gh run rerun --failed`, see the registry jobs
   # below) is unaffected. It never checked the tag against the manifest
-  # version; that guard lives in `publish` and is untouched.
+  # version; that guard is in `verify`.
   #
   # No checkout: `gh` works from `GH_REPO`, and nothing here reads the
   # repository.
   create-release:
     if: github.event_name == 'push'
+    needs: verify
     runs-on: ubuntu-24.04
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -97,7 +137,7 @@ jobs:
         run: gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes
 
   upload-assets:
-    needs: create-release
+    needs: [verify, create-release]
     strategy:
       matrix:
         include:
@@ -198,10 +238,10 @@ jobs:
           if-no-files-found: error
 
   # The three registries publish in the order of how little can be undone
-  # afterwards, strictest guard first: crates.io (`publish`, which asserts
-  # tag == manifest before it authenticates), then PyPI (a version can never
-  # be reused), then npm (72 hours to unpublish). A failure stops the chain,
-  # so a version that reaches any registry has passed the crates.io guard.
+  # afterwards: crates.io (`publish`), then PyPI (a version can never be
+  # reused), then npm (72 hours to unpublish). A failure stops the chain, and
+  # each of them needs `verify`, so a version that reaches any registry has
+  # passed its guards.
   #
   # Both registry jobs below can be re-run after a failure part-way through
   # an upload (`gh run rerun --failed`): each one first asks the registry
@@ -213,7 +253,7 @@ jobs:
   # "already uploaded this" from "something else has that name".
   publish-pypi:
     if: github.event_name == 'push'
-    needs: [launchers, publish]
+    needs: [verify, launchers, publish]
     runs-on: ubuntu-24.04
     # No `environment:`, like `publish`: the trusted publisher on PyPI is
     # configured with the environment left as "(Any)" (2026-09-10, from the
@@ -260,7 +300,7 @@ jobs:
   # package.json says public, so it holds however this command is written.
   publish-npm:
     if: github.event_name == 'push'
-    needs: [launchers, publish-pypi]
+    needs: [verify, launchers, publish-pypi]
     runs-on: ubuntu-24.04
     # `id-token: write` is what npm exchanges for a short-lived registry
     # token; `contents: read` is for the checkout that brings tools/, not
@@ -317,8 +357,13 @@ jobs:
   # the job's OIDC identity for a short-lived crates.io token and revokes
   # it in its post step. Shape taken from the crates.io docs; see
   # docs/knowledge/release.md, which records the source verbatim.
+  #
+  # `cargo publish` uploads whatever `[package].version` says; the guard
+  # that the tag equals it is in `verify`, before anything is published.
+  # `auth-check` verifies OIDC and stays free of the version policy.
   publish:
     if: github.event_name == 'push'
+    needs: verify
     runs-on: ubuntu-24.04
     permissions:
       # Required for the OIDC token exchange — the only permission
@@ -330,21 +375,6 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-      # `cargo publish` uploads whatever `[package].version` says; the tag is
-      # not an input to it. Pushing v0.13.1 at a commit whose manifest reads
-      # 0.14.0 would publish 0.14.0 — a version crates.io cannot delete or
-      # overwrite — while the GitHub Release still calls itself v0.13.1. So
-      # assert equality first, in the positive form: the version has to be
-      # read and has to equal the tag, and anything else stops the job before
-      # it authenticates. This guard belongs to `publish` alone; `auth-check`
-      # verifies OIDC and must stay free of the version policy.
-      - name: Assert the tag matches the manifest version
-        run: |
-          set -euo pipefail
-          version="$(cargo metadata --no-deps --format-version 1 --locked |
-            jq -er '.packages[] | select(.name == "limae") | .version')"
-          echo "tag=$GITHUB_REF_NAME manifest=v$version"
-          [ "$GITHUB_REF_NAME" = "v$version" ]
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth
       - run: cargo publish
@@ -447,7 +477,7 @@ jobs:
   # in the consumer's repository rather than in this run.
   mirror:
     if: github.event_name == 'push'
-    needs: publish-pypi
+    needs: [verify, publish-pypi]
     runs-on: ubuntu-24.04
     # Nothing here touches this repository; the mirror is written with
     # `PRECOMMIT_MIRROR_TOKEN`, and job-level permissions zero out the rest.
@@ -531,8 +561,8 @@ jobs:
   # four platforms in the formula; the other three are covered by their
   # digests, which came from the same Release assets `launchers` repackages.
   homebrew:
-    needs: upload-assets
-    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.upload-assets.result == 'success') }}
+    needs: [verify, upload-assets]
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || (needs.verify.result == 'success' && needs.upload-assets.result == 'success')) }}
     runs-on: macos-latest
     # The tap is written with HOMEBREW_TAP_TOKEN in the last step, which
     # brings its own checkout; nothing here needs write access to this
