@@ -67,12 +67,9 @@ fn environment(bin: &Path) -> Vec<(OsString, OsString)> {
 
 #[cfg(unix)]
 fn stub(directory: &Path, name: &str, body: &str) -> Result<PathBuf, std::io::Error> {
-    use std::os::unix::fs::PermissionsExt;
-
     fs::create_dir_all(directory)?;
     let path = directory.join(name);
-    fs::write(&path, format!("#!/bin/sh\n{body}\n"))?;
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755))?;
+    crate::testing::write_script(&path, body)?;
     Ok(path)
 }
 
@@ -617,7 +614,7 @@ fn failures_and_debug_output_do_not_echo_request_or_child_content() -> TestResul
         .ok_or("failing command unexpectedly succeeded")?;
     assert!(!error.to_string().contains(SYNTHETIC_VALUE));
     assert!(!format!("{error:?}").contains(SYNTHETIC_VALUE));
-    assert!(error.source().is_none());
+    assert!(error.source().is_none(), "{error:?}");
 
     let missing = Engine::Custom(vec![
         root.path()

@@ -71,13 +71,9 @@ fn file_environment(root: &Path, extra: &[(&str, &str)]) -> Vec<(OsString, OsStr
 
 #[cfg(unix)]
 fn stub(root: &Path, name: &str, body: &str) -> Result<(), std::io::Error> {
-    use std::os::unix::fs::PermissionsExt;
-
     let directory = root.join("bin");
     fs::create_dir_all(&directory)?;
-    let path = directory.join(name);
-    fs::write(&path, format!("#!/bin/sh\n{body}\n"))?;
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
+    crate::testing::write_script(&directory.join(name), body)
 }
 
 struct Ended {
