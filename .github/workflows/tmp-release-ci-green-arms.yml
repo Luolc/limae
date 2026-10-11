@@ -1,0 +1,31 @@
+# Temporary: proves the release-ci-green wiring of release.yml's verify job
+# on a pull request, without publishing anything. Removed with its branch.
+name: release-ci-green arms (temporary)
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  # The PR head was never pushed to main, so it has no push run there: this
+  # job must fail, with exit 1, not 4.
+  negative:
+    runs-on: ubuntu-24.04
+    continue-on-error: false
+    steps:
+      - name: PR head is green on main
+        uses: Luolc/ci-actions/release-ci-green@afb3a5a9525f6153c9ce996c547b0a714115137e # main, 2026-10-10
+        with:
+          sha: ${{ github.event.pull_request.head.sha }}
+
+  # A main commit whose push run succeeded at run_attempt 1: must pass.
+  positive:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 209c106 is green on main
+        uses: Luolc/ci-actions/release-ci-green@afb3a5a9525f6153c9ce996c547b0a714115137e # main, 2026-10-10
+        with:
+          sha: 209c10697465de9e1e0a332d15cb6e1d8420958e
