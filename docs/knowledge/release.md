@@ -53,13 +53,9 @@ crates.io 的 Trusted Publishing 无法在 crate 存在之前配置，官方原�
 
    完成判据：第一条命令**无任何输出**，第二条打出的 SHA 与你要发布的 commit 相同。
 
-2. 同一台机器、同一个目录，确认这个 commit 在 main 上那次 `ci.yml` push run 第一次就是 `success`。全量检查以那次 run 为准，不在本地再跑一遍：
+2. 同一台机器、同一个目录，确认这个 commit 在 main 上那次 `ci.yml` push run 第一次就是 `success`。全量检查以那次 run 为准，不在本地再跑一遍。这项检查与 `release.yml` 的 `verify` 用的是同一个 action `Luolc/ci-actions/release-ci-green`，在本地跑它的脚本，命令见 ci-actions README 的 [Run it locally](https://github.com/Luolc/ci-actions#run-it-locally) 一节：`RELEASE_CI_GREEN_REPO` 填 `Luolc/limae`，钉住的版本取 `release.yml` 里那行 `uses: Luolc/ci-actions/release-ci-green@<sha>` 的 SHA。
 
-   ```sh
-   tools/release_ci_green.sh "$(git rev-parse HEAD)" Luolc/limae
-   ```
-
-   完成判据：退出 0，打出的那行是 `conclusion success, run_attempt 1`。退出 1 (没有这次 run、结论不是 `success`、或 `run_attempt` 大于 1) 就不发，换 main 上之后一个满足条件的 commit；run 还没跑完时脚本最多等 30 分钟。
+   完成判据：退出 0，打出的那行以 `conclusion success, run_attempt 1` 结尾。退出 1 (没有这次 run、结论不是 `success`、或 `run_attempt` 大于 1) 就不发，换 main 上之后一个满足条件的 commit；run 还没跑完时脚本最多等 30 分钟。
 
 3. 同一台机器，确认打包检查能真的产出包：
 
@@ -148,13 +144,9 @@ crate 一旦存在，就可以把 token 从 CI 里彻底去掉，改由 GitHub �
    git fetch origin && git rev-parse HEAD origin/main
    ```
 
-   完成判据：两个 SHA 相同。不同就停下 —— 不要给未合入的 commit 打 tag。再确认这个 commit 在 main 上那次 `ci.yml` push run 第一次就是 `success`：
+   完成判据：两个 SHA 相同。不同就停下 —— 不要给未合入的 commit 打 tag。再确认这个 commit 在 main 上那次 `ci.yml` push run 第一次就是 `success`：按 ci-actions README 的 [Run it locally](https://github.com/Luolc/ci-actions#run-it-locally) 一节在本地跑 `release-ci-green` 的脚本，`RELEASE_CI_GREEN_REPO` 填 `Luolc/limae`，钉住的版本取 `release.yml` 里那行 `uses: Luolc/ci-actions/release-ci-green@<sha>` 的 SHA。
 
-   ```sh
-   tools/release_ci_green.sh "$(git rev-parse HEAD)" Luolc/limae
-   ```
-
-   完成判据：退出 0。退出 1 就不打 tag；`release.yml` 的 `verify` 会再核一遍同样的条件，不满足就什么都不发。
+   完成判据：退出 0。退出 1 就不打 tag；`release.yml` 的 `verify` 会用同一个 action 再核一遍，不满足就什么都不发。
 
 2. 同一台机器，打 tag 并推上去 (把 `0.13.0` 换成 `Cargo.toml` 里的 `version`)：
 

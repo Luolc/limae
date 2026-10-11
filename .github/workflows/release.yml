@@ -61,7 +61,7 @@ jobs:
   verify:
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
-    # tools/release_ci_green.sh waits for at most 30 minutes.
+    # release-ci-green waits for at most 30 minutes.
     timeout-minutes: 40
     permissions:
       contents: read
@@ -86,10 +86,9 @@ jobs:
           SHA: ${{ steps.commit.outputs.sha }}
         run: tools/release_on_main.sh "$SHA" origin/main
       - name: Tagged commit is green on main
-        env:
-          SHA: ${{ steps.commit.outputs.sha }}
-          GH_TOKEN: ${{ github.token }}
-        run: tools/release_ci_green.sh "$SHA"
+        uses: Luolc/ci-actions/release-ci-green@afb3a5a9525f6153c9ce996c547b0a714115137e # main, 2026-10-10
+        with:
+          sha: ${{ steps.commit.outputs.sha }}
 
   # `create-release` writes the body GitHub generates for itself: one line
   # per pull request merged since the previous Release, plus the compare
