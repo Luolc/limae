@@ -1,0 +1,70 @@
+# The lexicon page and the installer, published to GitHub Pages. This is
+# release, not a gate, and it lives outside ci.yml on purpose: a release is
+# cut only from a commit whose ci.yml push run on main passed
+# (tools/release_ci_green.sh), and a Pages deployment that failed or was
+# cancelled says nothing about the code. Not a required check either, so a
+# failed publish never blocks a merge.
+name: pages
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  # Pages refuses a deployment while another is in progress, so on main the
+  # runs queue, one at a time, and an in-progress deployment is never
+  # cancelled; a queued one is replaced by a newer one, which leaves the site
+  # on the newest commit. On a PR branch, a newer push cancels the older run.
+  group: pages-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # The page that GitHub Pages serves, rendered from spec/lexicon/zh.toml on
+  # every run. Nothing in the repository carries the rendered page any more,
+  # so this job is where "the lexicon does not render" becomes visible — on
+  # the pull request, before it can reach main and break the site.
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Rust toolchain
+        run: rustup show
+
+      - name: Render the lexicon page
+        run: cargo run --locked --example render-lexicon
+
+      # The installer is served from the same Pages site, so that
+      # https://limae.luolc.com/install.sh is this repository's install.sh by
+      # construction rather than by a promise someone has to remember to keep.
+      # deno publishes a SHA256SUM for its install.sh that covers the copy in
+      # the repository and not the bytes deno.land actually serves, and the
+      # two have since drifted apart; copying the file at publish time is how
+      # that stops being possible.
+      - name: Copy the installer into the site
+        run: cp install.sh site/install.sh
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  # Only main publishes — a pull request evaluates this `if` to false and the
+  # job is reported as skipped, which is a different reading from a job that
+  # was never defined.
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build]
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

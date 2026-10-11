@@ -1,9 +1,9 @@
-# Two things live here. The quality bar is split into jobs that run in
-# parallel, each only when `changes` says the paths it reads were touched;
-# `check` sums them up and is the required check for branch protection.
-# `build` and `deploy` publish the lexicon page and the installer to GitHub
-# Pages, which is release, not a gate — `deploy` is deliberately outside
-# `check`, so a failed publish never blocks a merge.
+# The quality bar, split into jobs that run in parallel, each only when
+# `changes` says the paths it reads were touched; `check` sums them up and is
+# the required check for branch protection. Nothing here publishes: the
+# lexicon page and the installer go to GitHub Pages from pages.yml, so that
+# a failed deployment cannot turn a main commit's run here red and keep it
+# from being released.
 name: CI
 
 on:
@@ -158,8 +158,8 @@ jobs:
       # The generator behind the published page. `site/index.html` is not
       # committed, so this is not about the page being current; it is about
       # the generator still running and the page still following its source.
-      # The `build` job below renders the page the site actually gets, and a
-      # render that crashes fails there too — what it cannot notice is a
+      # The `build` job in pages.yml renders the page the site actually gets,
+      # and a render that crashes fails there too — what it cannot notice is a
       # generator that renders a page while ignoring its input. Needs the
       # Rust toolchain. What the gate does and does not cover is written at
       # the top of the script.
@@ -255,57 +255,3 @@ jobs:
       - uses: Luolc/ci-actions/all-green@ad865a7a9c01b617b1becb685995ea590252d698 # main, 2026-10-10
         with:
           needs: ${{ toJSON(needs) }}
-
-  # The page that GitHub Pages serves, rendered from spec/lexicon/zh.toml on
-  # every run. Nothing in the repository carries the rendered page any more,
-  # so this job is where "the lexicon does not render" becomes visible — on
-  # the pull request, before it can reach main and break the site.
-  build:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Rust toolchain
-        run: rustup show
-
-      - name: Render the lexicon page
-        run: cargo run --locked --example render-lexicon
-
-      # The installer is served from the same Pages site, so that
-      # https://limae.luolc.com/install.sh is this repository's install.sh by
-      # construction rather than by a promise someone has to remember to keep.
-      # deno publishes a SHA256SUM for its install.sh that covers the copy in
-      # the repository and not the bytes deno.land actually serves, and the
-      # two have since drifted apart; copying the file at publish time is how
-      # that stops being possible.
-      - name: Copy the installer into the site
-        run: cp install.sh site/install.sh
-
-      - uses: actions/upload-pages-artifact@v5
-        with:
-          path: site
-
-  # Publishing, not a quality gate: `check` is the required check, and a
-  # failed deploy must not block a merge. Only main publishes — a pull
-  # request evaluates this `if` to false and the job is reported as skipped,
-  # which is a different reading from a job that was never defined.
-  deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [build]
-    runs-on: ubuntu-24.04
-    # Runs of two main commits no longer cancel each other (see
-    # `concurrency` at the top), and Pages refuses a deployment while
-    # another is in progress. So deployments queue here, one at a time,
-    # the newest last.
-    concurrency:
-      group: pages
-      cancel-in-progress: false
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v5
