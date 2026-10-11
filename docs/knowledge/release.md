@@ -120,9 +120,9 @@ crate 一旦存在，就可以把 token 从 CI 里彻底去掉，改由 GitHub �
 
 `cargo publish` 上传的是**当前 `Cargo.toml` 的 `[package].version`**，tag 根本不是它的输入。所以推 `v0.13.1` 到一个 manifest 写着 `0.14.0` 的 commit，发出去的是 `0.14.0` —— 而 crates.io 的版本**不能覆盖、不能删除**，`yank` 也只是标记、不删代码；同一次运行建出的 GitHub Release 却仍叫 `v0.13.1`，两条线就此分叉。
 
-`publish` job 因此在**认证之前**断言 `$GITHUB_REF_NAME` 等于 `v` 加上 manifest 里的版本。判据写成正向链而不是排除已知的坏情况：版本必须**读得出来** (`cargo metadata` 与 `jq -er` 任一失败即退出)，且必须**等于** tag；其余一切情况都停在这一步。
+`verify` job 因此在**任何发布 job 之前** (`publish` 的认证也在它之后) 断言 `$GITHUB_REF_NAME` 等于 `v` 加上 manifest 里的版本 (`tools/release_tag_version.sh`)。判据写成正向链而不是排除已知的坏情况：版本必须**读得出来** (`cargo metadata` 与 `jq -er` 任一失败即退出)，且必须**等于** tag；其余一切情况都停在这一步。
 
-这个守卫只属于 `publish`。**`auth-check` 不带它** —— 那个 job 验的是 OIDC 链路通不通，与发哪个版本无关，`workflow_dispatch` 触发时也根本没有 tag 可比。
+这个守卫只属于 tag 触发的那一条线，所有发布 job 都 `needs: verify`。**`auth-check` 不带它** —— 那个 job 验的是 OIDC 链路通不通，与发哪个版本无关，`workflow_dispatch` 触发时也根本没有 tag 可比。
 
 三臂读数 (2026-09-08 本机跑 job 里那段 shell，不是在 runner 上)：`v0.13.0` 对 manifest `0.13.0` 退出 0；`v0.13.1` 对同一 manifest 退出 1；在没有 manifest 的目录里退出 4。第三臂守的是「读不出来时不许放行」这半条 —— 只测前两臂的话，一个把版本读成空串的实现在 tag 也为空时同样能绿。**这三臂只证明那段 shell 的判断对，不证明它在 GitHub runner 上跑得起来** (`GITHUB_REF_NAME` 由 Actions 注入、`jq` 由 runner 镜像提供，两者本机都是手工给的)。
 
@@ -190,7 +190,7 @@ crate 一旦存在，就可以把 token 从 CI 里彻底去掉，改由 GitHub �
 
 **在这之前的三个 Release 正文都是空的**：`taiki-e/create-gh-release-action@v1` 不带 `changelog:` 输入时以空串建 Release (它的正文只有一个来源，`parse-changelog` 读一份 changelog 文件；v1 tip `eba8ea9` 的 `main.sh` 第 115 与 190 行)。`gh api repos/Luolc/limae/releases` 对 v0.13.0 / v0.13.1 / v0.13.2 三条都返回 `body: null` (2026-09-12 实测)，页面上看到的那段 commit message 是 web UI 在正文为空时回落去显示被 tag 的那条 commit，不是谁存进去的正文。
 
-换掉那个 action 丢掉的是四件事，**不含**「tag 与 manifest 版本必须逐字相等」那条守卫 —— 它在 `publish` job 里 (见「二」)，那个 action 从不读 manifest：
+换掉那个 action 丢掉的是四件事，**不含**「tag 与 manifest 版本必须逐字相等」那条守卫 —— 它在 `verify` job 里 (见「二」)，那个 action 从不读 manifest：
 
 1. tag 形状校验 —— `on.push.tags` 的 `v[0-9]+.[0-9]+.[0-9]+` 更严，且它决定这个 job 跑不跑。
 2. 预发布版自动标 prerelease —— 同一个 glob 根本放不进预发布 tag。
