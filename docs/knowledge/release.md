@@ -53,9 +53,13 @@ crates.io 的 Trusted Publishing 无法在 crate 存在之前配置，官方原�
 
    完成判据：第一条命令**无任何输出**，第二条打出的 SHA 与你要发布的 commit 相同。
 
-2. 同一台机器、同一个目录，按 CI 的顺序裸跑全部质量检查 (命令清单见仓根 `AGENTS.md`)，**不接管道**。
+2. 同一台机器、同一个目录，确认这个 commit 在 main 上那次 `ci.yml` push run 第一次就是 `success`。全量检查以那次 run 为准，不在本地再跑一遍：
 
-   完成判据：每一项检查都退出 0。输出太长就整条重定向到文件、再单独看退出码 —— `| tail` / `| grep` 会把退出码换成管道末端那个程序的，通过与失败给出同一个 0。
+   ```sh
+   tools/release_ci_green.sh "$(git rev-parse HEAD)" Luolc/limae
+   ```
+
+   完成判据：退出 0，打出的那行是 `conclusion success, run_attempt 1`。退出 1 (没有这次 run、结论不是 `success`、或 `run_attempt` 大于 1) 就不发，换 main 上之后一个满足条件的 commit；run 还没跑完时脚本最多等 30 分钟。
 
 3. 同一台机器，确认打包检查能真的产出包：
 
@@ -116,9 +120,9 @@ crate 一旦存在，就可以把 token 从 CI 里彻底去掉，改由 GitHub �
 
 `cargo publish` 上传的是**当前 `Cargo.toml` 的 `[package].version`**，tag 根本不是它的输入。所以推 `v0.13.1` 到一个 manifest 写着 `0.14.0` 的 commit，发出去的是 `0.14.0` —— 而 crates.io 的版本**不能覆盖、不能删除**，`yank` 也只是标记、不删代码；同一次运行建出的 GitHub Release 却仍叫 `v0.13.1`，两条线就此分叉。
 
-`publish` job 因此在**认证之前**断言 `$GITHUB_REF_NAME` 等于 `v` 加上 manifest 里的版本。判据写成正向链而不是排除已知的坏情况：版本必须**读得出来** (`cargo metadata` 与 `jq -er` 任一失败即退出)，且必须**等于** tag；其余一切情况都停在这一步。
+`verify` job 因此在**任何发布 job 之前** (`publish` 的认证也在它之后) 断言 `$GITHUB_REF_NAME` 等于 `v` 加上 manifest 里的版本 (`tools/release_tag_version.sh`)。判据写成正向链而不是排除已知的坏情况：版本必须**读得出来** (`cargo metadata` 与 `jq -er` 任一失败即退出)，且必须**等于** tag；其余一切情况都停在这一步。
 
-这个守卫只属于 `publish`。**`auth-check` 不带它** —— 那个 job 验的是 OIDC 链路通不通，与发哪个版本无关，`workflow_dispatch` 触发时也根本没有 tag 可比。
+这个守卫只属于 tag 触发的那一条线，所有发布 job 都 `needs: verify`。**`auth-check` 不带它** —— 那个 job 验的是 OIDC 链路通不通，与发哪个版本无关，`workflow_dispatch` 触发时也根本没有 tag 可比。
 
 三臂读数 (2026-09-08 本机跑 job 里那段 shell，不是在 runner 上)：`v0.13.0` 对 manifest `0.13.0` 退出 0；`v0.13.1` 对同一 manifest 退出 1；在没有 manifest 的目录里退出 4。第三臂守的是「读不出来时不许放行」这半条 —— 只测前两臂的话，一个把版本读成空串的实现在 tag 也为空时同样能绿。**这三臂只证明那段 shell 的判断对，不证明它在 GitHub runner 上跑得起来** (`GITHUB_REF_NAME` 由 Actions 注入、`jq` 由 runner 镜像提供，两者本机都是手工给的)。
 
@@ -144,7 +148,13 @@ crate 一旦存在，就可以把 token 从 CI 里彻底去掉，改由 GitHub �
    git fetch origin && git rev-parse HEAD origin/main
    ```
 
-   完成判据：两个 SHA 相同。不同就停下 —— 不要给未合入的 commit 打 tag。
+   完成判据：两个 SHA 相同。不同就停下 —— 不要给未合入的 commit 打 tag。再确认这个 commit 在 main 上那次 `ci.yml` push run 第一次就是 `success`：
+
+   ```sh
+   tools/release_ci_green.sh "$(git rev-parse HEAD)" Luolc/limae
+   ```
+
+   完成判据：退出 0。退出 1 就不打 tag；`release.yml` 的 `verify` 会再核一遍同样的条件，不满足就什么都不发。
 
 2. 同一台机器，打 tag 并推上去 (把 `0.13.0` 换成 `Cargo.toml` 里的 `version`)：
 
@@ -180,7 +190,7 @@ crate 一旦存在，就可以把 token 从 CI 里彻底去掉，改由 GitHub �
 
 **在这之前的三个 Release 正文都是空的**：`taiki-e/create-gh-release-action@v1` 不带 `changelog:` 输入时以空串建 Release (它的正文只有一个来源，`parse-changelog` 读一份 changelog 文件；v1 tip `eba8ea9` 的 `main.sh` 第 115 与 190 行)。`gh api repos/Luolc/limae/releases` 对 v0.13.0 / v0.13.1 / v0.13.2 三条都返回 `body: null` (2026-09-12 实测)，页面上看到的那段 commit message 是 web UI 在正文为空时回落去显示被 tag 的那条 commit，不是谁存进去的正文。
 
-换掉那个 action 丢掉的是四件事，**不含**「tag 与 manifest 版本必须逐字相等」那条守卫 —— 它在 `publish` job 里 (见「二」)，那个 action 从不读 manifest：
+换掉那个 action 丢掉的是四件事，**不含**「tag 与 manifest 版本必须逐字相等」那条守卫 —— 它在 `verify` job 里 (见「二」)，那个 action 从不读 manifest：
 
 1. tag 形状校验 —— `on.push.tags` 的 `v[0-9]+.[0-9]+.[0-9]+` 更严，且它决定这个 job 跑不跑。
 2. 预发布版自动标 prerelease —— 同一个 glob 根本放不进预发布 tag。
@@ -229,7 +239,7 @@ PyPI 侧的 `environment:` 留空：pending publisher 页面上 Environment name
 
 ### 发布顺序与失败重跑
 
-tag 推上去后三家按「越不可撤销越先」发，且互相串着：`publish` (crates.io，先断言 tag == manifest) → `publish-pypi` (`pypa/gh-action-pypi-publish`，OIDC) → `publish-npm` (四个平台包先发、主包 `@limae/cli` 最后，`optionalDependencies` 落地即可解析)。链上任一家红，后面的不发。
+tag 推上去后三家按「越不可撤销越先」发，且互相串着：`verify` (tag == manifest、commit 在 main 上、main 上的 CI 第一次就绿) → `publish` (crates.io) → `publish-pypi` (`pypa/gh-action-pypi-publish`，OIDC) → `publish-npm` (四个平台包先发、主包 `@limae/cli` 最后，`optionalDependencies` 落地即可解析)。链上任一家红，后面的不发。
 
 **中途失败后可以 `gh run rerun --failed` 续，靠的是两个发布 job 各自先问 registry**：PyPI 与 npm 都不允许同名文件 / 同 name@version 上传两次，所以「从头再传一遍」会撞上已经落地的那几个，而 PyPI action 的 `skip-existing` 分不开「同一份已传」与「别的东西占了这个名字」。`tools/pypi_upload_set.sh <project> <version> <dir>` 用 PyPI 的 JSON API 拿到该版本已有文件的 sha256，与本次成品逐个比：不在 → 留着上传，同 sha256 → 从目录删掉，不同 → 退出 1 什么都不传 (PyPI 答 404 即全传，其它状态码一律退出 1)；`tools/npm_publish_set.sh <dir> [--dry-run]` 对每个 tgz 用 `npm view <name@version> dist.integrity --json` 比本地 tarball 的 sha512，先比完全部再发第一个，任一不同即停；只有 registry 明确答 E404 才算「不在」，连不上、5xx 之类一律退出 1 (查不到不等于没有)。三臂读数 (2026-09-10 本机)：PyPI 侧对 `six 1.17.0` 的真 wheel 报 dropped、假文件名报 to be uploaded、改一字节的同名文件退出 1；npm 侧对 `npm pack` 下来的两个真包报 skipped、重新打包内容不同的那份退出 1、我们自己那 5 个未发布的包全部 to be published、registry 指到不可达地址时退出 1 且零次 publish；PyPI 侧另有一臂：全部 wheel 都已在 PyPI 时 `publish-pypi` 那步数出 `count=0`、上传 action 被跳过 (计数前开 `nullglob`，否则空目录数出的是模式自己那一个)。
 
