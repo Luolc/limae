@@ -1,7 +1,7 @@
 //! Render the lexicon into one static page.
 //!
 //! Reads `spec/lexicon/zh.toml` and writes `site/index.html`. The page is not
-//! committed — `site/` is ignored, and `.github/workflows/ci.yml` renders it
+//! committed — `site/` is ignored, and `.github/workflows/pages.yml` renders it
 //! on every run and publishes it to GitHub Pages from main. Running this
 //! locally is for looking at the result; the file it writes stays local.
 //!

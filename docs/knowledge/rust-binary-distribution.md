@@ -70,7 +70,7 @@ curl -fsSL https://limae.luolc.com/install.sh | LIMAE_VERSION=v0.13.2 LIMAE_NO_M
 
 ## 验收一键安装
 
-两条路径的产物都在 Release 上，安装的是同一批二进制：`install.sh` (仓根，由 CI 的 `build` job 复制进 `site/`，经 GitHub Pages 发布到 `https://limae.luolc.com/install.sh`) 与 Homebrew formula (由 `tools/render_homebrew_formula.sh` 渲染，release workflow 的 `homebrew` job 推送到 `Luolc/homebrew-tap`)。
+两条路径的产物都在 Release 上，安装的是同一批二进制：`install.sh` (仓根，由 `pages.yml` 的 `build` job 复制进 `site/`，经 GitHub Pages 发布到 `https://limae.luolc.com/install.sh`) 与 Homebrew formula (由 `tools/render_homebrew_formula.sh` 渲染，release workflow 的 `homebrew` job 推送到 `Luolc/homebrew-tap`)。
 
 ### `install.sh`
 
