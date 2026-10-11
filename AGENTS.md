@@ -4,9 +4,9 @@
 
 ## 语言规范
 
-**本仓属于跨仓守则里的情况 A：仓库语言中文。** 本仓增量两条：
+**本仓的仓库语言是中文。** 另有两条本仓约定：
 
-- **历史里已经存在的中文 PR subject 一律不动**，只管往后新开的 PR。守则那条记的是往后怎么做，没说存量怎么办，本仓的决定是不回头改 —— 改它要重写已推送的历史，代价远大于收益。
+- **历史里已经存在的中文 PR subject 一律不动**，只管往后新开的 PR (标题用英文)。存量不回头改 —— 改它要重写已推送的历史，代价远大于收益。
 - **README 两份，完整度以中文版为准**：`README.md` (中文) 决定这个项目对外讲到什么程度，`README.en.md` 是给英文发现层的精简版，**不承诺对译**。英文版允许少写章节；**不允许出现中文版没有的内容** —— 那样英文版就成了另一个权威版本，而两个权威版本迟早会走样。判据落在改动的性质上：动到**用户可见的行为** (新增或删除命令、选项、安装方式、平台支持) 时两份都要改；只是把中文表述写得更细、更准，可以只改中文。另有一处容易想当然的接线：`Cargo.toml` 的 `readme` 指向 `README.en.md` (crates.io 上的读者是英文发现层)，而 GitHub 首页仍然是 `README.md` —— **这是两个独立字段，改一个不会动另一个**。
 
 ## 隐私边界
@@ -69,22 +69,18 @@ tools/check_precommit_consumer.sh
 
 ## 合并
 
-合并流程见跨仓守则「Git 工作流」的「合并必须固定 LGTM 的 SHA」，这里只记本仓增量：`check` 不是 `main` 的 required status check，PR 上照跑全部检查，合并不等它；approved head 上 PR 的 CI 已经红了就不合。看红没红用 `gh pr checks <N> --json name,bucket`，有一项 `bucket` 为 `fail` 就是红。`pages.yml` 的 `deploy` job 只在 main 上跑，`ci.yml` 里按路径跳过的 job 也一样，它们在 PR 上的 `bucket` 都是 `skipping`，不算红。
+合并时本仓的要点：`check` 不是 `main` 的 required status check，PR 上照跑全部检查，合并不等它；approved head 上 PR 的 CI 已经红了就不合。看红没红用 `gh pr checks <N> --json name,bucket`，有一项 `bucket` 为 `fail` 就是红。`pages.yml` 的 `deploy` job 只在 main 上跑，`ci.yml` 里按路径跳过的 job 也一样，它们在 PR 上的 `bucket` 都是 `skipping`，不算红。
 
 ## 发版
 
-什么动作算发版、哪两种授权算数、为什么不可逆，都在跨仓守则「多 agent 协作」的发版条款里，这里不重复；本仓增量三条。
-
-- **本仓今天只有一条受支持的自动发版路径**：推 `v<major>.<minor>.<patch>` tag，`.github/workflows/release.yml` 由这个 tag push 触发，先由 `verify` job 核三件事：tag 等于 `v` + manifest 版本、tagged commit 在 main 上、它在 main 上那次 `ci.yml` push run 第一次就是 `success` (还没跑完就最多等 30 分钟)；任何一件不成立就什么都不发。放行之后 GitHub Release 与 crates.io / PyPI / npm 三家的发布全部自动发生 —— **tag 推出去之后没有一处还等着人点头**，所以不必逐个列举 workflow 内部的下游步骤。绕开 workflow 直接敲 `cargo publish` / `twine upload` / `npm publish` / `gh release create` 同样落在守则的判据里面 (crates.io 的 token 仍在用户手上，这条路是通的)。
-- **跑 `workflow_dispatch` 的 launcher dry-run 不算发版**，与守则列的 bump 版本号、开 bump PR、合入 PR 同档。
-- **条件式预授权说「做完测完」时，本仓怎么核**：「做完测完」是「做完」且「测完」，不是「合入」。本仓合入不等 `check`；发版要求那个 commit 在 main 上的 push run 第一次就绿 (`verify` 会核)，那次 run 的 `check` 汇总了本次改动涉及的那几项检查，所以能发版通常已经蕴含「测完」，不必在 CI 证过的事情上再叠一层人工确认；**但蕴含不是等同** —— 验收臂依赖已发布产物的 feature (安装路径这类，`brew install` 与 `curl … | sh` 都得先有一个真的 Release) 在合入那一刻根本还没跑过，「测完」就没兑现。逐项都成立才可以执行；有一项说不清就回去问用户，不往宽里读。三家的不可撤回窗口见 [发版手册](docs/knowledge/release.md)。
+- **本仓今天只有一条受支持的自动发版路径**：推 `v<major>.<minor>.<patch>` tag，`.github/workflows/release.yml` 由这个 tag push 触发，先由 `verify` job 核三件事：tag 等于 `v` + manifest 版本、tagged commit 在 main 上、它在 main 上那次 `ci.yml` push run 第一次就是 `success` (还没跑完就最多等 30 分钟)；任何一件不成立就什么都不发。放行之后 GitHub Release 与 crates.io / PyPI / npm 三家的发布全部自动发生 —— **tag 推出去之后没有一处还等着人点头**，所以不必逐个列举 workflow 内部的下游步骤。绕开 workflow 直接敲 `cargo publish` / `twine upload` / `npm publish` / `gh release create` 同样算发版 (crates.io 的 token 仍在用户手上，这条路是通的)。
+- **跑 `workflow_dispatch` 的 launcher dry-run 不算发版**，与 bump 版本号、开 bump PR、合入 PR 同档。
+- **条件式预授权 (用户事先说好「某 feature 做完测完就发一版」这类带条件的授权) 说「做完测完」时，本仓怎么核**：「做完测完」是「做完」且「测完」，不是「合入」。本仓合入不等 `check`；发版要求那个 commit 在 main 上的 push run 第一次就绿 (`verify` 会核)，那次 run 的 `check` 汇总了本次改动涉及的那几项检查，所以能发版通常已经蕴含「测完」，不必在 CI 证过的事情上再叠一层人工确认；**但蕴含不是等同** —— 验收臂依赖已发布产物的 feature (安装路径这类，`brew install` 与 `curl … | sh` 都得先有一个真的 Release) 在合入那一刻根本还没跑过，「测完」就没兑现。逐项都成立才可以执行；有一项说不清就回去问用户，不往宽里读。三家的不可撤回窗口见 [发版手册](docs/knowledge/release.md)。
 
 ## 多 agent 协作
 
-冲突磁铁、审查方只审不改、完成即回报、herdr 布局与派活验收这些都在跨仓守则里，这里只记本仓增量。
-
-- **本仓的冲突磁铁具体是哪几处**：`AGENTS.md` 与 `.agents/skills/`；依赖锁文件是 `Cargo.lock` (对应仓根 `Cargo.toml`)，同一时刻只允许一个改依赖的任务在跑。
-- **tracker 记账本仓有意偏离守则**：backlog 在 `docs/tracker.md`，由实现方在改动所属的 PR 里记账、而不是只由 orchestra 合入后记，理由与冲突处置写在该文件开头，别处不重复。
+- **冲突磁铁 (并行任务容易改到同一处的文件) 是这几处**：`AGENTS.md` 与 `.agents/skills/`；依赖锁文件是 `Cargo.lock` (对应仓根 `Cargo.toml`)，同一时刻只允许一个改依赖的任务在跑。
+- **tracker 记账**：backlog 在 `docs/tracker.md`，由实现方在改动所属的 PR 里记账、而不是只由 orchestra 合入后记，理由与冲突处置写在该文件开头，别处不重复。
 - **审查规范**：Rust 设计、实现 brief、自审与正式审查均加载用户级 `rust-review` 与 `pr-review`，再叠加本仓适用规则；不复制 skill 正文、不引用其它仓库路径。本仓目前没有额外的仓库专属加严规则。
-- **`~/scratch/limae/` 的产物首行写明归属** (任务 slug、PR 编号或明写「无 PR」、消费者)。守则要求这个目录下每个文件名都带日期，本仓在此之上多要一行归属；范围只限这个目录，不覆盖 agent 自己的会话 scratchpad。写在 `AGENTS.md` 是因为本仓没有 brief 模板文件，这里是唯一不依赖派活方记得写的入口。
+- **`~/scratch/limae/` 的产物首行写明归属** (任务 slug、PR 编号或明写「无 PR」、消费者)。这个目录下每个文件名都带日期，另外首行要有归属；范围只限这个目录，不覆盖 agent 自己的会话 scratchpad。写在 `AGENTS.md` 是因为本仓没有 brief 模板文件，这里是唯一不依赖派活方记得写的入口。
 - **报账触发点与处置**：责任人是常驻 orchestra，触发点是任务终态与每次收工报账；到触发点对每个文件逐项二选一 —— 已入库则删，仍要留则写明还等谁消费、留下一个触发点，「回报已发」不单独作删除事件。隔离目录 (如 `undated-archive-<日期>/`) 是临时态，下次报账同样逐项二选一，空目录即删。
