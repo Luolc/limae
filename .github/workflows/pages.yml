@@ -1,9 +1,9 @@
 # The lexicon page and the installer, published to GitHub Pages. This is
 # release, not a gate, and it lives outside ci.yml on purpose: a release is
 # cut only from a commit whose ci.yml push run on main passed
-# (tools/release_ci_green.sh), and a Pages deployment that failed or was
-# cancelled says nothing about the code. Not a required check either, so a
-# failed publish never blocks a merge.
+# (release-ci-green in release.yml), and a Pages deployment that failed or
+# was cancelled says nothing about the code. Not a required check either, so
+# a failed publish never blocks a merge.
 name: pages
 
 on:
