@@ -1,9 +1,8 @@
 # The quality bar, split into jobs that run in parallel, each only when
-# `changes` says the paths it reads were touched; `check` sums them up and is
-# the required check for branch protection. Nothing here publishes: the
-# lexicon page and the installer go to GitHub Pages from pages.yml, so that
-# a failed deployment cannot turn a main commit's run here red and keep it
-# from being released.
+# `changes` says the paths it reads were touched; `check` sums them up.
+# Nothing here publishes: the lexicon page and the installer go to GitHub
+# Pages from pages.yml, so that a failed deployment cannot turn a main
+# commit's run here red and keep it from being released.
 name: CI
 
 on:

@@ -29,7 +29,7 @@
 
 ## 质量标准 (quality bar)
 
-CI (`.github/workflows/ci.yml`，required check 名为 `check`) 覆盖以下十五项质量检查，分在几个并行的 job 里，下面按 job 分组列出。`changes` 先按改动路径判断哪些 job 要跑：分组写在 `ci.yml` 里，PR 与 base 分支比，main 上的 push 与上一个 CI 绿的 main commit 比，不在任何组里的路径跑全部；`lint` 与 `gitleaks` 每次都跑，`check` 汇总全部 job 的结论。main 上的 run 不会被后来的 push 取消，每个 commit 都有自己的结论。本地 push 前过 commit 钩子，再跑本次改动涉及的那几项；全量只在 CI 跑，PR 上以 `check` 那次 run 为准。
+CI (`.github/workflows/ci.yml`) 覆盖以下十五项质量检查，分在几个并行的 job 里，下面按 job 分组列出。`changes` 先按改动路径判断哪些 job 要跑：分组写在 `ci.yml` 里，PR 与 base 分支比，main 上的 push 与上一个 CI 绿的 main commit 比，不在任何组里的路径跑全部；`lint` 与 `gitleaks` 每次都跑，`check` 汇总全部 job 的结论。main 上的 run 不会被后来的 push 取消，每个 commit 都有自己的结论。本地 push 前过 commit 钩子，再跑本次改动涉及的那几项；全量只在 CI 跑，PR 上以 `check` 那次 run 为准。
 
 ```sh
 # lint
@@ -69,7 +69,7 @@ tools/check_precommit_consumer.sh
 
 ## 合并
 
-合并流程见跨仓守则「Git 工作流」的「合并必须固定 LGTM 的 SHA」，这里只记本仓增量两条：required check 叫 `check`，设上之后可以加 `--auto` (绿了自动进 main，红永不合并)；**轮询 PR 状态用 `gh pr checks <N> --required --json name,bucket`，同时监听失败态** (`bucket` 为 `fail` 或 `cancel` 即退出)，不要只等 MERGED —— 只等 MERGED 的循环在 CI 红掉时会一直转到超时。`--required` 只看 required check (`check`)：`pages.yml` 的 `deploy` job 只在 main 上跑，`ci.yml` 里按路径跳过的 job 也一样，它们在 PR 上的 `bucket` 都是 `skipping`，不属于失败态，不加 `--required` 会把它也轮询进来。
+合并流程见跨仓守则「Git 工作流」的「合并必须固定 LGTM 的 SHA」，这里只记本仓增量：`check` 不是 `main` 的 required status check，PR 上照跑全部检查，合并不等它；approved head 上 PR 的 CI 已经红了就不合。看红没红用 `gh pr checks <N> --json name,bucket`，有一项 `bucket` 为 `fail` 就是红。`pages.yml` 的 `deploy` job 只在 main 上跑，`ci.yml` 里按路径跳过的 job 也一样，它们在 PR 上的 `bucket` 都是 `skipping`，不算红。
 
 ## 发版
 
@@ -77,7 +77,7 @@ tools/check_precommit_consumer.sh
 
 - **本仓今天只有一条受支持的自动发版路径**：推 `v<major>.<minor>.<patch>` tag，`.github/workflows/release.yml` 由这个 tag push 触发，先由 `verify` job 核三件事：tag 等于 `v` + manifest 版本、tagged commit 在 main 上、它在 main 上那次 `ci.yml` push run 第一次就是 `success` (还没跑完就最多等 30 分钟)；任何一件不成立就什么都不发。放行之后 GitHub Release 与 crates.io / PyPI / npm 三家的发布全部自动发生 —— **tag 推出去之后没有一处还等着人点头**，所以不必逐个列举 workflow 内部的下游步骤。绕开 workflow 直接敲 `cargo publish` / `twine upload` / `npm publish` / `gh release create` 同样落在守则的判据里面 (crates.io 的 token 仍在用户手上，这条路是通的)。
 - **跑 `workflow_dispatch` 的 launcher dry-run 不算发版**，与守则列的 bump 版本号、开 bump PR、合入 PR 同档。
-- **条件式预授权说「做完测完」时，本仓怎么核**：「做完测完」是「做完」且「测完」，不是「合入」。本仓合入的前提是 required check `check` 绿，它汇总本次改动涉及的那几项检查；发版还要求那个 commit 在 main 上的 push run 第一次就绿 (`verify` 会核)，所以合入并能发版通常已经蕴含「测完」，不必在 CI 证过的事情上再叠一层人工确认；**但蕴含不是等同** —— 验收臂依赖已发布产物的 feature (安装路径这类，`brew install` 与 `curl … | sh` 都得先有一个真的 Release) 在合入那一刻根本还没跑过，「测完」就没兑现。逐项都成立才可以执行；有一项说不清就回去问用户，不往宽里读。三家的不可撤回窗口见 [发版手册](docs/knowledge/release.md)。
+- **条件式预授权说「做完测完」时，本仓怎么核**：「做完测完」是「做完」且「测完」，不是「合入」。本仓合入不等 `check`；发版要求那个 commit 在 main 上的 push run 第一次就绿 (`verify` 会核)，那次 run 的 `check` 汇总了本次改动涉及的那几项检查，所以能发版通常已经蕴含「测完」，不必在 CI 证过的事情上再叠一层人工确认；**但蕴含不是等同** —— 验收臂依赖已发布产物的 feature (安装路径这类，`brew install` 与 `curl … | sh` 都得先有一个真的 Release) 在合入那一刻根本还没跑过，「测完」就没兑现。逐项都成立才可以执行；有一项说不清就回去问用户，不往宽里读。三家的不可撤回窗口见 [发版手册](docs/knowledge/release.md)。
 
 ## 多 agent 协作
 
