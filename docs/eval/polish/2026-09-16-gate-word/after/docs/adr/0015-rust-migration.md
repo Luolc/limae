@@ -26,7 +26,7 @@ Python 已实现 21 条确定性规则，包括实验规则；入口仍是 `lima
 
 过渡期 crate / package 仍叫 `limae`，唯一生产 binary 叫 `limae-rs`，先设 `publish = false`；E 完成时 binary 改回 [ADR-0008 §一](0008-limae-polish-cli.md#一更名-limae) 的 `limae` 终态。A–D 不安装名为 `limae` 的 Rust 文件，不调用 Python 代跑未实现的规则，也不接管现有入口或 Claude / Codex hook 配置。A / B 中未实现的 `polish` / `hook` 调用明确报「未提供此子命令」并退出 2。保留现有裸调用形式，`check` / `format` 的产品入口改造另开任务。
 
-E 将 Python 的开发 / reference 命令显式命名为 `limae-python`，避免同名入口冲突；文档和包说明标记 deprecated，参考测试继续运行，不通过 stdout 弃用横幅破坏协议。仓内默认 hook / dogfood 转向已验收的 Rust；本机全局 CLI 安装与受管 hook 切换由 orchestra 通过 machine-setup PR / 既有安装流程协调，不手改家目录。外部消费仓只做必要调查与准备，不把整套跨项目迁移列为本任务前置条件，也不等待人工切换窗口。
+E 将 Python 的开发 / reference 命令显式命名为 `limae-python`，避免同名入口冲突；文档和包说明标记 deprecated，参考测试继续运行，不通过 stdout 弃用横幅破坏协议。仓内默认 hook / dogfood 转向已验收的 Rust；本机全局 CLI 安装与受管 hook 切换由 orchestra 通过机器配置仓 PR / 既有安装流程协调，不手改家目录。外部消费仓只做必要调查与准备，不把整套跨项目迁移列为本任务前置条件，也不等待人工切换窗口。
 
 本次不做 `contextual`、`quote_style`、新规则、语言探测、LSP、SDK、Python FFI、模型默认调优、文档级 lint、文件 / 多文件 polish。它们都不是 Rust 迁移的前置条件；进度只记 [tracker](../tracker.md)，本文任务编号只用于依赖和验收，不维护完成状态。
 
@@ -156,7 +156,7 @@ A1 新增根 `rust-toolchain.toml`，按上述环境选择具体 `channel = "1.9
 | C3 | `polish/mod.rs`、CLI 接入与分发资源 / CI | C2；共享文件串行 | `polish -` 真运行；离线受控 tests 进门，真实模型 smoke 留独立证据、不作 required check |
 | D1a / D1b | `rust/hook/state.rs` / `render.rs`：记录、诊断、prune，随后计数与展示 | C；模块可并行，状态协议统一 | 权限、容量、记录覆盖、计数差分；均用合成文本 |
 | D2a / D2b | `hook/claude.rs` / `ab.rs`、随后 `hook/codex.rs` 与主入口 | D1；宿主 / A/B 共用状态接线串行 | Claude 迟到 / 缺批、A/B / 一次性回注；Codex 单路、递归禁用、失败后下一轮恢复；分别真实宿主对照 |
-| E | Rust bin 命名、`pyproject.toml` reference 入口、README 弃用说明、仓内 hook / dogfood / CI；本地受管安装由 orchestra 在 machine-setup 另走 PR | D 全过；互审后自动执行，外部消费仓仅调查 / 准备 | 正式 CLI 为 Rust `limae`，Python deprecated 且 reference / 测试保留，安装 / 回退可复演；汇报发布缺口并停在实际 tag / release / publish 之前 |
+| E | Rust bin 命名、`pyproject.toml` reference 入口、README 弃用说明、仓内 hook / dogfood / CI；本地受管安装由 orchestra 在机器配置仓另走 PR | D 全过；互审后自动执行，外部消费仓仅调查 / 准备 | 正式 CLI 为 Rust `limae`，Python deprecated 且 reference / 测试保留，安装 / 回退可复演；汇报发布缺口并停在实际 tag / release / publish 之前 |
 
 根 `Cargo.toml`、`Cargo.lock`、`rust-toolchain.toml`、CI、`rust/lib.rs` 与共享测试入口由当时的集成任务独占；「可并行」只指文件集不相交的正文，接线 / 加依赖在合入时串行。`uv.lock` 也遵守原有单持有者规则。本方案不改 `AGENTS.md`、skills 或 tracker，G 由后续独立任务完成。
 

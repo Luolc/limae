@@ -39,7 +39,7 @@ Codex 输入没有 Claude Code 的 `message_id`，单路记录改用同一事件
 - `systemMessage` 在官方合同里是 warning。本适配不返回官方明定会续跑的 `decision: "block"` / `reason`；是否出现额外模型轮次以本仓真实试用的事件流为准。
 - Codex 没有 ADR-0009 §五那条把编号送入模型上下文的 `additionalContext` 通道。即使另行打开 A/B，`systemMessage` 里的编号与提示也只按用户可见信息处理，不能声称模型已收到回注；本仓配置因此保持 A/B 关闭。
 - `.codex/config.toml` 是入库文件：任何 clone 只要安装了 limae 并信任该 checkout，都会启用这项试用。这比 Claude Code 的 gitignored 本地配置影响面更大，是本仓 repo-local opt-in 的明知选择。
-- 本仓试用稳定后，是否推广到用户级配置仍须在 `machine-setup` 另走 PR，本 ADR 不授权推广。
+- 本仓试用稳定后，是否推广到用户级配置仍须在机器配置仓另走 PR，本 ADR 不授权推广。
 
 ## 实测
 

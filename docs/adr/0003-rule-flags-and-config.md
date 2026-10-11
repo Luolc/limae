@@ -27,7 +27,7 @@ ADR-0002 只定了方向，把 flag 命名和配置文件的发现顺序留到�
 
 ### 三、两种同构载体：`lo-md-lint.toml` 与 `[tool.lo-md-lint]`
 
-独立文件 `lo-md-lint.toml` 将键写在顶层，`pyproject.toml` 将同样的键写在 `[tool.lo-md-lint]` 表中，键结构完全一致，只是外层位置不同。Python 生态的消费方本来就有 `pyproject.toml`，不必为三行配置新增一个文件；不是 Python 项目的消费方 (machine-setup 这类) 则使用独立文件。同构意味着配置可以直接在两者之间剪切粘贴，文档与实现也只有一份键定义。
+独立文件 `lo-md-lint.toml` 将键写在顶层，`pyproject.toml` 将同样的键写在 `[tool.lo-md-lint]` 表中，键结构完全一致，只是外层位置不同。Python 生态的消费方本来就有 `pyproject.toml`，不必为三行配置新增一个文件；不是 Python 项目的消费方 (机器配置仓这类) 则使用独立文件。同构意味着配置可以直接在两者之间剪切粘贴，文档与实现也只有一份键定义。
 
 独立文件只认 `lo-md-lint.toml` 这一个名字，不支持 `.lo-md-lint.toml` 这类隐藏文件变体：多一个名字就多一条决定优先级的规则。
 
