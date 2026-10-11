@@ -2,8 +2,8 @@
 # The generator still turns spec/lexicon/zh.toml into a page, and the page
 # still follows its source.
 #
-# `site/index.html` is not committed. Since 2026-09 the workflow in
-# .github/workflows/ci.yml renders it from `spec/lexicon/zh.toml` with the
+# `site/index.html` is not committed. The workflow in
+# .github/workflows/pages.yml renders it from `spec/lexicon/zh.toml` with the
 # `render-lexicon` Cargo example on every run and publishes it to GitHub
 # Pages from main. There is therefore no committed page to fall behind its
 # source, and the arm that compared the two went with it: the failure it
