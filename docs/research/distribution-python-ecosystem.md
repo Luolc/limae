@@ -190,7 +190,7 @@ ruff 有 [`astral-sh/ruff-action`](https://github.com/astral-sh/ruff-action)，�
 理由：
 
 1. **limae 不是 Python linter。** ruff 把 `pyproject.toml` 当主配置，是因为它 lint 的就是 Python，消费方几乎都有这份文件。markdownlint (`.markdownlint.json` / `.markdownlint-cli2.jsonc`)、dprint (`dprint.json`)、prettier (`.prettierrc`) 这些跨语言工具都用自己的文件。
-2. **消费方会包括 Rust / JS / 纯文档仓。** 强迫 `machine-setup` 这类仓为三行开关建一份 `pyproject.toml`，是把 Python 包装成门槛。ADR-0003 原文已经写了这个区分 (独立文件给非 Python，表给 Python)。
+2. **消费方会包括 Rust / JS / 纯文档仓。** 强迫机器配置仓这类仓为三行开关建一份 `pyproject.toml`，是把 Python 包装成门槛。ADR-0003 原文已经写了这个区分 (独立文件给非 Python，表给 Python)。
 3. **独立文件优先于同层 `pyproject.toml`** 已经写进规范 (`spec/rules.md` 发现顺序第 1 条)。把 pyproject 当「主」会和现有优先级冲突。
 4. **PEP 518 的 `[tool]` 是开放命名空间**，谁都能占；「能写进 pyproject」不等于「应该默认用它」。typos 同时认 `typos.toml` / `_typos.toml` / `.typos.toml` / `[tool.typos]` / `Cargo.toml` 的 metadata —— 它是通用拼写检查，所以仍保留独立文件。taplo 同时认 `.taplo.toml` 与 `[tool.taplo]`。跨生态工具的重点都在自己的文件上。
 

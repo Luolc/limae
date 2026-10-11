@@ -1,11 +1,11 @@
 # ADR-0001：独立成仓、规范先于实现、多实现共用黄金 fixture
 
 - 日期：2026-08-31
-- 依据：wealth-management 仓 `python/lo-linting` 的迁出方案 (仓名 `lo-md-lint` 与简称 `mdlint` 由用户 2026-08-31 定案)
+- 依据：维护者的一个私有仓 (下称来源仓) 中 `python/lo-linting` 的迁出方案 (仓名 `lo-md-lint` 与简称 `mdlint` 由用户 2026-08-31 定案)
 
 ## 背景
 
-中文 Markdown 排版检查器目前是 wealth-management 仓 uv workspace 里的一个子项目 (`lo-linting`，命令 `lo-lint-zh`)，零第三方依赖，规则来自全局守则「语言规范」。它只被 wealth-management 自己经 pre-commit `repo: local` 消费；machine-setup、butler 等其它中文仓也需要同一把 linter。下一步要加英文规则、把规则 flag 化，长期大概率用 Rust 重写 —— 趁代码还小，先把仓、规范与测试资产的形态定下来。
+中文 Markdown 排版检查器目前是来源仓 uv workspace 里的一个子项目 (`lo-linting`，命令 `lo-lint-zh`)，零第三方依赖，规则来自全局守则「语言规范」。它只被来源仓自己经 pre-commit `repo: local` 消费；维护者的其它中文私有仓也需要同一把 linter。下一步要加英文规则、把规则 flag 化，长期大概率用 Rust 重写 —— 趁代码还小，先把仓、规范与测试资产的形态定下来。
 
 ## 决定
 
@@ -13,7 +13,7 @@
 
 ### 一、独立成仓
 
-- 从 wealth-management 迁出到本仓 `Luolc/lo-md-lint`，**不带历史，一个 initial commit** (记录来源仓与来源 SHA)。理由：wealth-management 是 private 仓，其提交信息与历史版本含用户理财细节 (账户、持仓、profile)，带历史迁出等于把这些搬进 public 仓；这批代码只有十来个提交，历史的价值不抵这个风险。
+- 从来源仓迁出到本仓 `Luolc/lo-md-lint`，**不带历史，一个 initial commit** (记录来源仓与来源 SHA)。理由：来源仓是 private 仓，其提交信息与历史版本含用户理财细节 (账户、持仓、profile)，带历史迁出等于把这些搬进 public 仓；这批代码只有十来个提交，历史的价值不抵这个风险。
 - 消费方不再 `repo: local`：经 pre-commit 远端 hook (`repo: https://github.com/Luolc/lo-md-lint` + `rev`) 或 `uvx` / `uv tool install` 消费。发布形态的细节由分发 PR 定。
 
 ### 二、规则规范先于实现
@@ -38,10 +38,10 @@
 
 ## 后果
 
-- 本仓对外是一个独立的 pre-commit hook / CLI；wealth-management 等消费方各自开 PR 改配置指到这里。
+- 本仓对外是一个独立的 pre-commit hook / CLI；来源仓等消费方各自开 PR 改配置指到这里。
 - 规则改动的顺序固定：先改 `spec/`，再改各实现；每加一条 fixture 就是所有实现的回归测试。
 - Python 版的现有测试要拆成「fixture 数据 + 薄 runner」，别的实现才能复用；已完成：规范在 `spec/rules.md`，黄金集在 `spec/fixtures/`，格式与判定见 `spec/README.md`，Python 的薄 runner 是 `tests/test_fixtures.py`。
-- 迁出后 wealth-management 删除 `python/lo-linting`，改为消费本仓。
+- 迁出后来源仓删除 `python/lo-linting`，改为消费本仓。
 
 ## 状态
 

@@ -96,7 +96,7 @@ env -i HOME="$H" PATH=/usr/bin:/bin SHELL=/bin/bash bash -lc 'limae "$HOME/probe
 | 幂等 | 连装两次 | rc 里只有一个 `# >>> limae >>>` 块 |
 | chezmoi | 给该 HOME 配一份 `chezmoi.toml`，让 rc 进 chezmoi 源 | 不写 rc，改为打印要加的那行；把 `chezmoi` 从 PATH 上拿掉再跑，同一个 HOME 会写进去 |
 
-改一个字节那两臂要控制服务的字节，所以是把 tarball 与边车放在本地 HTTP 服务上、用一份只改了传输的脚本副本跑 (`--proto '=https' --tlsv1.2` 与 `base` 两行)，校验逻辑本身一个字节没动。2026-09-10 在 dev-oregon 上全部跑过，读数与上表一致。
+改一个字节那两臂要控制服务的字节，所以是把 tarball 与边车放在本地 HTTP 服务上、用一份只改了传输的脚本副本跑 (`--proto '=https' --tlsv1.2` 与 `base` 两行)，校验逻辑本身一个字节没动。2026-09-10 在开发机上全部跑过，读数与上表一致。
 
 ### Homebrew formula
 
@@ -112,4 +112,4 @@ tools/render_homebrew_formula.sh v0.13.2 <装着 .sha256 边车的目录> /tmp/l
 
 渲染出的 formula **不写 `version`**：Homebrew 从下载 URL 里扫得出版本号，`brew audit --strict` 判显式声明冗余 (2026-09-11 run 34566953423 的读数：`` `version 0.13.2` is redundant with version scanned from URL ``，也是 `brew audit` 有史以来第一次执行)。删掉那行的代价是「版本号对不对」从此没有断言守着 —— URL 命名一改，版本号会静默变错，而一个扫出错版本的 formula 照样过 audit。接手这件事的是 `tools/check_formula_version.sh`：它在 `homebrew` job 里 audit 之前跑，把 `brew info --json=v2` 读出的 `versions.stable` 与 `${TAG#v}` 正向比对。
 
-这条断言的两臂可以在 Linux 上跑 —— 把一个假 `brew` 放在 PATH 前面，只让它按 `STUB_VERSION` 吐出 `brew info --json=v2` 的形状：版本等于 tag 时退出 0 并打印读到的版本，版本差一个补丁号 (`0.13.1` 对 `v0.13.2`) 时退出 1 并同时报出两个值 (2026-09-11 dev-oregon 实测)。另外四条负臂同日实测退 1：`versions.stable` 是 `null`、`brew info` 自己退非 0、tag 不是 `v<x>.<y>.<z>`、参数个数不对。**假 `brew` 证的是比对逻辑，不是真 Homebrew 的 JSON 形状** —— 后者与 audit、install、test 一样，只有 runner 上那一次 dispatch 说了算。
+这条断言的两臂可以在 Linux 上跑 —— 把一个假 `brew` 放在 PATH 前面，只让它按 `STUB_VERSION` 吐出 `brew info --json=v2` 的形状：版本等于 tag 时退出 0 并打印读到的版本，版本差一个补丁号 (`0.13.1` 对 `v0.13.2`) 时退出 1 并同时报出两个值 (2026-09-11 开发机实测)。另外四条负臂同日实测退 1：`versions.stable` 是 `null`、`brew info` 自己退非 0、tag 不是 `v<x>.<y>.<z>`、参数个数不对。**假 `brew` 证的是比对逻辑，不是真 Homebrew 的 JSON 形状** —— 后者与 audit、install、test 一样，只有 runner 上那一次 dispatch 说了算。

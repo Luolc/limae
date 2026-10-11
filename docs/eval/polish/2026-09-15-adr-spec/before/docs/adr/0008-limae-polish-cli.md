@@ -36,9 +36,9 @@ ADR-0005 §四把 LLM 语义润色确认为未来特性并划了两段式边界�
 | 行内指令前缀 | `lo-md-lint-disable` 等 | `limae-disable` 等 | 待做 |
 | 忽略文件 | `.lo-md-lint-ignore` | `.limae-ignore` | 待做 |
 
-GitHub 仓库改名已于 2026-09-01 由 orchestra 在本 ADR 合并前执行完毕：`Luolc/lo-md-lint` → `Luolc/limae`，旧 URL 由 GitHub 301 永久重定向，本地 origin 已同步。**本地目录改名与消费仓迁移仍未做** —— 前者等所有 agent 收工再做，后者由 butler 另派任务。
+GitHub 仓库改名已于 2026-09-01 由 orchestra 在本 ADR 合并前执行完毕：`Luolc/lo-md-lint` → `Luolc/limae`，旧 URL 由 GitHub 301 永久重定向，本地 origin 已同步。**本地目录改名与消费仓迁移仍未做** —— 前者等所有 agent 收工再做，后者由维护者的协调仓另派任务。
 
-**过渡期保留旧名别名**：命令、配置表与文件名、hook id、行内指令前缀、忽略文件都要在一段时间内新旧两可，消费仓 (`machine-setup` / `wealth-management` / `butler`) 各出一个小 PR 跟进。旧别名什么时候移除由后续任务定，本 ADR 只要求「有过渡期」，不定期限。
+**过渡期保留旧名别名**：命令、配置表与文件名、hook id、行内指令前缀、忽略文件都要在一段时间内新旧两可，三个私有消费仓各出一个小 PR 跟进。旧别名什么时候移除由后续任务定，本 ADR 只要求「有过渡期」，不定期限。
 
 ### 二、三个子命令，对标 ruff
 

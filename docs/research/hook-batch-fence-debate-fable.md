@@ -4,7 +4,7 @@
 
 > 归档说明：本文件由 orchestra 于 2026-09-11 从 `~/scratch/limae/debate-fence-fable-2026-09-11.md` 原样归档入库到 `docs/research/`，正文一字未改。裁决方读的 head 是正文自己声明的 `0f70af8` (worktree `~/wt/limae/debate-b`，detached)，与 Astra 裁决方钉的 `b20bc03` 不同 —— 两份报告各自独立声明自己的 head，不互相对齐，读者结合两者时请留意这一点。本文件没有旁支脚本文件需要内联 (orchestra 已 grep 正文，未发现 `~/scratch` 或 `/home/ubuntu` 的路径引用)。
 
-裁决方：limae-debate-fable，模型 Claude Fable 5.1。worktree `~/wt/limae/debate-b` (detached，`0f70af8`)，release 构建 `target/release/limae`，2026-09-11 dev-oregon 实测。实验脚本在本会话 scratchpad (`harness.py` / `exp2.py`)，方法全部写在下面，可以照着重跑。
+裁决方：limae-debate-fable，模型 Claude Fable 5.1。worktree `~/wt/limae/debate-b` (detached，`0f70af8`)，release 构建 `target/release/limae`，2026-09-11 开发机实测。实验脚本在本会话 scratchpad (`harness.py` / `exp2.py`)，方法全部写在下面，可以照着重跑。
 
 ## 一句话
 
