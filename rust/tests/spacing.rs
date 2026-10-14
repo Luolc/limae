@@ -110,8 +110,8 @@ fn ascii_units_keep_case_token_edges_and_complete_match_ranges() -> TestResult {
     let markdown = Markdown::new()?;
     for unit in [
         "KB", "MB", "GB", "TB", "PB", "KiB", "MiB", "GiB", "TiB", "PiB", "bps", "kbps", "Mbps",
-        "Gbps", "Tbps", "ms", "ns", "us", "min", "Hz", "kHz", "MHz", "GHz", "px", "pt", "dpi",
-        "fps", "kg", "mg", "km", "cm", "mm", "nm",
+        "Gbps", "Tbps", "ms", "ns", "us", "min", "Hz", "kHz", "MHz", "GHz", "pt", "dpi", "fps",
+        "kg", "mg", "km", "cm", "mm", "nm",
     ] {
         let line = format!("16{unit}/1.5{unit}");
         let p = markdown.protect(&[&line]);

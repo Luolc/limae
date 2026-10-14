@@ -34,7 +34,7 @@ impl SpacingRules {
             number_unit: Regex::new(concat!(
                 r"[0-9]+(?:kbps|Mbps|Gbps|Tbps|",
                 r"KiB|MiB|GiB|TiB|PiB|bps|min|kHz|MHz|GHz|dpi|fps|",
-                r"KB|MB|GB|TB|PB|ms|ns|us|Hz|px|pt|kg|mg|km|cm|mm|nm)"
+                r"KB|MB|GB|TB|PB|ms|ns|us|Hz|pt|kg|mg|km|cm|mm|nm)"
             ))?,
         })
     }
