@@ -76,7 +76,7 @@ tools/check_precommit_consumer.sh
 - **本仓今天只有一条受支持的自动发版路径**：推 `v<major>.<minor>.<patch>` tag，`.github/workflows/release.yml` 由这个 tag push 触发，先由 `verify` job 核三件事：tag 等于 `v` + manifest 版本、tagged commit 在 main 上、它在 main 上那次 `ci.yml` push run 第一次就是 `success` (还没跑完就最多等 30 分钟)；任何一件不成立就什么都不发。放行之后 GitHub Release 与 crates.io / PyPI / npm 三家的发布全部自动发生 —— **tag 推出去之后没有一处还等着人点头**，所以不必逐个列举 workflow 内部的下游步骤。绕开 workflow 直接敲 `cargo publish` / `twine upload` / `npm publish` / `gh release create` 同样算发版 (crates.io 的 token 仍在用户手上，这条路是通的)。
 - **跑 `workflow_dispatch` 的 launcher dry-run 不算发版**，与 bump 版本号、开 bump PR、合入 PR 同档。
 - **条件式预授权 (用户事先说好「某 feature 做完测完就发一版」这类带条件的授权) 说「做完测完」时，本仓怎么核**：「做完测完」是「做完」且「测完」，不是「合入」。本仓合入不等 `check`；发版要求那个 commit 在 main 上的 push run 第一次就绿 (`verify` 会核)，那次 run 的 `check` 汇总了本次改动涉及的那几项检查，所以能发版通常已经蕴含「测完」，不必在 CI 证过的事情上再叠一层人工确认；**但蕴含不是等同** —— 验收臂依赖已发布产物的 feature (安装路径这类，`brew install` 与 `curl … | sh` 都得先有一个真的 Release) 在合入那一刻根本还没跑过，「测完」就没兑现。逐项都成立才可以执行；有一项说不清就回去问用户，不往宽里读。三家的不可撤回窗口见 [发版手册](docs/knowledge/release.md)。
-- **修好 bug 就发补丁版，是用户 2026-10-14 给的常设预授权**，不必逐次再问。条件是修复已合入 main；满足后依次做：开补丁号加一的 bump PR，bump 合入且那个 commit 在 main 上的 push run 第一次就绿之后推 tag (`release.yml` 自动发四处)，装到维护者的机器上，再把各消费仓钉的 `limae` 版本升到新版。默认只升补丁号。新功能、新规则、破坏性改动不是 bug 修复，不在这条授权内；判断为很大的改动，也不在内。这几类要先问用户。推 tag 前的核对照上一条，这条只补条件，不另立一套。
+- **修好 bug 就发补丁版，是用户 2026-10-14 给的常设预授权**，不必逐次再问。条件是修复已合入 main；满足后依次做：开补丁号加一的 bump PR，bump 合入且那个 commit 在 main 上的 push run 第一次就绿之后推 tag (`release.yml` 自动完成各处发布)，装到维护者的机器上，再把各消费仓钉的 `limae` 版本升到新版。默认只升补丁号。新功能、新规则、破坏性改动不是 bug 修复，不在这条授权内；改动很大、或拿不准算不算 bug 修复的，也不在内。这几类要先问用户。推 tag 前的核对照上一条，这条只补条件，不另立一套。
 
 ## 多 agent 协作
 
